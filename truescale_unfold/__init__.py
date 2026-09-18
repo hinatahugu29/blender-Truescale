@@ -220,23 +220,23 @@ def _build_flat_mesh(context, src_obj, mesh, uv_layer, scale_bu_per_uv):
     new_obj.rotation_euler = (0.0, 0.0, 0.0)
     new_obj.scale = (1.0, 1.0, 1.0)
 
-    new_obj["unfold_helper_generated"] = True
-    new_obj["unfold_helper_source"] = src_obj.name
+    new_obj["tsunfold_generated"] = True
+    new_obj["tsunfold_source"] = src_obj.name
 
     # Record the unit context used to create this pattern.
     scene_scale, mm_per_bu = _scene_unit_summary(context.scene)
-    new_obj["pattern_helper_scene_scale_length"] = float(scene_scale)
-    new_obj["pattern_helper_mm_per_bu"] = float(mm_per_bu)
-    new_obj["pattern_helper_source_object_scale"] = [
+    new_obj["tsunfold_scene_scale_length"] = float(scene_scale)
+    new_obj["tsunfold_mm_per_bu"] = float(mm_per_bu)
+    new_obj["tsunfold_source_object_scale"] = [
         float(src_obj.scale.x),
         float(src_obj.scale.y),
         float(src_obj.scale.z),
     ]
 
-    new_obj["pattern_helper_flat_vertex_source_json"] = json.dumps(
+    new_obj["tsunfold_flat_vertex_source_json"] = json.dumps(
         flat_vertex_source_vertex
     )
-    new_obj["pattern_helper_flat_face_source_json"] = json.dumps(
+    new_obj["tsunfold_flat_face_source_json"] = json.dumps(
         flat_face_source_face
     )
 
@@ -247,7 +247,7 @@ def _build_flat_mesh(context, src_obj, mesh, uv_layer, scale_bu_per_uv):
             flat_side_source_edge.get(key, -1)
         )
 
-    new_obj["pattern_helper_flat_edge_source_json"] = json.dumps(
+    new_obj["tsunfold_flat_edge_source_json"] = json.dumps(
         flat_edge_source
     )
 
@@ -347,7 +347,7 @@ def _active_unfold_object(context):
     if (
         obj
         and obj.type == 'MESH'
-        and bool(obj.get("unfold_helper_generated", False))
+        and bool(obj.get("tsunfold_generated", False))
     ):
         return obj
     return None
@@ -374,7 +374,7 @@ def _object_xy_size_mm(context, obj):
 # ------------------------------------------------------------
 
 def _paper_display_name(scene):
-    key = str(getattr(scene, "unfold_helper_paper_size", "A4"))
+    key = str(getattr(scene, "tsunfold_paper_size", "A4"))
     if key == "CUSTOM":
         w, h = _paper_dimensions_mm(scene)
         return f"カスタム {w:.0f}×{h:.0f} mm"
@@ -383,16 +383,16 @@ def _paper_display_name(scene):
 
 
 def _paper_dimensions_mm(scene):
-    paper_key = str(getattr(scene, "unfold_helper_paper_size", "A4"))
+    paper_key = str(getattr(scene, "tsunfold_paper_size", "A4"))
 
     if paper_key == "CUSTOM":
         width = max(
             1.0,
-            float(getattr(scene, "unfold_helper_custom_paper_width_mm", 600.0)),
+            float(getattr(scene, "tsunfold_custom_paper_width_mm", 600.0)),
         )
         height = max(
             1.0,
-            float(getattr(scene, "unfold_helper_custom_paper_height_mm", 900.0)),
+            float(getattr(scene, "tsunfold_custom_paper_height_mm", 900.0)),
         )
         # Custom width/height are literal. No automatic portrait/landscape swap.
         return width, height
@@ -401,7 +401,7 @@ def _paper_dimensions_mm(scene):
     portrait = (min(base_w, base_h), max(base_w, base_h))
     landscape = (portrait[1], portrait[0])
 
-    orientation = scene.unfold_helper_orientation
+    orientation = scene.tsunfold_orientation
     if orientation == "LANDSCAPE":
         return landscape
     if orientation == "PORTRAIT":
@@ -418,7 +418,7 @@ def _smooth_curve_segments_world_xy(obj, samples_per_segment=32):
     if (
         obj is None
         or obj.type != 'CURVE'
-        or not bool(obj.get("unfold_helper_smooth_generated", False))
+        or not bool(obj.get("tsunfold_smooth_generated", False))
     ):
         return []
 
@@ -463,7 +463,7 @@ def _smooth_curve_segments_world_xy(obj, samples_per_segment=32):
 
 def _preview_outline_segments(context):
     """Return the outline matching the currently displayed finish mode."""
-    mode = context.scene.get("unfold_helper_display_mode", "POLY")
+    mode = context.scene.get("tsunfold_display_mode", "POLY")
 
     if mode == "SMOOTH":
         # Prefer active smooth object.
@@ -471,7 +471,7 @@ def _preview_outline_segments(context):
         if (
             obj
             and obj.type == 'CURVE'
-            and bool(obj.get("unfold_helper_smooth_generated", False))
+            and bool(obj.get("tsunfold_smooth_generated", False))
             and not obj.hide_viewport
         ):
             return _smooth_curve_segments_world_xy(obj)
@@ -480,7 +480,7 @@ def _preview_outline_segments(context):
         for candidate in bpy.data.objects:
             if (
                 candidate.type == 'CURVE'
-                and bool(candidate.get("unfold_helper_smooth_generated", False))
+                and bool(candidate.get("tsunfold_smooth_generated", False))
                 and not candidate.hide_viewport
             ):
                 return _smooth_curve_segments_world_xy(candidate)
@@ -493,7 +493,7 @@ def _preview_outline_segments(context):
     for candidate in bpy.data.objects:
         if (
             candidate.type == 'MESH'
-            and bool(candidate.get("unfold_helper_generated", False))
+            and bool(candidate.get("tsunfold_generated", False))
             and not candidate.hide_viewport
         ):
             return _boundary_segments_world_xy(candidate)
@@ -507,8 +507,8 @@ def _draw_paper_guide():
         return
 
     scene = context.scene
-    show_paper = getattr(scene, "unfold_helper_show_paper", True)
-    show_preview = getattr(scene, "unfold_helper_preview", False)
+    show_paper = getattr(scene, "tsunfold_show_paper", True)
+    show_preview = getattr(scene, "tsunfold_preview", False)
 
     if not show_paper and not show_preview:
         return
@@ -649,14 +649,14 @@ def _pattern_sanitize_arrow_axis(scene):
     axis = str(
         getattr(
             scene,
-            "pattern_helper_arrow_up_axis",
+            "tsunfold_arrow_up_axis",
             "Z",
         )
     )
 
     if axis not in {"X", "Y", "Z"}:
         try:
-            scene.pattern_helper_arrow_up_axis = "Z"
+            scene.tsunfold_arrow_up_axis = "Z"
         except Exception:
             pass
         return "Z"
@@ -666,7 +666,7 @@ def _pattern_sanitize_arrow_axis(scene):
 
 
 def _pattern_manual_layout_active(scene):
-    return bool(scene.get("pattern_helper_manual_layout_active", False))
+    return bool(scene.get("tsunfold_manual_layout_active", False))
 
 
 def _pattern_setting_updated(self, context):
@@ -683,7 +683,7 @@ def _pattern_notch_setting_updated(self, context):
     # Division changes in AUTO mode also rebuild the actual auto-notch
     # annotations immediately, so the count/positions update live.
     try:
-        if str(getattr(scene, "pattern_helper_notch_mode", "AUTO")) != "AUTO":
+        if str(getattr(scene, "tsunfold_notch_mode", "AUTO")) != "AUTO":
             return
 
         source = _pattern_seam_source(context)
@@ -723,17 +723,17 @@ def _pattern_print_preview_source_visibility(context, preview_on):
             unfold = _resolve_unfold_mesh_for_layout(context)
             if unfold is not None:
                 source = bpy.data.objects.get(
-                    unfold.get("unfold_helper_source", "")
+                    unfold.get("tsunfold_source", "")
                 )
 
         if source is None:
             return
 
-        scene["pattern_helper_preview_source_name"] = source.name
-        scene["pattern_helper_preview_source_hide_get"] = bool(
+        scene["tsunfold_preview_source_name"] = source.name
+        scene["tsunfold_preview_source_hide_get"] = bool(
             source.hide_get()
         )
-        scene["pattern_helper_preview_source_hide_viewport"] = bool(
+        scene["tsunfold_preview_source_hide_viewport"] = bool(
             source.hide_viewport
         )
 
@@ -742,7 +742,7 @@ def _pattern_print_preview_source_visibility(context, preview_on):
 
     else:
         source_name = str(
-            scene.get("pattern_helper_preview_source_name", "")
+            scene.get("tsunfold_preview_source_name", "")
         )
         source = bpy.data.objects.get(source_name)
 
@@ -750,14 +750,14 @@ def _pattern_print_preview_source_visibility(context, preview_on):
             try:
                 source.hide_viewport = bool(
                     scene.get(
-                        "pattern_helper_preview_source_hide_viewport",
+                        "tsunfold_preview_source_hide_viewport",
                         False,
                     )
                 )
                 source.hide_set(
                     bool(
                         scene.get(
-                            "pattern_helper_preview_source_hide_get",
+                            "tsunfold_preview_source_hide_get",
                             False,
                         )
                     )
@@ -765,9 +765,9 @@ def _pattern_print_preview_source_visibility(context, preview_on):
             except Exception:
                 pass
 
-        scene["pattern_helper_preview_source_name"] = ""
-        scene["pattern_helper_preview_source_hide_get"] = False
-        scene["pattern_helper_preview_source_hide_viewport"] = False
+        scene["tsunfold_preview_source_name"] = ""
+        scene["tsunfold_preview_source_hide_get"] = False
+        scene["tsunfold_preview_source_hide_viewport"] = False
 
     _tag_redraw()
 
@@ -790,7 +790,7 @@ def _spacing_updated(self, context):
         except RuntimeError:
             return
 
-    _pack_islands(context, obj, context.scene.unfold_helper_spacing_mm)
+    _pack_islands(context, obj, context.scene.tsunfold_spacing_mm)
 
     if was_edit:
         try:
@@ -1046,13 +1046,13 @@ def _segments_bbox(segments):
 
 
 def _export_paper_dimensions(scene, shape_w_mm, shape_h_mm):
-    paper_key = str(getattr(scene, "unfold_helper_paper_size", "A4"))
+    paper_key = str(getattr(scene, "tsunfold_paper_size", "A4"))
 
     if paper_key == "CUSTOM":
         return _paper_dimensions_mm(scene)
 
     orientation = str(
-        getattr(scene, "unfold_helper_orientation", "PORTRAIT")
+        getattr(scene, "tsunfold_orientation", "PORTRAIT")
     )
     base_w, base_h = PAPER_SIZES_MM[paper_key]
     portrait = (min(base_w, base_h), max(base_w, base_h))
@@ -1541,8 +1541,8 @@ def _remove_previous_smooth_for_source(source_obj):
     for obj in list(bpy.data.objects):
         if (
             obj.type == 'CURVE'
-            and bool(obj.get("unfold_helper_smooth_generated", False))
-            and obj.get("unfold_helper_smooth_source") == source_obj.name
+            and bool(obj.get("tsunfold_smooth_generated", False))
+            and obj.get("tsunfold_smooth_source") == source_obj.name
         ):
             curve_data = obj.data
             bpy.data.objects.remove(obj, do_unlink=True)
@@ -1709,8 +1709,8 @@ def _create_smooth_curve(context, source_obj, preserve_length=True):
     )
     context.collection.objects.link(curve_obj)
 
-    curve_obj["unfold_helper_smooth_generated"] = True
-    curve_obj["unfold_helper_smooth_source"] = source_obj.name
+    curve_obj["tsunfold_smooth_generated"] = True
+    curve_obj["tsunfold_smooth_source"] = source_obj.name
 
     scene = context.scene
     original_mm = _bu_to_mm(scene, total_original)
@@ -1720,11 +1720,11 @@ def _create_smooth_curve(context, source_obj, preserve_length=True):
     if original_mm > 1e-9:
         diff_pct = ((smooth_mm - original_mm) / original_mm) * 100.0
 
-    curve_obj["unfold_helper_original_length_mm"] = original_mm
-    curve_obj["unfold_helper_smooth_length_mm"] = smooth_mm
-    curve_obj["unfold_helper_length_diff_pct"] = diff_pct
-    curve_obj["unfold_helper_corner_count"] = total_corners
-    curve_obj["unfold_helper_bezier_point_count"] = total_bezier_points
+    curve_obj["tsunfold_original_length_mm"] = original_mm
+    curve_obj["tsunfold_smooth_length_mm"] = smooth_mm
+    curve_obj["tsunfold_length_diff_pct"] = diff_pct
+    curve_obj["tsunfold_corner_count"] = total_corners
+    curve_obj["tsunfold_bezier_point_count"] = total_bezier_points
 
     for o in context.selected_objects:
         o.select_set(False)
@@ -1745,7 +1745,7 @@ def _active_smooth_object(context):
     if (
         obj
         and obj.type == 'CURVE'
-        and bool(obj.get("unfold_helper_smooth_generated", False))
+        and bool(obj.get("tsunfold_smooth_generated", False))
     ):
         return obj
     return None
@@ -1960,8 +1960,8 @@ def _mirror_world_point_for_target(target, world_point, mirror_x=False, mirror_z
 
 
 def _symmetry_variants(scene):
-    use_x = bool(getattr(scene, "unfold_helper_surface_symmetry_x", False))
-    use_z = bool(getattr(scene, "unfold_helper_surface_symmetry_z", False))
+    use_x = bool(getattr(scene, "tsunfold_surface_symmetry_x", False))
+    use_z = bool(getattr(scene, "tsunfold_surface_symmetry_z", False))
 
     variants = [(False, False)]
     if use_x:
@@ -2070,7 +2070,7 @@ def _create_curve_from_annotation_strokes(context, strokes):
 
     curve_obj = bpy.data.objects.new("AnnotationSeamGuide", curve_data)
     context.collection.objects.link(curve_obj)
-    curve_obj["unfold_helper_annotation_guide"] = True
+    curve_obj["tsunfold_annotation_guide"] = True
 
     return curve_obj
 
@@ -2078,7 +2078,7 @@ def _create_curve_from_annotation_strokes(context, strokes):
 def _find_annotation_guide():
     guides = [
         o for o in bpy.data.objects
-        if o.type == 'CURVE' and bool(o.get("unfold_helper_annotation_guide", False))
+        if o.type == 'CURVE' and bool(o.get("tsunfold_annotation_guide", False))
     ]
     if not guides:
         return None
@@ -2393,7 +2393,7 @@ class TSUNFOLD_OT_surface_seam_pen(bpy.types.Operator):
                 ])
 
         for obj in list(bpy.data.objects):
-            if obj.type == 'CURVE' and bool(obj.get("unfold_helper_annotation_guide", False)):
+            if obj.type == 'CURVE' and bool(obj.get("tsunfold_annotation_guide", False)):
                 _delete_object_and_data(obj)
 
         guide = _create_curve_from_annotation_strokes(context, all_strokes)
@@ -2410,7 +2410,7 @@ class TSUNFOLD_OT_surface_seam_pen(bpy.types.Operator):
         mod.wrap_mode = 'ON_SURFACE'
         mod.offset = 0.0002
 
-        guide["unfold_helper_surface_pen_target"] = target.name
+        guide["tsunfold_surface_pen_target"] = target.name
 
         for o in context.selected_objects:
             o.select_set(False)
@@ -2533,7 +2533,7 @@ class TSUNFOLD_OT_annotation_to_curve_guide(bpy.types.Operator):
 
         # Remove previous generated guide(s).
         for obj in list(bpy.data.objects):
-            if obj.type == 'CURVE' and bool(obj.get("unfold_helper_annotation_guide", False)):
+            if obj.type == 'CURVE' and bool(obj.get("tsunfold_annotation_guide", False)):
                 _delete_object_and_data(obj)
 
         guide = _create_curve_from_annotation_strokes(context, strokes)
@@ -2626,7 +2626,7 @@ class TSUNFOLD_OT_annotation_curve_knife_seam(bpy.types.Operator):
 
         # Prefer the exact Mesh remembered by the surface pen.
         mesh_obj = None
-        target_name = guide.get("unfold_helper_surface_pen_target", "")
+        target_name = guide.get("tsunfold_surface_pen_target", "")
         if target_name:
             candidate = bpy.data.objects.get(target_name)
             if candidate and candidate.type == 'MESH':
@@ -2732,7 +2732,7 @@ class TSUNFOLD_OT_delete_annotation_curve_guide(bpy.types.Operator):
     def execute(self, context):
         count = 0
         for obj in list(bpy.data.objects):
-            if obj.type == 'CURVE' and bool(obj.get("unfold_helper_annotation_guide", False)):
+            if obj.type == 'CURVE' and bool(obj.get("tsunfold_annotation_guide", False)):
                 _delete_object_and_data(obj)
                 count += 1
 
@@ -3211,9 +3211,9 @@ def _find_strict_mirrored_edge_xyz(
 
 
 def _symmetry_variants_xyz(scene):
-    use_x = bool(getattr(scene, "unfold_helper_seam_symmetry_x", False))
-    use_y = bool(getattr(scene, "unfold_helper_seam_symmetry_y", False))
-    use_z = bool(getattr(scene, "unfold_helper_seam_symmetry_z", False))
+    use_x = bool(getattr(scene, "tsunfold_seam_symmetry_x", False))
+    use_y = bool(getattr(scene, "tsunfold_seam_symmetry_y", False))
+    use_z = bool(getattr(scene, "tsunfold_seam_symmetry_z", False))
 
     variants = []
     for mx in ([False, True] if use_x else [False]):
@@ -3234,13 +3234,13 @@ def _sync_blender_mesh_symmetry(context, obj=None):
 
     mesh = obj.data
     mesh.use_mirror_x = bool(
-        getattr(context.scene, "unfold_helper_seam_symmetry_x", False)
+        getattr(context.scene, "tsunfold_seam_symmetry_x", False)
     )
     mesh.use_mirror_y = bool(
-        getattr(context.scene, "unfold_helper_seam_symmetry_y", False)
+        getattr(context.scene, "tsunfold_seam_symmetry_y", False)
     )
     mesh.use_mirror_z = bool(
-        getattr(context.scene, "unfold_helper_seam_symmetry_z", False)
+        getattr(context.scene, "tsunfold_seam_symmetry_z", False)
     )
 
 
@@ -3477,7 +3477,7 @@ def _pattern_auto_notch_division_value(scene):
     """Safely normalize auto-notch division selector to 2 / 3 / 4."""
     raw = getattr(
         scene,
-        "pattern_helper_auto_notch_divisions",
+        "tsunfold_auto_notch_divisions",
         "3",
     )
 
@@ -3499,7 +3499,7 @@ def _pattern_refresh_auto_notches(context, source_obj):
 
     _pattern_sync_live_seams(source_obj)
 
-    mode = str(getattr(context.scene, "pattern_helper_notch_mode", "AUTO"))
+    mode = str(getattr(context.scene, "tsunfold_notch_mode", "AUTO"))
     items = _pattern_get_annotations(source_obj)
 
     # Preserve manual notches and every other annotation type.
@@ -3521,7 +3521,7 @@ def _pattern_refresh_auto_notches(context, source_obj):
     )
 
     color = _pattern_color_value(
-        context.scene.pattern_helper_notch_color
+        context.scene.tsunfold_notch_color
     )
 
     count = 0
@@ -3576,8 +3576,8 @@ def _pattern_delete_generated_for_source(context, source_obj):
         for obj in list(bpy.data.objects)
         if (
             obj.type == 'MESH'
-            and bool(obj.get("unfold_helper_generated", False))
-            and obj.get("unfold_helper_source", "") == source_obj.name
+            and bool(obj.get("tsunfold_generated", False))
+            and obj.get("tsunfold_source", "") == source_obj.name
         )
     ]
 
@@ -3588,10 +3588,10 @@ def _pattern_delete_generated_for_source(context, source_obj):
         for obj in list(bpy.data.objects)
         if (
             obj.type == 'CURVE'
-            and bool(obj.get("unfold_helper_smooth_generated", False))
+            and bool(obj.get("tsunfold_smooth_generated", False))
             and (
-                obj.get("unfold_helper_smooth_source", "") in old_names
-                or obj.get("unfold_helper_source", "") == source_obj.name
+                obj.get("tsunfold_smooth_source", "") in old_names
+                or obj.get("tsunfold_source", "") == source_obj.name
             )
         )
     ]
@@ -3612,10 +3612,10 @@ def _pattern_delete_generated_for_source(context, source_obj):
             bpy.data.meshes.remove(data)
         total += 1
 
-    context.scene.pattern_helper_pattern_preview = False
-    context.scene.unfold_helper_preview = False
-    context.scene["pattern_helper_preview_prev_active"] = ""
-    context.scene["unfold_helper_display_mode"] = "POLY"
+    context.scene.tsunfold_pattern_preview = False
+    context.scene.tsunfold_preview = False
+    context.scene["tsunfold_preview_prev_active"] = ""
+    context.scene["tsunfold_display_mode"] = "POLY"
     _pattern_invalidate_layout_cache()
 
     return total
@@ -3756,11 +3756,11 @@ class TSUNFOLD_OT_start_seam(bpy.types.Operator):
     def execute(self, context):
         obj = context.active_object
 
-        context.scene.unfold_helper_seam_symmetry_x = False
-        context.scene.unfold_helper_seam_symmetry_y = False
-        context.scene.unfold_helper_seam_symmetry_z = False
-        context.scene["pattern_helper_seam_source"] = obj.name
-        context.scene["pattern_helper_seam_preview_ready"] = False
+        context.scene.tsunfold_seam_symmetry_x = False
+        context.scene.tsunfold_seam_symmetry_y = False
+        context.scene.tsunfold_seam_symmetry_z = False
+        context.scene["tsunfold_seam_source"] = obj.name
+        context.scene["tsunfold_seam_preview_ready"] = False
 
         if obj.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
@@ -3841,7 +3841,7 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        return obj is not None and obj.type == 'MESH' and not bool(obj.get("unfold_helper_generated", False))
+        return obj is not None and obj.type == 'MESH' and not bool(obj.get("tsunfold_generated", False))
 
     def execute(self, context):
         src_obj = context.active_object
@@ -3936,7 +3936,7 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
             self.report({'ERROR'}, "平面Meshを生成できませんでした。")
             return {'CANCELLED'}
 
-        _pack_islands(context, result, context.scene.unfold_helper_spacing_mm)
+        _pack_islands(context, result, context.scene.tsunfold_spacing_mm)
         _pattern_invalidate_layout_cache()
         _show_generated_from_top(context, result)
         _focus_selected_unfold(context, top_view=True)
@@ -3949,7 +3949,7 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
 
 
 def _pattern_seam_source(context):
-    name = context.scene.get("pattern_helper_seam_source", "")
+    name = context.scene.get("tsunfold_seam_source", "")
     obj = bpy.data.objects.get(name)
     if obj is not None and obj.type == 'MESH':
         return obj
@@ -3958,13 +3958,13 @@ def _pattern_seam_source(context):
     if active is not None:
         if (
             active.type == 'MESH'
-            and not bool(active.get("unfold_helper_generated", False))
+            and not bool(active.get("tsunfold_generated", False))
         ):
             return active
 
-        if bool(active.get("unfold_helper_generated", False)):
+        if bool(active.get("tsunfold_generated", False)):
             src = bpy.data.objects.get(
-                active.get("unfold_helper_source", "")
+                active.get("tsunfold_source", "")
             )
             if src is not None and src.type == 'MESH':
                 return src
@@ -3985,7 +3985,7 @@ class TSUNFOLD_OT_load_seamed_object(bpy.types.Operator):
         return (
             obj is not None
             and obj.type == 'MESH'
-            and not bool(obj.get("unfold_helper_generated", False))
+            and not bool(obj.get("tsunfold_generated", False))
         )
 
     def execute(self, context):
@@ -3996,7 +3996,7 @@ class TSUNFOLD_OT_load_seamed_object(bpy.types.Operator):
             self.report({'WARNING'}, "シーム付きMeshオブジェクトを選択してください")
             return {'CANCELLED'}
 
-        if bool(obj.get("unfold_helper_generated", False)):
+        if bool(obj.get("tsunfold_generated", False)):
             self.report({'WARNING'}, "展開図ではなく元の3Dモデルを選択してください")
             return {'CANCELLED'}
 
@@ -4021,8 +4021,8 @@ class TSUNFOLD_OT_load_seamed_object(bpy.types.Operator):
             )
             return {'CANCELLED'}
 
-        context.scene["pattern_helper_seam_source"] = obj.name
-        context.scene["pattern_helper_seam_preview_ready"] = False
+        context.scene["tsunfold_seam_source"] = obj.name
+        context.scene["tsunfold_seam_preview_ready"] = False
 
         _pattern_clear_island_highlight()
         _pattern_clear_live_preview()
@@ -4072,7 +4072,7 @@ class TSUNFOLD_OT_build_pattern(bpy.types.Operator):
         source.hide_viewport = False
         source.select_set(True)
         context.view_layer.objects.active = source
-        context.scene["pattern_helper_seam_source"] = source.name
+        context.scene["tsunfold_seam_source"] = source.name
 
         # A new build is always a full regeneration from the CURRENT seams on the loaded source model.
         _pattern_remove_auto_notches(source)
@@ -4095,13 +4095,13 @@ class TSUNFOLD_OT_build_pattern(bpy.types.Operator):
         if 'FINISHED' not in result:
             return {'CANCELLED'}
 
-        context.scene["pattern_helper_seam_preview_ready"] = False
+        context.scene["tsunfold_seam_preview_ready"] = False
 
         auto_notch_count = 0
         if str(
             getattr(
                 context.scene,
-                "pattern_helper_notch_mode",
+                "tsunfold_notch_mode",
                 "AUTO",
             )
         ) == "AUTO":
@@ -4138,8 +4138,8 @@ class TSUNFOLD_OT_cancel_pattern(bpy.types.Operator):
         _pattern_delete_generated_for_source(context, source)
         _pattern_remove_auto_notches(source)
 
-        context.scene.pattern_helper_correspondence_mode = False
-        context.scene["pattern_helper_seam_preview_ready"] = False
+        context.scene.tsunfold_correspondence_mode = False
+        context.scene["tsunfold_seam_preview_ready"] = False
 
         _pattern_clear_island_highlight()
         _pattern_clear_live_preview()
@@ -4170,7 +4170,7 @@ class TSUNFOLD_OT_cancel_pattern(bpy.types.Operator):
         except Exception:
             pass
 
-        context.scene["pattern_helper_seam_preview_ready"] = False
+        context.scene["tsunfold_seam_preview_ready"] = False
         _tag_redraw()
         self.report({'INFO'}, "型紙情報を破棄して、現在のシーム編集へ戻りました")
         return {'FINISHED'}
@@ -4207,17 +4207,17 @@ class TSUNFOLD_OT_confirm_pattern(bpy.types.Operator):
         source.select_set(True)
         context.view_layer.objects.active = source
 
-        context.scene.unfold_helper_seam_symmetry_x = False
-        context.scene.unfold_helper_seam_symmetry_y = False
-        context.scene.unfold_helper_seam_symmetry_z = False
-        context.scene.pattern_helper_active_tool = "NONE"
-        context.scene["pattern_helper_modal_running"] = False
-        context.scene["pattern_helper_seam_preview_ready"] = False
+        context.scene.tsunfold_seam_symmetry_x = False
+        context.scene.tsunfold_seam_symmetry_y = False
+        context.scene.tsunfold_seam_symmetry_z = False
+        context.scene.tsunfold_active_tool = "NONE"
+        context.scene["tsunfold_modal_running"] = False
+        context.scene["tsunfold_seam_preview_ready"] = False
 
         if str(
             getattr(
                 context.scene,
-                "pattern_helper_notch_mode",
+                "tsunfold_notch_mode",
                 "AUTO",
             )
         ) == "AUTO":
@@ -4246,7 +4246,7 @@ class TSUNFOLD_OT_make_smooth_line(bpy.types.Operator):
         return (
             obj is not None
             and obj.type == 'MESH'
-            and bool(obj.get("unfold_helper_generated", False))
+            and bool(obj.get("tsunfold_generated", False))
         )
 
     def execute(self, context):
@@ -4289,7 +4289,7 @@ class TSUNFOLD_OT_select_unfold_source(bpy.types.Operator):
 
     def execute(self, context):
         smooth = context.active_object
-        source_name = smooth.get("unfold_helper_smooth_source", "")
+        source_name = smooth.get("tsunfold_smooth_source", "")
         source = bpy.data.objects.get(source_name)
 
         if source is None:
@@ -4314,21 +4314,21 @@ class TSUNFOLD_OT_show_poly(bpy.types.Operator):
         source = None
 
         if smooth:
-            source_name = smooth.get("unfold_helper_smooth_source", "")
+            source_name = smooth.get("tsunfold_smooth_source", "")
             source = bpy.data.objects.get(source_name)
 
         if source is None:
             obj = context.active_object
-            if obj and obj.type == 'MESH' and bool(obj.get("unfold_helper_generated", False)):
+            if obj and obj.type == 'MESH' and bool(obj.get("tsunfold_generated", False)):
                 source = obj
 
         for obj in bpy.data.objects:
-            if obj.type == 'CURVE' and bool(obj.get("unfold_helper_smooth_generated", False)):
+            if obj.type == 'CURVE' and bool(obj.get("tsunfold_smooth_generated", False)):
                 obj.hide_viewport = True
                 obj.hide_render = True
 
         for obj in bpy.data.objects:
-            if obj.type == 'MESH' and bool(obj.get("unfold_helper_generated", False)):
+            if obj.type == 'MESH' and bool(obj.get("tsunfold_generated", False)):
                 obj.hide_viewport = False
                 obj.hide_render = False
 
@@ -4338,7 +4338,7 @@ class TSUNFOLD_OT_show_poly(bpy.types.Operator):
             source.select_set(True)
             context.view_layer.objects.active = source
 
-        context.scene["unfold_helper_display_mode"] = "POLY"
+        context.scene["tsunfold_display_mode"] = "POLY"
         _tag_redraw()
         return {'FINISHED'}
 
@@ -4352,11 +4352,11 @@ class TSUNFOLD_OT_show_smooth(bpy.types.Operator):
         source = None
         obj = context.active_object
 
-        if obj and obj.type == 'MESH' and bool(obj.get("unfold_helper_generated", False)):
+        if obj and obj.type == 'MESH' and bool(obj.get("tsunfold_generated", False)):
             source = obj
 
-        elif obj and obj.type == 'CURVE' and bool(obj.get("unfold_helper_smooth_generated", False)):
-            source_name = obj.get("unfold_helper_smooth_source", "")
+        elif obj and obj.type == 'CURVE' and bool(obj.get("tsunfold_smooth_generated", False)):
+            source_name = obj.get("tsunfold_smooth_source", "")
             source = bpy.data.objects.get(source_name)
 
         if source is None:
@@ -4367,8 +4367,8 @@ class TSUNFOLD_OT_show_smooth(bpy.types.Operator):
         for candidate in bpy.data.objects:
             if (
                 candidate.type == 'CURVE'
-                and bool(candidate.get("unfold_helper_smooth_generated", False))
-                and candidate.get("unfold_helper_smooth_source") == source.name
+                and bool(candidate.get("tsunfold_smooth_generated", False))
+                and candidate.get("tsunfold_smooth_source") == source.name
             ):
                 smooth_obj = candidate
                 break
@@ -4380,12 +4380,12 @@ class TSUNFOLD_OT_show_smooth(bpy.types.Operator):
                 return {'CANCELLED'}
 
         for candidate in bpy.data.objects:
-            if candidate.type == 'MESH' and bool(candidate.get("unfold_helper_generated", False)):
+            if candidate.type == 'MESH' and bool(candidate.get("tsunfold_generated", False)):
                 candidate.hide_viewport = True
                 candidate.hide_render = True
 
         for candidate in bpy.data.objects:
-            if candidate.type == 'CURVE' and bool(candidate.get("unfold_helper_smooth_generated", False)):
+            if candidate.type == 'CURVE' and bool(candidate.get("tsunfold_smooth_generated", False)):
                 candidate.hide_viewport = False
                 candidate.hide_render = False
 
@@ -4394,7 +4394,7 @@ class TSUNFOLD_OT_show_smooth(bpy.types.Operator):
         smooth_obj.select_set(True)
         context.view_layer.objects.active = smooth_obj
 
-        context.scene["unfold_helper_display_mode"] = "POLY"
+        context.scene["tsunfold_display_mode"] = "POLY"
 
         # Markings are not duplicated/stored for smooth mode.
         # They are recalculated against the current smooth outline on redraw,
@@ -4413,7 +4413,7 @@ def _resolve_unfold_mesh_for_layout(context):
     if (
         obj is not None
         and obj.type == 'MESH'
-        and bool(obj.get("unfold_helper_generated", False))
+        and bool(obj.get("tsunfold_generated", False))
     ):
         return obj
 
@@ -4421,26 +4421,26 @@ def _resolve_unfold_mesh_for_layout(context):
     if (
         obj is not None
         and obj.type == 'CURVE'
-        and bool(obj.get("unfold_helper_smooth_generated", False))
+        and bool(obj.get("tsunfold_smooth_generated", False))
     ):
-        source_name = obj.get("unfold_helper_source", "")
+        source_name = obj.get("tsunfold_source", "")
         if source_name:
             candidate = bpy.data.objects.get(source_name)
             if (
                 candidate is not None
                 and candidate.type == 'MESH'
-                and bool(candidate.get("unfold_helper_generated", False))
+                and bool(candidate.get("tsunfold_generated", False))
             ):
                 return candidate
 
         # Fallback: smooth object may carry source unfold name under another key.
-        source_name = obj.get("unfold_helper_unfold_source", "")
+        source_name = obj.get("tsunfold_unfold_source", "")
         if source_name:
             candidate = bpy.data.objects.get(source_name)
             if (
                 candidate is not None
                 and candidate.type == 'MESH'
-                and bool(candidate.get("unfold_helper_generated", False))
+                and bool(candidate.get("tsunfold_generated", False))
             ):
                 return candidate
 
@@ -4448,7 +4448,7 @@ def _resolve_unfold_mesh_for_layout(context):
     for candidate in bpy.data.objects:
         if (
             candidate.type == 'MESH'
-            and bool(candidate.get("unfold_helper_generated", False))
+            and bool(candidate.get("tsunfold_generated", False))
             and not candidate.hide_viewport
         ):
             return candidate
@@ -4457,7 +4457,7 @@ def _resolve_unfold_mesh_for_layout(context):
     for candidate in bpy.data.objects:
         if (
             candidate.type == 'MESH'
-            and bool(candidate.get("unfold_helper_generated", False))
+            and bool(candidate.get("tsunfold_generated", False))
         ):
             return candidate
 
@@ -4477,7 +4477,7 @@ class TSUNFOLD_OT_auto_layout(bpy.types.Operator):
         return (
             obj is not None
             and obj.type == 'MESH'
-            and bool(obj.get("unfold_helper_generated", False))
+            and bool(obj.get("tsunfold_generated", False))
         )
 
     def execute(self, context):
@@ -4518,11 +4518,11 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
         return (
             obj is not None
             and obj.type == 'MESH'
-            and bool(obj.get("unfold_helper_generated", False))
+            and bool(obj.get("tsunfold_generated", False))
         )
 
     def invoke(self, context, event):
-        context.scene["pattern_helper_manual_layout_active"] = True
+        context.scene["tsunfold_manual_layout_active"] = True
         _pattern_clear_island_highlight()
         _pattern_clear_live_preview()
         _tag_redraw()
@@ -4534,11 +4534,11 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
 
         # Smooth finishing is a separate Curve. Manual layout edits operate
         # on the real flat Mesh, so temporarily return to POLY display.
-        context.scene["unfold_helper_display_mode"] = "POLY"
+        context.scene["tsunfold_display_mode"] = "POLY"
         for candidate in bpy.data.objects:
             if (
                 candidate.type == 'CURVE'
-                and bool(candidate.get("unfold_helper_smooth_generated", False))
+                and bool(candidate.get("tsunfold_smooth_generated", False))
             ):
                 candidate.hide_viewport = True
                 candidate.hide_set(True)
@@ -4587,7 +4587,7 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
         if (
             obj is None
             or obj.type != 'MESH'
-            or not bool(obj.get("unfold_helper_generated", False))
+            or not bool(obj.get("tsunfold_generated", False))
             or obj.mode != 'EDIT'
         ):
             self._finish(context)
@@ -4676,7 +4676,7 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
         if (
             obj is not None
             and obj.type == 'MESH'
-            and bool(obj.get("unfold_helper_generated", False))
+            and bool(obj.get("tsunfold_generated", False))
             and obj.mode == 'EDIT'
         ):
             try:
@@ -4743,7 +4743,7 @@ class TSUNFOLD_OT_layout_confirm(bpy.types.Operator):
             )
             return {'CANCELLED'}
 
-        context.scene["pattern_helper_manual_layout_active"] = False
+        context.scene["tsunfold_manual_layout_active"] = False
         _pattern_invalidate_layout_cache()
         _tag_redraw()
 
@@ -4763,21 +4763,21 @@ class TSUNFOLD_OT_delete_unfold(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        context.scene["pattern_helper_manual_layout_active"] = False
+        context.scene["tsunfold_manual_layout_active"] = False
         try:
-            context.scene.pattern_helper_pattern_preview = False
-            context.scene["pattern_helper_preview_prev_active"] = ""
+            context.scene.tsunfold_pattern_preview = False
+            context.scene["tsunfold_preview_prev_active"] = ""
         except Exception:
             pass
 
         mesh_targets = [
             obj for obj in list(bpy.data.objects)
-            if obj.type == 'MESH' and bool(obj.get("unfold_helper_generated", False))
+            if obj.type == 'MESH' and bool(obj.get("tsunfold_generated", False))
         ]
 
         curve_targets = [
             obj for obj in list(bpy.data.objects)
-            if obj.type == 'CURVE' and bool(obj.get("unfold_helper_smooth_generated", False))
+            if obj.type == 'CURVE' and bool(obj.get("tsunfold_smooth_generated", False))
         ]
 
         total = 0
@@ -4797,8 +4797,8 @@ class TSUNFOLD_OT_delete_unfold(bpy.types.Operator):
             total += 1
 
         # Deleting the unfold result also clears viewport paper/preview overlays.
-        context.scene.unfold_helper_show_paper = False
-        context.scene.unfold_helper_preview = False
+        context.scene.tsunfold_show_paper = False
+        context.scene.tsunfold_preview = False
 
         if total == 0:
             self.report({'INFO'}, "展開図はありません。用紙枠とプレビューをOFFにしました")
@@ -4862,7 +4862,7 @@ class TSUNFOLD_OT_toggle_pattern_preview(bpy.types.Operator):
             for candidate in bpy.data.objects:
                 if (
                     candidate.type == 'MESH'
-                    and bool(candidate.get("unfold_helper_generated", False))
+                    and bool(candidate.get("tsunfold_generated", False))
                 ):
                     unfold = candidate
                     break
@@ -4871,11 +4871,11 @@ class TSUNFOLD_OT_toggle_pattern_preview(bpy.types.Operator):
             self.report({'WARNING'}, "先に「型紙展開」で型紙を作成してください")
             return {'CANCELLED'}
 
-        showing = bool(getattr(scene, "pattern_helper_pattern_preview", False))
+        showing = bool(getattr(scene, "tsunfold_pattern_preview", False))
 
         if not showing:
             active = context.active_object
-            scene["pattern_helper_preview_prev_active"] = (
+            scene["tsunfold_preview_prev_active"] = (
                 active.name if active is not None else ""
             )
 
@@ -4893,11 +4893,11 @@ class TSUNFOLD_OT_toggle_pattern_preview(bpy.types.Operator):
             for obj in bpy.data.objects:
                 if (
                     obj.type == 'CURVE'
-                    and bool(obj.get("unfold_helper_smooth_generated", False))
+                    and bool(obj.get("tsunfold_smooth_generated", False))
                 ):
                     obj.hide_viewport = True
 
-            scene.pattern_helper_pattern_preview = True
+            scene.tsunfold_pattern_preview = True
 
             # 表示切替だけ行い、ビュー方向・ズーム・注視点は変更しない。
             # 元モデルが「消えたように見える」原因になる自動フレーミングを廃止。
@@ -4907,11 +4907,11 @@ class TSUNFOLD_OT_toggle_pattern_preview(bpy.types.Operator):
             unfold.hide_set(True)
             unfold.hide_viewport = True
 
-            prev_name = scene.get("pattern_helper_preview_prev_active", "")
+            prev_name = scene.get("tsunfold_preview_prev_active", "")
             prev = bpy.data.objects.get(prev_name)
 
             if prev is None:
-                src_name = unfold.get("unfold_helper_source", "")
+                src_name = unfold.get("tsunfold_source", "")
                 prev = bpy.data.objects.get(src_name)
 
             if prev is not None:
@@ -4926,7 +4926,7 @@ class TSUNFOLD_OT_toggle_pattern_preview(bpy.types.Operator):
                     prev.select_set(True)
                     context.view_layer.objects.active = prev
 
-            scene.pattern_helper_pattern_preview = False
+            scene.tsunfold_pattern_preview = False
             self.report({'INFO'}, "型紙を隠して元の作業へ戻りました")
 
         _tag_redraw()
@@ -4950,15 +4950,15 @@ class TSUNFOLD_OT_toggle_preview(bpy.types.Operator):
                 return {'CANCELLED'}
 
         scene = context.scene
-        scene.unfold_helper_preview = not scene.unfold_helper_preview
+        scene.tsunfold_preview = not scene.tsunfold_preview
 
         _pattern_print_preview_source_visibility(
             context,
-            bool(scene.unfold_helper_preview),
+            bool(scene.tsunfold_preview),
         )
         _tag_redraw()
 
-        if scene.unfold_helper_preview:
+        if scene.tsunfold_preview:
             self.report({'INFO'}, "Object Modeへ切り替えて印刷プレビュー ON")
         else:
             self.report({'INFO'}, "印刷プレビュー OFF")
@@ -4968,7 +4968,7 @@ class TSUNFOLD_OT_toggle_preview(bpy.types.Operator):
 
 def _export_outline_segments(context):
     """Return outline segments for the currently displayed finish."""
-    mode = context.scene.get("unfold_helper_display_mode", "POLY")
+    mode = context.scene.get("tsunfold_display_mode", "POLY")
     obj = context.active_object
 
     if (
@@ -4976,20 +4976,20 @@ def _export_outline_segments(context):
         or (
             obj
             and obj.type == 'CURVE'
-            and bool(obj.get("unfold_helper_smooth_generated", False))
+            and bool(obj.get("tsunfold_smooth_generated", False))
         )
     ):
         if (
             obj
             and obj.type == 'CURVE'
-            and bool(obj.get("unfold_helper_smooth_generated", False))
+            and bool(obj.get("tsunfold_smooth_generated", False))
         ):
             return _smooth_curve_segments_world_xy(obj)
 
         for candidate in bpy.data.objects:
             if (
                 candidate.type == 'CURVE'
-                and bool(candidate.get("unfold_helper_smooth_generated", False))
+                and bool(candidate.get("tsunfold_smooth_generated", False))
                 and not candidate.hide_viewport
             ):
                 return _smooth_curve_segments_world_xy(candidate)
@@ -4997,14 +4997,14 @@ def _export_outline_segments(context):
     if (
         obj
         and obj.type == 'MESH'
-        and bool(obj.get("unfold_helper_generated", False))
+        and bool(obj.get("tsunfold_generated", False))
     ):
         return _boundary_segments_world_xy(obj)
 
     for candidate in bpy.data.objects:
         if (
             candidate.type == 'MESH'
-            and bool(candidate.get("unfold_helper_generated", False))
+            and bool(candidate.get("tsunfold_generated", False))
             and not candidate.hide_viewport
         ):
             return _boundary_segments_world_xy(candidate)
@@ -5017,10 +5017,10 @@ def _can_export_current_finish(context):
     if obj is None:
         return False
 
-    if obj.type == 'MESH' and bool(obj.get("unfold_helper_generated", False)):
+    if obj.type == 'MESH' and bool(obj.get("tsunfold_generated", False)):
         return True
 
-    if obj.type == 'CURVE' and bool(obj.get("unfold_helper_smooth_generated", False)):
+    if obj.type == 'CURVE' and bool(obj.get("tsunfold_smooth_generated", False)):
         return True
 
     return False
@@ -5133,7 +5133,7 @@ class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
         obj = context.active_object
         filename = bpy.path.clean_name(obj.name) + ".png"
 
-        last_dir = context.scene.get("unfold_helper_last_export_dir", "")
+        last_dir = context.scene.get("tsunfold_last_export_dir", "")
         if last_dir and Path(last_dir).exists():
             self.filepath = str(Path(last_dir) / filename)
         else:
@@ -5302,7 +5302,7 @@ class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
             if bool(
                 getattr(
                     scene,
-                    "pattern_helper_auto_island_ids",
+                    "tsunfold_auto_island_ids",
                     True,
                 )
             ):
@@ -5354,7 +5354,7 @@ class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
             return {'CANCELLED'}
 
         # Remember the directory used for the latest successful export.
-        context.scene["unfold_helper_last_export_dir"] = str(filepath.parent)
+        context.scene["tsunfold_last_export_dir"] = str(filepath.parent)
 
         self.report(
             {'INFO'},
@@ -5368,10 +5368,10 @@ class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
 # 3D pattern annotation system
 # ------------------------------------------------------------
 
-_PATTERN_ANNOTATION_PROP = "pattern_helper_annotations_json"
+_PATTERN_ANNOTATION_PROP = "tsunfold_annotations_json"
 
 
-_PATTERN_FLAT_MEMO_PROP = "pattern_helper_flat_memos_json"
+_PATTERN_FLAT_MEMO_PROP = "tsunfold_flat_memos_json"
 
 # Runtime-only memo edit state.
 _pattern_selected_memo = {
@@ -5559,7 +5559,7 @@ def _pattern_raycast_flat_pattern_location(context, event):
 
         if (
             original.type != 'MESH'
-            or not bool(original.get("unfold_helper_generated", False))
+            or not bool(original.get("tsunfold_generated", False))
         ):
             return None
 
@@ -5573,7 +5573,7 @@ def _pattern_raycast_flat_pattern_location(context, event):
 
 
 def _pattern_marking_session_active(scene):
-    return bool(scene.get("pattern_helper_marking_session_active", False))
+    return bool(scene.get("tsunfold_marking_session_active", False))
 
 
 def _pattern_begin_marking_session(context, source_obj):
@@ -5588,18 +5588,18 @@ def _pattern_begin_marking_session(context, source_obj):
             if obj is not None
         ]
 
-        scene["pattern_helper_marking_prev_active"] = (
+        scene["tsunfold_marking_prev_active"] = (
             active.name if active is not None else ""
         )
-        scene["pattern_helper_marking_prev_selected_json"] = json.dumps(
+        scene["tsunfold_marking_prev_selected_json"] = json.dumps(
             selected_names,
             ensure_ascii=False,
         )
-        scene["pattern_helper_marking_prev_mode"] = (
+        scene["tsunfold_marking_prev_mode"] = (
             active.mode if active is not None else "OBJECT"
         )
-        scene["pattern_helper_marking_session_active"] = True
-        scene["pattern_helper_marking_finish_requested"] = False
+        scene["tsunfold_marking_session_active"] = True
+        scene["tsunfold_marking_finish_requested"] = False
 
     # Marking always happens on the original source Mesh in Object Mode.
     try:
@@ -5623,7 +5623,7 @@ def _pattern_begin_marking_session(context, source_obj):
 
 
 def _pattern_request_finish_marking(context):
-    context.scene["pattern_helper_marking_finish_requested"] = True
+    context.scene["tsunfold_marking_finish_requested"] = True
     _tag_redraw()
 
 
@@ -5632,18 +5632,18 @@ def _pattern_restore_work_state(context):
     scene = context.scene
 
     prev_active_name = scene.get(
-        "pattern_helper_marking_prev_active",
+        "tsunfold_marking_prev_active",
         "",
     )
     prev_mode = scene.get(
-        "pattern_helper_marking_prev_mode",
+        "tsunfold_marking_prev_mode",
         "OBJECT",
     )
 
     try:
         selected_names = json.loads(
             scene.get(
-                "pattern_helper_marking_prev_selected_json",
+                "tsunfold_marking_prev_selected_json",
                 "[]",
             )
         )
@@ -5698,13 +5698,13 @@ def _pattern_restore_work_state(context):
             except Exception:
                 pass
 
-    scene["pattern_helper_marking_session_active"] = False
-    scene["pattern_helper_marking_finish_requested"] = False
-    scene["pattern_helper_modal_running"] = False
-    scene.pattern_helper_active_tool = "NONE"
-    scene["pattern_helper_marking_prev_active"] = ""
-    scene["pattern_helper_marking_prev_selected_json"] = "[]"
-    scene["pattern_helper_marking_prev_mode"] = "OBJECT"
+    scene["tsunfold_marking_session_active"] = False
+    scene["tsunfold_marking_finish_requested"] = False
+    scene["tsunfold_modal_running"] = False
+    scene.tsunfold_active_tool = "NONE"
+    scene["tsunfold_marking_prev_active"] = ""
+    scene["tsunfold_marking_prev_selected_json"] = "[]"
+    scene["tsunfold_marking_prev_mode"] = "OBJECT"
 
     _tag_redraw()
 
@@ -5719,9 +5719,9 @@ class TSUNFOLD_OT_finish_marking(bpy.types.Operator):
             self.report({'INFO'}, "現在マーキングモードではありません")
             return {'CANCELLED'}
 
-        context.scene.pattern_helper_active_tool = "NONE"
+        context.scene.tsunfold_active_tool = "NONE"
         _pattern_clear_live_preview()
-        context.scene["pattern_helper_modal_running"] = False
+        context.scene["tsunfold_modal_running"] = False
         _pattern_request_finish_marking(context)
         _pattern_restore_work_state(context)
 
@@ -5735,12 +5735,12 @@ def _pattern_source_object_from_context(context):
     if (
         obj is not None
         and obj.type == 'MESH'
-        and not bool(obj.get("unfold_helper_generated", False))
+        and not bool(obj.get("tsunfold_generated", False))
     ):
         return obj
 
-    if obj is not None and bool(obj.get("unfold_helper_generated", False)):
-        name = obj.get("unfold_helper_source", "")
+    if obj is not None and bool(obj.get("tsunfold_generated", False)):
+        name = obj.get("tsunfold_source", "")
         src = bpy.data.objects.get(name)
         if src is not None and src.type == 'MESH':
             return src
@@ -5748,12 +5748,12 @@ def _pattern_source_object_from_context(context):
     if (
         obj is not None
         and obj.type == 'CURVE'
-        and bool(obj.get("unfold_helper_smooth_generated", False))
+        and bool(obj.get("tsunfold_smooth_generated", False))
     ):
-        unfold_name = obj.get("unfold_helper_smooth_source", "")
+        unfold_name = obj.get("tsunfold_smooth_source", "")
         unfold = bpy.data.objects.get(unfold_name)
         if unfold is not None:
-            name = unfold.get("unfold_helper_source", "")
+            name = unfold.get("tsunfold_source", "")
             src = bpy.data.objects.get(name)
             if src is not None and src.type == 'MESH':
                 return src
@@ -5768,8 +5768,8 @@ def _pattern_unfold_for_source(source_obj):
     for obj in bpy.data.objects:
         if (
             obj.type == 'MESH'
-            and bool(obj.get("unfold_helper_generated", False))
-            and obj.get("unfold_helper_source", "") == source_obj.name
+            and bool(obj.get("tsunfold_generated", False))
+            and obj.get("tsunfold_source", "") == source_obj.name
         ):
             return obj
 
@@ -5842,10 +5842,10 @@ def _pattern_anchor_normal_source_local(source_obj, anchor):
 def _pattern_flat_mapping(unfold_obj):
     try:
         vert_src = json.loads(
-            unfold_obj.get("pattern_helper_flat_vertex_source_json", "[]")
+            unfold_obj.get("tsunfold_flat_vertex_source_json", "[]")
         )
         face_src = json.loads(
-            unfold_obj.get("pattern_helper_flat_face_source_json", "[]")
+            unfold_obj.get("tsunfold_flat_face_source_json", "[]")
         )
     except Exception:
         return [], []
@@ -6097,7 +6097,7 @@ def _pattern_source_notch_segment(context, source_obj, item):
 
     length = _mm_to_bu(
         context.scene,
-        float(getattr(context.scene, "pattern_helper_notch_length_mm", 6.0))
+        float(getattr(context.scene, "tsunfold_notch_length_mm", 6.0))
     )
 
     p1 = p_world - across * length * 0.5
@@ -6125,7 +6125,7 @@ def _pattern_flat_edge_faces(unfold_obj):
 def _pattern_flat_edge_source_indices(unfold_obj):
     try:
         values = json.loads(
-            unfold_obj.get("pattern_helper_flat_edge_source_json", "[]")
+            unfold_obj.get("tsunfold_flat_edge_source_json", "[]")
         )
         return [int(v) for v in values]
     except Exception:
@@ -6135,7 +6135,7 @@ def _pattern_flat_edge_source_indices(unfold_obj):
 def _pattern_flat_vertex_source_indices(unfold_obj):
     try:
         values = json.loads(
-            unfold_obj.get("pattern_helper_flat_vertex_source_json", "[]")
+            unfold_obj.get("tsunfold_flat_vertex_source_json", "[]")
         )
         return [int(v) for v in values]
     except Exception:
@@ -6163,7 +6163,7 @@ def _pattern_invalidate_layout_cache():
 def _pattern_flat_face_source_indices_local(unfold_obj):
     try:
         values = json.loads(
-            unfold_obj.get("pattern_helper_flat_face_source_json", "[]")
+            unfold_obj.get("tsunfold_flat_face_source_json", "[]")
         )
         return [int(v) for v in values]
     except Exception:
@@ -6184,7 +6184,7 @@ def _pattern_alpha_label(index):
 
 def _pattern_island_label(scene, index):
     style = str(
-        getattr(scene, "pattern_helper_island_id_style", "ALPHA")
+        getattr(scene, "tsunfold_island_id_style", "ALPHA")
     )
     if style == "NUMBER":
         return str(int(index) + 1)
@@ -6668,7 +6668,7 @@ def _pattern_auto_island_metadata(context, source_obj, unfold_obj):
         len(unfold_obj.data.vertices),
         len(unfold_obj.data.edges),
         len(unfold_obj.data.polygons),
-        str(getattr(scene, "pattern_helper_island_id_style", "ALPHA")),
+        str(getattr(scene, "tsunfold_island_id_style", "ALPHA")),
     )
 
     if _pattern_auto_island_cache.get("key") == cache_key:
@@ -6855,7 +6855,7 @@ def _pattern_auto_island_metadata(context, source_obj, unfold_obj):
         connection_size_mm = float(
             getattr(
                 context.scene,
-                "pattern_helper_island_id_size_mm",
+                "tsunfold_island_id_size_mm",
                 8.0,
             )
         )
@@ -6928,13 +6928,13 @@ def _pattern_compute_auto_flat_oriented_text_items(
 
     scene = context.scene
     size_mm = float(
-        getattr(scene, "pattern_helper_island_id_size_mm", 8.0)
+        getattr(scene, "tsunfold_island_id_size_mm", 8.0)
     )
     color = tuple(
         float(v)
         for v in getattr(
             scene,
-            "pattern_helper_island_id_color",
+            "tsunfold_island_id_color",
             (0.0, 0.0, 0.0),
         )
     )
@@ -7019,17 +7019,17 @@ def _pattern_auto_flat_oriented_text_items(
         source_obj.name if source_obj else "",
         unfold_obj.name if unfold_obj else "",
         tuple(round(float(v), 7) for row in unfold_obj.matrix_world for v in row),
-        str(getattr(scene, "pattern_helper_island_id_style", "ALPHA")),
-        round(float(getattr(scene, "pattern_helper_island_id_size_mm", 8.0)), 4),
+        str(getattr(scene, "tsunfold_island_id_style", "ALPHA")),
+        round(float(getattr(scene, "tsunfold_island_id_size_mm", 8.0)), 4),
         tuple(
             round(float(v), 4)
             for v in getattr(
                 scene,
-                "pattern_helper_island_id_color",
+                "tsunfold_island_id_color",
                 (0.0, 0.0, 0.0),
             )
         ),
-        str(getattr(scene, "pattern_helper_arrow_up_axis", "Z")),
+        str(getattr(scene, "tsunfold_arrow_up_axis", "Z")),
     )
 
     cached = _pattern_draw_cache.get(key)
@@ -7072,13 +7072,13 @@ def _pattern_auto_source_id_text_items(context, source_obj, unfold_obj):
 
     scene = context.scene
     size_mm = float(
-        getattr(scene, "pattern_helper_island_id_size_mm", 8.0)
+        getattr(scene, "tsunfold_island_id_size_mm", 8.0)
     )
     color = tuple(
         float(v)
         for v in getattr(
             scene,
-            "pattern_helper_island_id_color",
+            "tsunfold_island_id_color",
             (0.0, 0.0, 0.0),
         )
     )
@@ -7530,7 +7530,7 @@ def _pattern_safe_arrow_placement(
             0.35,
             float(getattr(
                 context.scene,
-                "pattern_helper_arrow_thickness_mm",
+                "tsunfold_arrow_thickness_mm",
                 0.8,
             )) * 0.75,
         ),
@@ -7720,7 +7720,7 @@ def _pattern_safe_arrow_placement(
 
 
 def _pattern_compute_auto_arrow_segments(context, source_obj, unfold_obj):
-    if str(getattr(context.scene, "pattern_helper_arrow_mode", "AUTO")) != "AUTO":
+    if str(getattr(context.scene, "tsunfold_arrow_mode", "AUTO")) != "AUTO":
         return []
 
     records, _face_to_island, _adjacency = _pattern_auto_island_metadata(
@@ -7737,20 +7737,20 @@ def _pattern_compute_auto_arrow_segments(context, source_obj, unfold_obj):
 
     requested_length = _mm_to_bu(
         scene,
-        float(getattr(scene, "pattern_helper_auto_arrow_length_mm", 24.0)),
+        float(getattr(scene, "tsunfold_auto_arrow_length_mm", 24.0)),
     )
     head = _mm_to_bu(
         scene,
-        float(getattr(scene, "pattern_helper_arrow_head_mm", 8.0)),
+        float(getattr(scene, "tsunfold_arrow_head_mm", 8.0)),
     )
     thickness = float(
-        getattr(scene, "pattern_helper_arrow_thickness_mm", 0.8)
+        getattr(scene, "tsunfold_arrow_thickness_mm", 0.8)
     )
     color = tuple(
         float(v)
         for v in getattr(
             scene,
-            "pattern_helper_arrow_color",
+            "tsunfold_arrow_color",
             (0.0, 0.0, 0.0),
         )
     )
@@ -7816,16 +7816,16 @@ def _pattern_auto_arrow_segments(context, source_obj, unfold_obj):
         source_obj.name if source_obj else "",
         unfold_obj.name if unfold_obj else "",
         tuple(round(float(v), 7) for row in unfold_obj.matrix_world for v in row),
-        str(getattr(scene, "pattern_helper_arrow_mode", "AUTO")),
-        str(getattr(scene, "pattern_helper_arrow_up_axis", "Z")),
-        round(float(getattr(scene, "pattern_helper_auto_arrow_length_mm", 24.0)), 4),
-        round(float(getattr(scene, "pattern_helper_arrow_head_mm", 8.0)), 4),
-        round(float(getattr(scene, "pattern_helper_arrow_thickness_mm", 0.8)), 4),
+        str(getattr(scene, "tsunfold_arrow_mode", "AUTO")),
+        str(getattr(scene, "tsunfold_arrow_up_axis", "Z")),
+        round(float(getattr(scene, "tsunfold_auto_arrow_length_mm", 24.0)), 4),
+        round(float(getattr(scene, "tsunfold_arrow_head_mm", 8.0)), 4),
+        round(float(getattr(scene, "tsunfold_arrow_thickness_mm", 0.8)), 4),
         tuple(
             round(float(v), 4)
             for v in getattr(
                 scene,
-                "pattern_helper_arrow_color",
+                "tsunfold_arrow_color",
                 (0.0, 0.0, 0.0),
             )
         ),
@@ -7873,7 +7873,7 @@ def _pattern_flat_notch_segments(context, source_obj, unfold_obj, item):
 
     length = _mm_to_bu(
         context.scene,
-        float(getattr(context.scene, "pattern_helper_notch_length_mm", 6.0))
+        float(getattr(context.scene, "tsunfold_notch_length_mm", 6.0))
     )
 
     result = []
@@ -7938,8 +7938,8 @@ def _pattern_visible_smooth_for_unfold(unfold_obj):
     for candidate in bpy.data.objects:
         if (
             candidate.type == 'CURVE'
-            and bool(candidate.get("unfold_helper_smooth_generated", False))
-            and candidate.get("unfold_helper_smooth_source", "") == unfold_obj.name
+            and bool(candidate.get("tsunfold_smooth_generated", False))
+            and candidate.get("tsunfold_smooth_source", "") == unfold_obj.name
             and not candidate.hide_viewport
         ):
             return candidate
@@ -7992,7 +7992,7 @@ def _pattern_smooth_notch_segments(context, source_obj, unfold_obj, item):
         float(
             getattr(
                 context.scene,
-                "pattern_helper_notch_length_mm",
+                "tsunfold_notch_length_mm",
                 6.0,
             )
         ),
@@ -8072,7 +8072,7 @@ def _pattern_source_colored_segments(context, source_obj):
                 notch_thickness = float(
                     getattr(
                         context.scene,
-                        "pattern_helper_notch_thickness_mm",
+                        "tsunfold_notch_thickness_mm",
                         0.6,
                     )
                 )
@@ -8085,7 +8085,7 @@ def _pattern_source_colored_segments(context, source_obj):
 
         elif kind == "arrow":
             if str(
-                getattr(context.scene, "pattern_helper_arrow_mode", "AUTO")
+                getattr(context.scene, "tsunfold_arrow_mode", "AUTO")
             ) == "NONE":
                 continue
 
@@ -8137,7 +8137,7 @@ def _pattern_compute_flat_colored_segments(context, source_obj, unfold_obj):
         color = _pattern_item_color(item)
 
         if kind == "notch_edge":
-            if context.scene.get("unfold_helper_display_mode", "POLY") == "SMOOTH":
+            if context.scene.get("tsunfold_display_mode", "POLY") == "SMOOTH":
                 notch_segments = _pattern_smooth_notch_segments(
                     context,
                     source_obj,
@@ -8155,7 +8155,7 @@ def _pattern_compute_flat_colored_segments(context, source_obj, unfold_obj):
             notch_thickness = float(
                 getattr(
                     context.scene,
-                    "pattern_helper_notch_thickness_mm",
+                    "tsunfold_notch_thickness_mm",
                     0.6,
                 )
             )
@@ -8169,7 +8169,7 @@ def _pattern_compute_flat_colored_segments(context, source_obj, unfold_obj):
 
         elif kind == "arrow":
             if str(
-                getattr(context.scene, "pattern_helper_arrow_mode", "AUTO")
+                getattr(context.scene, "tsunfold_arrow_mode", "AUTO")
             ) == "NONE":
                 continue
 
@@ -8230,9 +8230,9 @@ def _pattern_flat_colored_segments(context, source_obj, unfold_obj):
         unfold_obj.name if unfold_obj else "",
         tuple(round(float(v), 7) for row in unfold_obj.matrix_world for v in row),
         annotations_raw,
-        str(getattr(scene, "pattern_helper_arrow_mode", "AUTO")),
-        round(float(getattr(scene, "pattern_helper_notch_length_mm", 6.0)), 4),
-        str(scene.get("unfold_helper_display_mode", "POLY")),
+        str(getattr(scene, "tsunfold_arrow_mode", "AUTO")),
+        round(float(getattr(scene, "tsunfold_notch_length_mm", 6.0)), 4),
+        str(scene.get("tsunfold_display_mode", "POLY")),
     )
 
     cached = _pattern_draw_cache.get(key)
@@ -8283,7 +8283,7 @@ def _pattern_source_text_items(source_obj):
         and bool(
             getattr(
                 context.scene,
-                "pattern_helper_auto_island_ids",
+                "tsunfold_auto_island_ids",
                 True,
             )
         )
@@ -8445,7 +8445,7 @@ def _draw_pattern_marks_3d():
         if source is None:
             unfold_fallback = _resolve_unfold_mesh_for_layout(context)
             if unfold_fallback is not None:
-                source_name = unfold_fallback.get("unfold_helper_source", "")
+                source_name = unfold_fallback.get("tsunfold_source", "")
                 source = bpy.data.objects.get(source_name)
 
         if source is not None:
@@ -8521,7 +8521,7 @@ def _draw_pattern_marks_3d():
             # remain untouched.
             # ------------------------------------------------------
             loaded_source_name = str(
-                context.scene.get("pattern_helper_seam_source", "")
+                context.scene.get("tsunfold_seam_source", "")
             )
             source_visible = (
                 not bool(source.hide_get())
@@ -8550,7 +8550,7 @@ def _draw_pattern_marks_3d():
                     and not bool(
                         getattr(
                             context.scene,
-                            "pattern_helper_lightweight_view",
+                            "tsunfold_lightweight_view",
                             True,
                         )
                     )
@@ -8576,7 +8576,7 @@ def _draw_pattern_marks_3d():
                                     float(
                                         getattr(
                                             context.scene,
-                                            "pattern_helper_notch_thickness_mm",
+                                            "tsunfold_notch_thickness_mm",
                                             0.6,
                                         )
                                     ) * 4.0,
@@ -8625,7 +8625,7 @@ def _draw_pattern_marks_3d():
                 and (
                     not unfold.hide_viewport
                     or context.scene.get(
-                        "unfold_helper_display_mode",
+                        "tsunfold_display_mode",
                         "POLY",
                     ) == "SMOOTH"
                 )
@@ -8701,7 +8701,7 @@ def _draw_pattern_marks_3d():
                                     float(
                                         getattr(
                                             context.scene,
-                                            "pattern_helper_notch_thickness_mm",
+                                            "tsunfold_notch_thickness_mm",
                                             0.6,
                                         )
                                     ) * 4.0,
@@ -8727,7 +8727,7 @@ def _draw_pattern_marks_3d():
                         and (
                             not unfold.hide_viewport
                             or context.scene.get(
-                                "unfold_helper_display_mode",
+                                "tsunfold_display_mode",
                                 "POLY",
                             ) == "SMOOTH"
                         )
@@ -8738,7 +8738,7 @@ def _draw_pattern_marks_3d():
                             "t": float(_pattern_live_preview["notch_t"]),
                         }
                         if context.scene.get(
-                            "unfold_helper_display_mode",
+                            "tsunfold_display_mode",
                             "POLY",
                         ) == "SMOOTH":
                             preview_notches = _pattern_smooth_notch_segments(
@@ -8794,7 +8794,7 @@ def _draw_pattern_marks_3d():
                                 direction.normalize()
                                 head = _mm_to_bu(
                                     context.scene,
-                                    context.scene.pattern_helper_arrow_head_mm,
+                                    context.scene.tsunfold_arrow_head_mm,
                                 )
                                 normal = (
                                     source.matrix_world.to_3x3()
@@ -8816,7 +8816,7 @@ def _draw_pattern_marks_3d():
                                     max(
                                         1.0,
                                         float(
-                                            context.scene.pattern_helper_arrow_thickness_mm
+                                            context.scene.tsunfold_arrow_thickness_mm
                                         ) * 2.0,
                                     )
                                 )
@@ -8861,12 +8861,12 @@ def _pattern_draw_direction_arrow_overlay(context):
     scene = context.scene
 
     if not bool(
-        getattr(scene, "pattern_helper_show_direction_arrow", True)
+        getattr(scene, "tsunfold_show_direction_arrow", True)
     ):
         return
 
     if str(
-        getattr(scene, "pattern_helper_arrow_mode", "AUTO")
+        getattr(scene, "tsunfold_arrow_mode", "AUTO")
     ) == "NONE":
         return
 
@@ -8876,7 +8876,7 @@ def _pattern_draw_direction_arrow_overlay(context):
         unfold = _resolve_unfold_mesh_for_layout(context)
         if unfold is not None:
             source = bpy.data.objects.get(
-                unfold.get("unfold_helper_source", "")
+                unfold.get("tsunfold_source", "")
             )
 
     if source is None:
@@ -9032,7 +9032,7 @@ def _pattern_arrow_hud_text(scene):
     mode = str(
         getattr(
             scene,
-            "pattern_helper_arrow_mode",
+            "tsunfold_arrow_mode",
             "AUTO",
         )
     )
@@ -9084,7 +9084,7 @@ def _pattern_draw_arrow_hud(context, font_id=0):
         if str(
             getattr(
                 context.scene,
-                "pattern_helper_arrow_mode",
+                "tsunfold_arrow_mode",
                 "AUTO",
             )
         ) == "AUTO":
@@ -9130,7 +9130,7 @@ def _draw_pattern_text_2d():
     if source is None:
         unfold_fallback = _resolve_unfold_mesh_for_layout(context)
         if unfold_fallback is not None:
-            source_name = unfold_fallback.get("unfold_helper_source", "")
+            source_name = unfold_fallback.get("tsunfold_source", "")
             source = bpy.data.objects.get(source_name)
 
     if source is None:
@@ -9216,7 +9216,7 @@ def _draw_pattern_text_2d():
         lightweight = bool(
             getattr(
                 context.scene,
-                "pattern_helper_lightweight_view",
+                "tsunfold_lightweight_view",
                 True,
             )
         )
@@ -9263,7 +9263,7 @@ def _draw_pattern_text_2d():
             and (
                 not unfold.hide_viewport
                 or context.scene.get(
-                    "unfold_helper_display_mode",
+                    "tsunfold_display_mode",
                     "POLY",
                 ) == "SMOOTH"
             )
@@ -9305,7 +9305,7 @@ def _draw_pattern_text_2d():
             if bool(
                 getattr(
                     context.scene,
-                    "pattern_helper_auto_island_ids",
+                    "tsunfold_auto_island_ids",
                     True,
                 )
             ):
@@ -9360,17 +9360,17 @@ def _draw_pattern_text_2d():
                     if screen is not None:
                         if preview_mode == "NUMBER":
                             preview_text = str(
-                                context.scene.pattern_helper_next_number
+                                context.scene.tsunfold_next_number
                             )
                             size_mm = float(
-                                context.scene.pattern_helper_number_size_mm
+                                context.scene.tsunfold_number_size_mm
                             )
                         else:
                             preview_text = str(
-                                context.scene.pattern_helper_custom_text
+                                context.scene.tsunfold_custom_text
                             )
                             size_mm = float(
-                                context.scene.pattern_helper_text_size_mm
+                                context.scene.tsunfold_text_size_mm
                             )
 
                         if preview_text:
@@ -9502,13 +9502,13 @@ def _pattern_current_color(scene, mode=None):
     mode = mode or _pattern_active_tool(scene)
 
     if mode == "NOTCH":
-        return _pattern_color_value(scene.pattern_helper_notch_color)
+        return _pattern_color_value(scene.tsunfold_notch_color)
     if mode == "NUMBER":
-        return _pattern_color_value(scene.pattern_helper_number_color)
+        return _pattern_color_value(scene.tsunfold_number_color)
     if mode == "TEXT":
-        return _pattern_color_value(scene.pattern_helper_text_color)
+        return _pattern_color_value(scene.tsunfold_text_color)
     if mode == "ARROW":
-        return _pattern_color_value(scene.pattern_helper_arrow_color)
+        return _pattern_color_value(scene.tsunfold_arrow_color)
 
     return [0.0, 0.0, 0.0]
 
@@ -9595,17 +9595,17 @@ def _pattern_preview_anchor_world(source_obj, anchor):
 
 def _pattern_active_tool(scene):
     try:
-        return str(scene.pattern_helper_active_tool)
+        return str(scene.tsunfold_active_tool)
     except Exception:
-        return str(scene.get("pattern_helper_active_tool", "NONE"))
+        return str(scene.get("tsunfold_active_tool", "NONE"))
 
 
 def _pattern_set_active_tool(scene, mode):
     value = str(mode)
     try:
-        scene.pattern_helper_active_tool = value
+        scene.tsunfold_active_tool = value
     except Exception:
-        scene["pattern_helper_active_tool"] = value
+        scene["tsunfold_active_tool"] = value
     _tag_redraw()
 
 
@@ -9621,16 +9621,16 @@ def _pattern_toggle_tool_invoke(operator, context, mode):
     if current == mode:
         _pattern_set_active_tool(context.scene, "NONE")
         _pattern_clear_live_preview()
-        context.scene["pattern_helper_modal_running"] = False
-        context.scene["pattern_helper_marking_finish_requested"] = False
+        context.scene["tsunfold_modal_running"] = False
+        context.scene["tsunfold_marking_finish_requested"] = False
         operator.report({'INFO'}, "マーキングツールをOFFにしました")
         return {'FINISHED'}
 
     _pattern_begin_marking_session(context, source)
 
     if mode == "NUMBER":
-        context.scene.pattern_helper_next_number = int(
-            context.scene.pattern_helper_number_start
+        context.scene.tsunfold_next_number = int(
+            context.scene.tsunfold_number_start
         )
 
     _pattern_set_active_tool(context.scene, mode)
@@ -9638,11 +9638,11 @@ def _pattern_toggle_tool_invoke(operator, context, mode):
     _pattern_live_preview["mode"] = mode
     _pattern_live_preview["source"] = source.name
 
-    if not bool(context.scene.get("pattern_helper_modal_running", False)):
+    if not bool(context.scene.get("tsunfold_modal_running", False)):
         operator._source_name = source.name
         operator._first_anchor = None
         operator._last_mode = mode
-        context.scene["pattern_helper_modal_running"] = True
+        context.scene["tsunfold_modal_running"] = True
         context.window_manager.modal_handler_add(operator)
         return {'RUNNING_MODAL'}
 
@@ -9652,16 +9652,16 @@ def _pattern_toggle_tool_invoke(operator, context, mode):
 def _pattern_modal_common(operator, context, event):
     scene = context.scene
 
-    if bool(scene.get("pattern_helper_marking_finish_requested", False)):
+    if bool(scene.get("tsunfold_marking_finish_requested", False)):
         _pattern_clear_live_preview()
-        scene["pattern_helper_modal_running"] = False
+        scene["tsunfold_modal_running"] = False
         return {'FINISHED'}
 
     mode = _pattern_active_tool(scene)
 
     if mode == "NONE":
         _pattern_clear_live_preview()
-        scene["pattern_helper_modal_running"] = False
+        scene["tsunfold_modal_running"] = False
         operator._first_anchor = None
         return {'FINISHED'}
 
@@ -9683,8 +9683,8 @@ def _pattern_modal_common(operator, context, event):
     if event.type == 'ESC' and event.value == 'PRESS':
         _pattern_set_active_tool(scene, "NONE")
         _pattern_clear_live_preview()
-        scene["pattern_helper_modal_running"] = False
-        scene["pattern_helper_marking_finish_requested"] = False
+        scene["tsunfold_modal_running"] = False
+        scene["tsunfold_marking_finish_requested"] = False
         operator._first_anchor = None
         return {'FINISHED'}
 
@@ -9736,7 +9736,7 @@ def _pattern_modal_common(operator, context, event):
         return {'PASS_THROUGH'}
 
     if source is None:
-        scene["pattern_helper_modal_running"] = False
+        scene["tsunfold_modal_running"] = False
         return {'CANCELLED'}
 
     detail = _pattern_raycast_source_detail(
@@ -9753,7 +9753,7 @@ def _pattern_modal_common(operator, context, event):
     items = _pattern_get_annotations(source)
 
     if mode == "NOTCH":
-        if scene.pattern_helper_notch_mode == "NONE":
+        if scene.tsunfold_notch_mode == "NONE":
             operator.report({'WARNING'}, "合印方式が「合印なし」です")
             return {'RUNNING_MODAL'}
 
@@ -9782,23 +9782,23 @@ def _pattern_modal_common(operator, context, event):
         return {'RUNNING_MODAL'}
 
     if mode == "NUMBER":
-        value = int(scene.pattern_helper_next_number)
+        value = int(scene.tsunfold_next_number)
 
         items.append({
             "type": "number",
             "value": value,
             "anchor": anchor,
-            "size_mm": float(scene.pattern_helper_number_size_mm),
+            "size_mm": float(scene.tsunfold_number_size_mm),
             "color": color,
         })
         _pattern_set_annotations(source, items)
 
-        scene.pattern_helper_next_number = value + 1
+        scene.tsunfold_next_number = value + 1
         operator.report({'INFO'}, f"型紙番号 {value} を追加しました")
         return {'RUNNING_MODAL'}
 
     if mode == "TEXT":
-        text = str(scene.pattern_helper_custom_text)
+        text = str(scene.tsunfold_custom_text)
 
         if not text:
             operator.report({'WARNING'}, "任意テキストを入力してください")
@@ -9808,7 +9808,7 @@ def _pattern_modal_common(operator, context, event):
             "type": "text",
             "text": text,
             "anchor": anchor,
-            "size_mm": float(scene.pattern_helper_text_size_mm),
+            "size_mm": float(scene.tsunfold_text_size_mm),
             "color": color,
         })
         _pattern_set_annotations(source, items)
@@ -9818,7 +9818,7 @@ def _pattern_modal_common(operator, context, event):
 
     if mode == "ARROW":
         if str(
-            getattr(scene, "pattern_helper_arrow_mode", "AUTO")
+            getattr(scene, "tsunfold_arrow_mode", "AUTO")
         ) == "NONE":
             operator.report({'WARNING'}, "矢印方式が「なし」です")
             return {'RUNNING_MODAL'}
@@ -9836,8 +9836,8 @@ def _pattern_modal_common(operator, context, event):
             "a": operator._first_anchor,
             "b": anchor,
             "color": color,
-            "head_mm": float(scene.pattern_helper_arrow_head_mm),
-            "thickness_mm": float(scene.pattern_helper_arrow_thickness_mm),
+            "head_mm": float(scene.tsunfold_arrow_head_mm),
+            "thickness_mm": float(scene.tsunfold_arrow_thickness_mm),
         })
         _pattern_set_annotations(source, items)
 
@@ -9858,8 +9858,8 @@ class TSUNFOLD_OT_marking_tool_off(bpy.types.Operator):
     def execute(self, context):
         _pattern_set_active_tool(context.scene, "NONE")
         _pattern_clear_live_preview()
-        context.scene["pattern_helper_modal_running"] = False
-        context.scene["pattern_helper_marking_finish_requested"] = False
+        context.scene["tsunfold_modal_running"] = False
+        context.scene["tsunfold_marking_finish_requested"] = False
         _tag_redraw()
         self.report({'INFO'}, "マーキングツールをOFFにしました")
         return {'FINISHED'}
@@ -9948,19 +9948,19 @@ class TSUNFOLD_OT_set_text(bpy.types.Operator):
         try:
             _pattern_set_active_tool(context.scene, "NONE")
             _pattern_clear_live_preview()
-            context.scene["pattern_helper_modal_running"] = False
-            context.scene["pattern_helper_marking_finish_requested"] = False
+            context.scene["tsunfold_modal_running"] = False
+            context.scene["tsunfold_marking_finish_requested"] = False
         except Exception:
             pass
 
-        self.text_value = str(context.scene.pattern_helper_custom_text)
+        self.text_value = str(context.scene.tsunfold_custom_text)
         return context.window_manager.invoke_props_dialog(
             self,
             width=420,
         )
 
     def execute(self, context):
-        context.scene.pattern_helper_custom_text = str(self.text_value)
+        context.scene.tsunfold_custom_text = str(self.text_value)
         _tag_redraw()
         return {'FINISHED'}
 
@@ -9980,7 +9980,7 @@ class TSUNFOLD_OT_place_text(bpy.types.Operator):
     def invoke(self, context, event):
         if (
             _pattern_active_tool(context.scene) != "TEXT"
-            and not str(context.scene.pattern_helper_custom_text).strip()
+            and not str(context.scene.tsunfold_custom_text).strip()
         ):
             self.report({'WARNING'}, "先に文字を入力してください")
             return {'CANCELLED'}
@@ -10001,7 +10001,7 @@ class TSUNFOLD_OT_place_text(bpy.types.Operator):
 def _pattern_flat_face_source_map(unfold_obj):
     try:
         values = json.loads(
-            unfold_obj.get("pattern_helper_flat_face_source_json", "[]")
+            unfold_obj.get("tsunfold_flat_face_source_json", "[]")
         )
         return [int(v) for v in values]
     except Exception:
@@ -10241,7 +10241,7 @@ class TSUNFOLD_OT_confirm_flat_memo(bpy.types.Operator):
         if (
             unfold is None
             or unfold.type != 'MESH'
-            or not bool(unfold.get("unfold_helper_generated", False))
+            or not bool(unfold.get("tsunfold_generated", False))
         ):
             self.report({'WARNING'}, "配置先の型紙が見つかりません")
             return {'CANCELLED'}
@@ -10534,16 +10534,16 @@ class TSUNFOLD_OT_pick_corresponding_island(bpy.types.Operator):
         if bool(
             getattr(
                 scene,
-                "pattern_helper_correspondence_mode",
+                "tsunfold_correspondence_mode",
                 False,
             )
         ):
-            scene.pattern_helper_correspondence_mode = False
+            scene.tsunfold_correspondence_mode = False
             _pattern_clear_island_highlight()
             self.report({'INFO'}, "対応確認をOFFにしました")
             return {'FINISHED'}
 
-        scene.pattern_helper_correspondence_mode = True
+        scene.tsunfold_correspondence_mode = True
         context.window_manager.modal_handler_add(self)
         self.report(
             {'INFO'},
@@ -10632,14 +10632,14 @@ class TSUNFOLD_OT_pick_corresponding_island(bpy.types.Operator):
         if not bool(
             getattr(
                 scene,
-                "pattern_helper_correspondence_mode",
+                "tsunfold_correspondence_mode",
                 False,
             )
         ):
             return {'FINISHED'}
 
         if event.type == 'ESC' and event.value == 'PRESS':
-            scene.pattern_helper_correspondence_mode = False
+            scene.tsunfold_correspondence_mode = False
             _pattern_clear_island_highlight()
             return {'FINISHED'}
 
@@ -10663,11 +10663,11 @@ class TSUNFOLD_OT_pick_corresponding_island(bpy.types.Operator):
 
         if (
             hit_obj.type == 'MESH'
-            and bool(hit_obj.get("unfold_helper_generated", False))
+            and bool(hit_obj.get("tsunfold_generated", False))
         ):
             unfold = hit_obj
             source = bpy.data.objects.get(
-                unfold.get("unfold_helper_source", "")
+                unfold.get("tsunfold_source", "")
             )
             if source is None:
                 return {'RUNNING_MODAL'}
@@ -10683,7 +10683,7 @@ class TSUNFOLD_OT_pick_corresponding_island(bpy.types.Operator):
 
         elif (
             hit_obj.type == 'MESH'
-            and not bool(hit_obj.get("unfold_helper_generated", False))
+            and not bool(hit_obj.get("tsunfold_generated", False))
         ):
             source = hit_obj
             unfold = _pattern_unfold_for_source(source)
@@ -10717,7 +10717,7 @@ class TSUNFOLD_OT_clear_island_highlight(bpy.types.Operator):
     bl_label = "対応表示を解除"
 
     def execute(self, context):
-        context.scene.pattern_helper_correspondence_mode = False
+        context.scene.tsunfold_correspondence_mode = False
         _pattern_clear_island_highlight()
         return {'FINISHED'}
 
@@ -10733,8 +10733,8 @@ class TSUNFOLD_OT_toggle_direction_arrow(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        scene.pattern_helper_show_direction_arrow = not bool(
-            scene.pattern_helper_show_direction_arrow
+        scene.tsunfold_show_direction_arrow = not bool(
+            scene.tsunfold_show_direction_arrow
         )
         _tag_redraw()
         return {'FINISHED'}
@@ -10750,7 +10750,7 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
         if bool(
             getattr(
                 context.scene,
-                "unfold_helper_preview",
+                "tsunfold_preview",
                 False,
             )
         ):
@@ -10759,7 +10759,7 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
                 False,
             )
 
-        context.scene["pattern_helper_manual_layout_active"] = False
+        context.scene["tsunfold_manual_layout_active"] = False
         scene = context.scene
         source = _pattern_seam_source(context)
 
@@ -10767,7 +10767,7 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
             unfold = _resolve_unfold_mesh_for_layout(context)
             if unfold is not None:
                 source = bpy.data.objects.get(
-                    unfold.get("unfold_helper_source", "")
+                    unfold.get("tsunfold_source", "")
                 )
 
         if source is None:
@@ -10777,7 +10777,7 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
                 and active.type == 'MESH'
                 and not bool(
                     active.get(
-                        "unfold_helper_generated",
+                        "tsunfold_generated",
                         False,
                     )
                 )
@@ -10793,16 +10793,16 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
         _pattern_clear_live_preview()
         _pattern_clear_island_highlight()
 
-        scene.pattern_helper_correspondence_mode = False
-        scene["pattern_helper_modal_running"] = False
-        scene["pattern_helper_marking_session_active"] = False
-        scene["pattern_helper_marking_finish_requested"] = False
-        scene["pattern_helper_seam_preview_ready"] = False
+        scene.tsunfold_correspondence_mode = False
+        scene["tsunfold_modal_running"] = False
+        scene["tsunfold_marking_session_active"] = False
+        scene["tsunfold_marking_finish_requested"] = False
+        scene["tsunfold_seam_preview_ready"] = False
 
 
-        scene.unfold_helper_preview = False
-        scene.unfold_helper_show_paper = False
-        scene.pattern_helper_pattern_preview = False
+        scene.tsunfold_preview = False
+        scene.tsunfold_show_paper = False
+        scene.tsunfold_pattern_preview = False
 
         try:
             active = context.active_object
@@ -10839,9 +10839,9 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
             source.hide_viewport = False
             source.select_set(True)
             context.view_layer.objects.active = source
-            scene["pattern_helper_seam_source"] = ""
+            scene["tsunfold_seam_source"] = ""
         else:
-            scene["pattern_helper_seam_source"] = ""
+            scene["tsunfold_seam_source"] = ""
 
         _pattern_invalidate_layout_cache()
         _tag_redraw()
@@ -10867,7 +10867,7 @@ class TSUNFOLD_OT_clear_arrows_all(bpy.types.Operator):
             unfold = _resolve_unfold_mesh_for_layout(context)
             if unfold is not None:
                 source = bpy.data.objects.get(
-                    unfold.get("unfold_helper_source", "")
+                    unfold.get("tsunfold_source", "")
                 )
 
         if source is not None:
@@ -10878,7 +10878,7 @@ class TSUNFOLD_OT_clear_arrows_all(bpy.types.Operator):
             ]
             _pattern_set_annotations(source, items)
 
-        context.scene.pattern_helper_arrow_mode = "NONE"
+        context.scene.tsunfold_arrow_mode = "NONE"
         _pattern_clear_live_preview()
         _tag_redraw()
         self.report({'INFO'}, "自動・手動の矢印をすべて非表示/削除しました")
@@ -10899,7 +10899,7 @@ class TSUNFOLD_OT_delete_last_type(bpy.types.Operator):
             unfold = _resolve_unfold_mesh_for_layout(context)
             if unfold is not None:
                 source = bpy.data.objects.get(
-                    unfold.get("unfold_helper_source", "")
+                    unfold.get("tsunfold_source", "")
                 )
 
         if source is None:
@@ -10940,8 +10940,8 @@ class TSUNFOLD_OT_reset_number(bpy.types.Operator):
     bl_label = "番号を1に戻す"
 
     def execute(self, context):
-        context.scene.pattern_helper_number_start = 1
-        context.scene.pattern_helper_next_number = 1
+        context.scene.tsunfold_number_start = 1
+        context.scene.tsunfold_next_number = 1
         return {'FINISHED'}
 
 
@@ -10975,7 +10975,7 @@ class TSUNFOLD_OT_clear_annotations(bpy.types.Operator):
             unfold = _resolve_unfold_mesh_for_layout(context)
             if unfold is not None:
                 source = bpy.data.objects.get(
-                    unfold.get("unfold_helper_source", "")
+                    unfold.get("tsunfold_source", "")
                 )
 
         if source is None:
@@ -11085,7 +11085,7 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
         source_box = layout.box()
         source_box.label(text="1. モデルと型紙")
 
-        loaded_name = scene.get("pattern_helper_seam_source", "")
+        loaded_name = scene.get("tsunfold_seam_source", "")
         loaded_obj = bpy.data.objects.get(loaded_name) if loaded_name else None
 
         source_box.operator(
@@ -11107,7 +11107,7 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             )
             source_box.prop(
                 scene,
-                "pattern_helper_lightweight_view",
+                "tsunfold_lightweight_view",
                 text="軽量ビュー",
             )
 
@@ -11153,19 +11153,19 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
 
         notch_box.prop(
             scene,
-            "pattern_helper_notch_mode",
+            "tsunfold_notch_mode",
             text="方式",
         )
 
-        if scene.pattern_helper_notch_mode == "AUTO":
+        if scene.tsunfold_notch_mode == "AUTO":
             notch_box.prop(
                 scene,
-                "pattern_helper_auto_notch_divisions",
+                "tsunfold_auto_notch_divisions",
                 text="分割数",
             )
 
 
-        if scene.pattern_helper_notch_mode == "AUTO":
+        if scene.tsunfold_notch_mode == "AUTO":
             row = notch_box.row(align=True)
             row.operator(
                 "truescale_unfold.refresh_auto_notches",
@@ -11177,7 +11177,7 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 icon='X',
             )
 
-        if scene.pattern_helper_notch_mode != "NONE":
+        if scene.tsunfold_notch_mode != "NONE":
             notch_box.operator(
                 "truescale_unfold.start_notch",
                 text="手動で合印を追加",
@@ -11186,12 +11186,12 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             # Frequently changed geometry setting first.
             notch_box.prop(
                 scene,
-                "pattern_helper_notch_length_mm",
+                "tsunfold_notch_length_mm",
                 text="合印の長さ",
             )
             notch_box.prop(
                 scene,
-                "pattern_helper_notch_thickness_mm",
+                "tsunfold_notch_thickness_mm",
                 text="合印の太さ",
             )
 
@@ -11200,7 +11200,7 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             color_row.label(text="色")
             color_row.prop(
                 scene,
-                "pattern_helper_notch_color",
+                "tsunfold_notch_color",
                 text="",
             )
 
@@ -11216,21 +11216,21 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
 
         id_box.prop(
             scene,
-            "pattern_helper_auto_island_ids",
+            "tsunfold_auto_island_ids",
             text="自動IDを表示",
         )
 
-        if scene.pattern_helper_auto_island_ids:
+        if scene.tsunfold_auto_island_ids:
             id_box.prop(
                 scene,
-                "pattern_helper_island_id_style",
+                "tsunfold_island_id_style",
                 text="形式",
             )
 
             # Size first, color second.
             id_box.prop(
                 scene,
-                "pattern_helper_island_id_size_mm",
+                "tsunfold_island_id_size_mm",
                 text="ID文字サイズ",
             )
 
@@ -11248,38 +11248,38 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
 
         arrow_box.prop(
             scene,
-            "pattern_helper_show_direction_arrow",
+            "tsunfold_show_direction_arrow",
             text="水色の方向ガイド",
         )
 
         arrow_box.prop(
             scene,
-            "pattern_helper_arrow_mode",
+            "tsunfold_arrow_mode",
             text="方式",
         )
 
-        if scene.pattern_helper_arrow_mode == "AUTO":
+        if scene.tsunfold_arrow_mode == "AUTO":
             arrow_box.prop(
                 scene,
-                "pattern_helper_arrow_up_axis",
+                "tsunfold_arrow_up_axis",
                 text="上方向",
             )
 
             arrow_box.prop(
                 scene,
-                "pattern_helper_auto_arrow_length_mm",
+                "tsunfold_auto_arrow_length_mm",
                 text="矢印の長さ",
             )
 
-        if scene.pattern_helper_arrow_mode != "NONE":
+        if scene.tsunfold_arrow_mode != "NONE":
             arrow_box.prop(
                 scene,
-                "pattern_helper_arrow_head_mm",
+                "tsunfold_arrow_head_mm",
                 text="矢印ヘッド長さ",
             )
             arrow_box.prop(
                 scene,
-                "pattern_helper_arrow_thickness_mm",
+                "tsunfold_arrow_thickness_mm",
                 text="線の太さ",
             )
 
@@ -11287,11 +11287,11 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             color_row.label(text="色")
             color_row.prop(
                 scene,
-                "pattern_helper_arrow_color",
+                "tsunfold_arrow_color",
                 text="",
             )
 
-            if scene.pattern_helper_arrow_mode in {"AUTO", "CUSTOM"}:
+            if scene.tsunfold_arrow_mode in {"AUTO", "CUSTOM"}:
                 arrow_box.operator(
                     "truescale_unfold.start_arrow",
                     text="手動で矢印を追加",
@@ -11325,17 +11325,17 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             "truescale_unfold.pick_corresponding_island",
             text=(
                 "対応確認を終了"
-                if scene.pattern_helper_correspondence_mode
+                if scene.tsunfold_correspondence_mode
                 else "対応確認を開始"
             ),
-            depress=scene.pattern_helper_correspondence_mode,
+            depress=scene.tsunfold_correspondence_mode,
         )
         corr_box.operator(
             "truescale_unfold.clear_corresponding_island",
             text="対応ハイライトをクリア",
         )
 
-        if scene.pattern_helper_correspondence_mode:
+        if scene.tsunfold_correspondence_mode:
             corr_box.label(text="型紙を2回クリック → メモ追加")
             corr_box.label(text="既存メモをクリック → Rで回転")
 
@@ -11372,14 +11372,14 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             row = output.row(align=True)
             row.prop(
                 scene,
-                "unfold_helper_paper_size",
+                "tsunfold_paper_size",
                 text="用紙",
             )
 
-            if scene.unfold_helper_paper_size != "CUSTOM":
+            if scene.tsunfold_paper_size != "CUSTOM":
                 row.prop(
                     scene,
-                    "unfold_helper_orientation",
+                    "tsunfold_orientation",
                     text="向き",
                 )
             else:
@@ -11388,12 +11388,12 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 custom_row = custom.row(align=True)
                 custom_row.prop(
                     scene,
-                    "unfold_helper_custom_paper_width_mm",
+                    "tsunfold_custom_paper_width_mm",
                     text="幅",
                 )
                 custom_row.prop(
                     scene,
-                    "unfold_helper_custom_paper_height_mm",
+                    "tsunfold_custom_paper_height_mm",
                     text="高さ",
                 )
                 custom.label(text="入力した幅 × 高さをそのまま使用")
@@ -11405,7 +11405,7 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
 
             output.prop(
                 scene,
-                "unfold_helper_show_paper",
+                "tsunfold_show_paper",
                 text="用紙ガイドを表示",
             )
 
@@ -11439,11 +11439,11 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 "truescale_unfold.toggle_preview",
                 text=(
                     "印刷プレビューを終了"
-                    if scene.unfold_helper_preview
+                    if scene.tsunfold_preview
                     else "印刷プレビュー"
                 ),
                 icon='HIDE_OFF',
-                depress=scene.unfold_helper_preview,
+                depress=scene.tsunfold_preview,
             )
 
             output.operator(
@@ -11502,7 +11502,7 @@ classes = (
 
 
 
-def _unfold_helper_reset_overlays_on_load(_dummy=None):
+def _tsunfold_reset_overlays_on_load(_dummy=None):
     # Runs only after a .blend has loaded, when bpy.data is available.
     try:
         scenes = bpy.data.scenes
@@ -11511,36 +11511,36 @@ def _unfold_helper_reset_overlays_on_load(_dummy=None):
 
     for scene in scenes:
         try:
-            scene.unfold_helper_show_paper = False
+            scene.tsunfold_show_paper = False
         except Exception:
             pass
         try:
-            scene.unfold_helper_preview = False
+            scene.tsunfold_preview = False
         except Exception:
             pass
         try:
-            scene["pattern_helper_marking_session_active"] = False
-            scene["pattern_helper_marking_finish_requested"] = False
-            scene["pattern_helper_marking_prev_active"] = ""
-            scene["pattern_helper_marking_prev_selected_json"] = "[]"
-            scene["pattern_helper_marking_prev_mode"] = "OBJECT"
-            scene["pattern_helper_seam_source"] = ""
-            scene["pattern_helper_seam_preview_ready"] = False
-            scene["pattern_helper_modal_running"] = False
-            scene.pattern_helper_active_tool = "NONE"
-            scene.pattern_helper_correspondence_mode = False
-            scene.pattern_helper_auto_island_ids = True
-            scene.pattern_helper_island_id_style = "ALPHA"
-            scene.pattern_helper_arrow_mode = "AUTO"
-            scene.pattern_helper_arrow_up_axis = "Z"
-            scene.pattern_helper_number_start = 1
-            scene.pattern_helper_next_number = 1
-            scene.pattern_helper_notch_mode = "AUTO"
-            scene.pattern_helper_auto_notch_divisions = "3"
-            scene.pattern_helper_pattern_preview = False
-            scene["pattern_helper_preview_source_name"] = ""
-            scene["pattern_helper_preview_source_hide_get"] = False
-            scene["pattern_helper_preview_source_hide_viewport"] = False
+            scene["tsunfold_marking_session_active"] = False
+            scene["tsunfold_marking_finish_requested"] = False
+            scene["tsunfold_marking_prev_active"] = ""
+            scene["tsunfold_marking_prev_selected_json"] = "[]"
+            scene["tsunfold_marking_prev_mode"] = "OBJECT"
+            scene["tsunfold_seam_source"] = ""
+            scene["tsunfold_seam_preview_ready"] = False
+            scene["tsunfold_modal_running"] = False
+            scene.tsunfold_active_tool = "NONE"
+            scene.tsunfold_correspondence_mode = False
+            scene.tsunfold_auto_island_ids = True
+            scene.tsunfold_island_id_style = "ALPHA"
+            scene.tsunfold_arrow_mode = "AUTO"
+            scene.tsunfold_arrow_up_axis = "Z"
+            scene.tsunfold_number_start = 1
+            scene.tsunfold_next_number = 1
+            scene.tsunfold_notch_mode = "AUTO"
+            scene.tsunfold_auto_notch_divisions = "3"
+            scene.tsunfold_pattern_preview = False
+            scene["tsunfold_preview_source_name"] = ""
+            scene["tsunfold_preview_source_hide_get"] = False
+            scene["tsunfold_preview_source_hide_viewport"] = False
         except Exception:
             pass
 
@@ -11552,7 +11552,7 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    bpy.types.Scene.unfold_helper_spacing_mm = FloatProperty(
+    bpy.types.Scene.tsunfold_spacing_mm = FloatProperty(
         name="アイランド間隔",
         description="展開後のアイランド同士の間隔。変更するとリアルタイムで再配置します",
         default=10.0,
@@ -11562,7 +11562,7 @@ def register():
         update=_spacing_updated,
     )
 
-    bpy.types.Scene.unfold_helper_paper_size = EnumProperty(
+    bpy.types.Scene.tsunfold_paper_size = EnumProperty(
         name="用紙サイズ",
         description="用紙ガイドとPNGの用紙サイズ",
         items=[
@@ -11580,7 +11580,7 @@ def register():
         update=_paper_setting_updated,
     )
 
-    bpy.types.Scene.unfold_helper_custom_paper_width_mm = FloatProperty(
+    bpy.types.Scene.tsunfold_custom_paper_width_mm = FloatProperty(
         name="カスタム用紙 幅",
         description="カスタム用紙の横幅をmmで指定します",
         default=600.0,
@@ -11590,7 +11590,7 @@ def register():
         update=_paper_setting_updated,
     )
 
-    bpy.types.Scene.unfold_helper_custom_paper_height_mm = FloatProperty(
+    bpy.types.Scene.tsunfold_custom_paper_height_mm = FloatProperty(
         name="カスタム用紙 高さ",
         description="カスタム用紙の高さをmmで指定します",
         default=900.0,
@@ -11600,7 +11600,7 @@ def register():
         update=_paper_setting_updated,
     )
 
-    bpy.types.Scene.unfold_helper_orientation = EnumProperty(
+    bpy.types.Scene.tsunfold_orientation = EnumProperty(
         name="用紙の向き",
         description="用紙の向き",
         items=[
@@ -11612,14 +11612,14 @@ def register():
         update=_paper_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_pattern_preview = BoolProperty(
+    bpy.types.Scene.tsunfold_pattern_preview = BoolProperty(
         name="型紙プレビュー",
         description="現在の型紙状態をViewportに表示します",
         default=False,
         update=_paper_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_notch_mode = EnumProperty(
+    bpy.types.Scene.tsunfold_notch_mode = EnumProperty(
         name="合印方式",
         description="合印の作り方",
         items=[
@@ -11642,7 +11642,7 @@ def register():
         default="AUTO",
     )
 
-    bpy.types.Scene.pattern_helper_auto_notch_divisions = EnumProperty(
+    bpy.types.Scene.tsunfold_auto_notch_divisions = EnumProperty(
         name="分割数",
         description="2なら中央1個、3なら1/3と2/3、4なら1/4・1/2・3/4",
         items=[
@@ -11654,7 +11654,7 @@ def register():
         update=_pattern_notch_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_show_direction_arrow = BoolProperty(
+    bpy.types.Scene.tsunfold_show_direction_arrow = BoolProperty(
         name="水色の方向ガイド",
         default=False,
         update=_pattern_setting_updated,
@@ -11664,19 +11664,19 @@ def register():
 
 
 
-    bpy.types.Scene.pattern_helper_correspondence_mode = BoolProperty(
+    bpy.types.Scene.tsunfold_correspondence_mode = BoolProperty(
         name="対応確認",
         default=False,
         options={'HIDDEN'},
     )
 
-    bpy.types.Scene.pattern_helper_auto_island_ids = BoolProperty(
+    bpy.types.Scene.tsunfold_auto_island_ids = BoolProperty(
         name="自動型紙ID",
         default=True,
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_island_id_style = EnumProperty(
+    bpy.types.Scene.tsunfold_island_id_style = EnumProperty(
         name="型紙ID形式",
         items=[
             ("ALPHA", "A / B / C", "アイランドをアルファベットで表示"),
@@ -11686,7 +11686,7 @@ def register():
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_island_id_size_mm = FloatProperty(
+    bpy.types.Scene.tsunfold_island_id_size_mm = FloatProperty(
         name="型紙IDサイズ",
         default=8.0,
         min=3.0,
@@ -11695,7 +11695,7 @@ def register():
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_island_id_color = FloatVectorProperty(
+    bpy.types.Scene.tsunfold_island_id_color = FloatVectorProperty(
         name="型紙ID色",
         subtype='COLOR',
         size=3,
@@ -11705,7 +11705,7 @@ def register():
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_arrow_mode = EnumProperty(
+    bpy.types.Scene.tsunfold_arrow_mode = EnumProperty(
         name="矢印方式",
         items=[
             ("AUTO", "オート", "各アイランドへ上方向矢印を自動配置"),
@@ -11716,7 +11716,7 @@ def register():
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_arrow_up_axis = EnumProperty(
+    bpy.types.Scene.tsunfold_arrow_up_axis = EnumProperty(
         name="上方向",
         description="Blender右上のXYZギズモと同じグローバル軸を使用します",
         items=[
@@ -11730,7 +11730,7 @@ def register():
 
     
 
-    bpy.types.Scene.pattern_helper_auto_arrow_length_mm = FloatProperty(
+    bpy.types.Scene.tsunfold_auto_arrow_length_mm = FloatProperty(
         name="オート矢印長さ",
         default=24.0,
         min=5.0,
@@ -11739,13 +11739,13 @@ def register():
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_active_tool = StringProperty(
+    bpy.types.Scene.tsunfold_active_tool = StringProperty(
         name="マーキングツール",
         default="NONE",
         options={'HIDDEN'},
     )
 
-    bpy.types.Scene.pattern_helper_mark_color = FloatVectorProperty(
+    bpy.types.Scene.tsunfold_mark_color = FloatVectorProperty(
         name="旧印の色",
         subtype='COLOR',
         size=3,
@@ -11755,7 +11755,7 @@ def register():
         options={'HIDDEN'},
     )
 
-    bpy.types.Scene.pattern_helper_notch_color = FloatVectorProperty(
+    bpy.types.Scene.tsunfold_notch_color = FloatVectorProperty(
         name="合印の色",
         subtype='COLOR',
         size=3,
@@ -11765,7 +11765,7 @@ def register():
         update=_pattern_notch_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_number_color = FloatVectorProperty(
+    bpy.types.Scene.tsunfold_number_color = FloatVectorProperty(
         name="数字の色",
         subtype='COLOR',
         size=3,
@@ -11775,7 +11775,7 @@ def register():
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_text_color = FloatVectorProperty(
+    bpy.types.Scene.tsunfold_text_color = FloatVectorProperty(
         name="文字の色",
         subtype='COLOR',
         size=3,
@@ -11785,7 +11785,7 @@ def register():
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_arrow_color = FloatVectorProperty(
+    bpy.types.Scene.tsunfold_arrow_color = FloatVectorProperty(
         name="矢印の色",
         subtype='COLOR',
         size=3,
@@ -11795,7 +11795,7 @@ def register():
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_notch_length_mm = FloatProperty(
+    bpy.types.Scene.tsunfold_notch_length_mm = FloatProperty(
         name="合印長さ",
         default=6.0,
         min=1.0,
@@ -11804,7 +11804,7 @@ def register():
         update=_pattern_notch_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_notch_thickness_mm = FloatProperty(
+    bpy.types.Scene.tsunfold_notch_thickness_mm = FloatProperty(
         name="合印の太さ",
         description="合印線の表示・出力時の太さ",
         default=0.6,
@@ -11814,7 +11814,7 @@ def register():
         update=_pattern_notch_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_number_size_mm = FloatProperty(
+    bpy.types.Scene.tsunfold_number_size_mm = FloatProperty(
         name="数字サイズ",
         default=8.0,
         min=2.0,
@@ -11822,7 +11822,7 @@ def register():
         precision=1,
     )
 
-    bpy.types.Scene.pattern_helper_text_size_mm = FloatProperty(
+    bpy.types.Scene.tsunfold_text_size_mm = FloatProperty(
         name="文字サイズ",
         default=8.0,
         min=2.0,
@@ -11831,13 +11831,13 @@ def register():
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_custom_text = StringProperty(
+    bpy.types.Scene.tsunfold_custom_text = StringProperty(
         name="型紙名 / 任意テキスト",
         default="",
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_number_start = bpy.props.IntProperty(
+    bpy.types.Scene.tsunfold_number_start = bpy.props.IntProperty(
         name="開始番号",
         description="型紙番号モードをONにした時に最初に入る番号",
         default=1,
@@ -11845,7 +11845,7 @@ def register():
         max=9999,
     )
 
-    bpy.types.Scene.pattern_helper_arrow_head_mm = FloatProperty(
+    bpy.types.Scene.tsunfold_arrow_head_mm = FloatProperty(
         name="矢印先端サイズ",
         default=8.0,
         min=2.0,
@@ -11854,7 +11854,7 @@ def register():
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_arrow_thickness_mm = FloatProperty(
+    bpy.types.Scene.tsunfold_arrow_thickness_mm = FloatProperty(
         name="矢印線の太さ",
         default=0.8,
         min=0.2,
@@ -11863,7 +11863,7 @@ def register():
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_next_number = bpy.props.IntProperty(
+    bpy.types.Scene.tsunfold_next_number = bpy.props.IntProperty(
         name="次の型紙番号",
         description="型紙番号ツールが次に置く番号",
         default=1,
@@ -11871,21 +11871,21 @@ def register():
         max=9999,
     )
 
-    bpy.types.Scene.unfold_helper_show_paper = BoolProperty(
+    bpy.types.Scene.tsunfold_show_paper = BoolProperty(
         name="用紙枠を表示",
         description="3Dビューに実寸用紙枠を表示します。オブジェクトは作りません",
         default=False,
         update=_paper_setting_updated,
     )
 
-    bpy.types.Scene.pattern_helper_lightweight_view = BoolProperty(
+    bpy.types.Scene.tsunfold_lightweight_view = BoolProperty(
         name="軽量ビュー",
         description="元モデル側の補助マーキング描画を減らして3Dビュー操作を軽くします",
         default=True,
         update=_pattern_setting_updated,
     )
 
-    bpy.types.Scene.unfold_helper_preview = BoolProperty(
+    bpy.types.Scene.tsunfold_preview = BoolProperty(
         name="印刷プレビュー",
         description="最終PNGに近い白紙＋黒外周線を3Dビューに表示します",
         default=False,
@@ -11907,14 +11907,14 @@ def register():
             _draw_pattern_text_2d, (), 'WINDOW', 'POST_PIXEL'
         )
 
-    if _unfold_helper_reset_overlays_on_load not in bpy.app.handlers.load_post:
-        bpy.app.handlers.load_post.append(_unfold_helper_reset_overlays_on_load)
+    if _tsunfold_reset_overlays_on_load not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_tsunfold_reset_overlays_on_load)
 
 
 def unregister():
 
-    if _unfold_helper_reset_overlays_on_load in bpy.app.handlers.load_post:
-        bpy.app.handlers.load_post.remove(_unfold_helper_reset_overlays_on_load)
+    if _tsunfold_reset_overlays_on_load in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_tsunfold_reset_overlays_on_load)
     global _draw_handle, _pattern_draw_handle, _pattern_text_handle
 
     if _draw_handle is not None:
@@ -11943,39 +11943,39 @@ def unregister():
         _pattern_text_handle = None
 
     for prop in (
-        "pattern_helper_notch_mode",
-        "pattern_helper_auto_notch_divisions",
-        "pattern_helper_active_tool",
-        "pattern_helper_mark_color",
-        "pattern_helper_notch_color",
-        "pattern_helper_number_color",
-        "pattern_helper_text_color",
-        "pattern_helper_arrow_color",
-        "pattern_helper_notch_length_mm",
-        "pattern_helper_number_size_mm",
-        "pattern_helper_text_size_mm",
-        "pattern_helper_custom_text",
-        "pattern_helper_pattern_preview",
-        "pattern_helper_number_start",
-        "pattern_helper_arrow_head_mm",
-        "pattern_helper_arrow_thickness_mm",
-        "pattern_helper_next_number",
-        "unfold_helper_preview",
-        "unfold_helper_show_paper",
-        "unfold_helper_orientation",
-        "unfold_helper_paper_size",
-        "unfold_helper_custom_paper_width_mm",
-        "unfold_helper_custom_paper_height_mm",
-        "unfold_helper_spacing_mm",
+        "tsunfold_notch_mode",
+        "tsunfold_auto_notch_divisions",
+        "tsunfold_active_tool",
+        "tsunfold_mark_color",
+        "tsunfold_notch_color",
+        "tsunfold_number_color",
+        "tsunfold_text_color",
+        "tsunfold_arrow_color",
+        "tsunfold_notch_length_mm",
+        "tsunfold_number_size_mm",
+        "tsunfold_text_size_mm",
+        "tsunfold_custom_text",
+        "tsunfold_pattern_preview",
+        "tsunfold_number_start",
+        "tsunfold_arrow_head_mm",
+        "tsunfold_arrow_thickness_mm",
+        "tsunfold_next_number",
+        "tsunfold_preview",
+        "tsunfold_show_paper",
+        "tsunfold_orientation",
+        "tsunfold_paper_size",
+        "tsunfold_custom_paper_width_mm",
+        "tsunfold_custom_paper_height_mm",
+        "tsunfold_spacing_mm",
     ):
         if hasattr(bpy.types.Scene, prop):
             delattr(bpy.types.Scene, prop)
 
-    if hasattr(bpy.types.Scene, "pattern_helper_lightweight_view"):
-        del bpy.types.Scene.pattern_helper_lightweight_view
+    if hasattr(bpy.types.Scene, "tsunfold_lightweight_view"):
+        del bpy.types.Scene.tsunfold_lightweight_view
 
-    if hasattr(bpy.types.Scene, "pattern_helper_notch_thickness_mm"):
-        del bpy.types.Scene.pattern_helper_notch_thickness_mm
+    if hasattr(bpy.types.Scene, "tsunfold_notch_thickness_mm"):
+        del bpy.types.Scene.tsunfold_notch_thickness_mm
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

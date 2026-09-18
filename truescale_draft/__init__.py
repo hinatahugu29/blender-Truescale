@@ -20,21 +20,21 @@ BBOX_HANDLER_KEY = "MHP_BBOX_DRAW_HANDLER"
 VIEW_LABEL_HANDLER_KEY = "MHP_VIEW_LABEL_HANDLER"
 DATA_KEY = "MHP_SIZE_LABEL_DATA"
 SOURCE_KEY = "MHP_SIZE_SOURCE_NAME"
-VIEW_STATE_KEY = "MHS_VIEW_STATE"
+VIEW_STATE_KEY = "TSDRAFT_VIEW_STATE"
 BBOX_NAME = "サイズ用バウンディングボックス"
 LEGACY_HANDLER_KEYS = (
-    "MHS_SIZE_LABEL_HANDLER",
-    "MHS_BBOX_DRAW_HANDLER",
-    "MHS_VIEW_LABEL_HANDLER",
+    "TSDRAFT_SIZE_LABEL_HANDLER",
+    "TSDRAFT_BBOX_DRAW_HANDLER",
+    "TSDRAFT_VIEW_LABEL_HANDLER",
 )
-LEGACY_DATA_KEY = "MHS_SIZE_LABEL_DATA"
-LEGACY_SOURCE_KEY = "MHS_SIZE_SOURCE_NAME"
+LEGACY_DATA_KEY = "TSDRAFT_SIZE_LABEL_DATA"
+LEGACY_SOURCE_KEY = "TSDRAFT_SIZE_SOURCE_NAME"
 EXPORT_CONTEXT_KEY = "MHP_EXPORT_VIEW_CONTEXT"
 ZOOM_SYNC_STATE_KEY = "MHP_ORTHO_ZOOM_SYNC_STATE"
 AUTO_FOLLOW_SIGNATURE_KEY = "MHP_AUTO_FOLLOW_SIGNATURE"
 AUTO_FOLLOW_GUARD_KEY = "MHP_AUTO_FOLLOW_GUARD"
 LAST_EXPORT_DIR_KEY = "MHP_LAST_EXPORT_DIR"
-DARK_VIEW_STATE_KEY = "MHS_DARK_VIEW_STATE"
+DARK_VIEW_STATE_KEY = "TSDRAFT_DARK_VIEW_STATE"
 DARK_BG = (0.004, 0.012, 0.028)
 DARK_GRAD_TOP = (0.045, 0.145, 0.220)
 DARK_GRAD_BOTTOM = (0.006, 0.018, 0.032)
@@ -93,7 +93,7 @@ def save_dark_view_state(space):
         "show_axis_x": getattr(overlay, "show_axis_x", None),
         "show_axis_y": getattr(overlay, "show_axis_y", None),
         "scene_show_grid": (
-            bool(getattr(scene, "mhs_show_grid", False))
+            bool(getattr(scene, "tsdraft_show_grid", False))
             if scene is not None
             else False
         ),
@@ -168,7 +168,7 @@ def restore_dark_place_view(space):
         if state.get("show_axis_y") is not None and hasattr(overlay, "show_axis_y"):
             overlay.show_axis_y = state["show_axis_y"]
 
-        # mhs_show_grid は暗所中に変更していないため、ここでは触らない。
+        # tsdraft_show_grid は暗所中に変更していないため、ここでは触らない。
         # Sceneプロパティへ代入すると update_grid() が走り、
         # 図面用の白背景を再適用してしまうため、実際のoverlayだけ復元する。
 
@@ -210,20 +210,20 @@ def draw_bbox_overlay():
         return
 
     scene = context.scene
-    dark_place = getattr(scene, "mhs_dark_place", False)
+    dark_place = getattr(scene, "tsdraft_dark_place", False)
 
     # クイック非表示時は、各ビュー設定より先にBOX全体を止める。
-    if not getattr(scene, "mhs_show_bbox", True) and not dark_place:
+    if not getattr(scene, "tsdraft_show_bbox", True) and not dark_place:
         return
 
-    mode = scene.mhs_frame_mode
+    mode = scene.tsdraft_frame_mode
     if mode == 'NONE' and not dark_place:
         return
 
     view_key, view_dir = get_view_key_from_rv3d(rv3d)
 
     explicit_user_mode = bool(
-        getattr(scene, "mhs_user_view_mode", False)
+        getattr(scene, "tsdraft_user_view_mode", False)
     )
 
     # 普通の斜めデフォルトビューは内部判定がuserでも、
@@ -232,13 +232,13 @@ def draw_bbox_overlay():
     if explicit_user_mode:
         view_key = "user"
         if (
-            not getattr(scene, "mhs_show_bbox_user", True)
+            not getattr(scene, "tsdraft_show_bbox_user", True)
             and not dark_place
         ):
             return
     elif view_key != "user":
         if (
-            not getattr(scene, f"mhs_show_bbox_{view_key}", True)
+            not getattr(scene, f"tsdraft_show_bbox_{view_key}", True)
             and not dark_place
         ):
             return
@@ -254,7 +254,7 @@ def draw_bbox_overlay():
         shader.uniform_float("color", DARK_LINE)
         gpu.state.line_width_set(2.5)
     else:
-        frame_color = scene.mhs_frame_color
+        frame_color = scene.tsdraft_frame_color
         shader.uniform_float(
             "color",
             (
@@ -264,7 +264,7 @@ def draw_bbox_overlay():
                 frame_color[3]
             )
         )
-        gpu.state.line_width_set(scene.mhs_frame_width)
+        gpu.state.line_width_set(scene.tsdraft_frame_width)
 
     # -----------------------------------------------------
     # お遊び：「なんかずっと暗いとこ」檻表示
@@ -359,7 +359,7 @@ def draw_bbox_overlay():
 
     elif mode == 'LINES':
         # 「寸法線のみ」は文字の表示ON/OFFとは独立して描画する。
-        # 以前は mhs_show_dimensions_* がOFFだと線まで消えていたため、
+        # 以前は tsdraft_show_dimensions_* がOFFだと線まで消えていたため、
         # 任意ビューや通常の斜めビューで「寸法線のみ」を選ぶと
         # 何も表示されない状態になっていた。
         data = bpy.app.driver_namespace.get(DATA_KEY, [])
@@ -458,7 +458,7 @@ def draw_view_label():
     scene = context.scene
 
     # 図面表示中だけ独自ビュー名を表示
-    if not getattr(scene, "mhs_drawing_mode", False):
+    if not getattr(scene, "tsdraft_drawing_mode", False):
         return
 
     view_key, _ = get_view_key_from_rv3d(rv3d)
@@ -532,7 +532,7 @@ def draw_view_label():
 
     # Normal 3-view zoom synchronization after the hard clamp.
     try:
-        mhs_sync_ortho_zoom(context.area.spaces.active)
+        tsdraft_sync_ortho_zoom(context.area.spaces.active)
     except Exception:
         pass
 
@@ -589,7 +589,7 @@ SVG_PX_TO_MM = 25.4 / 96.0
 
 
 
-def mhs_import_legacy_state():
+def tsdraft_import_legacy_state():
     namespace = bpy.app.driver_namespace
 
     if not namespace.get(DATA_KEY):
@@ -603,8 +603,8 @@ def mhs_import_legacy_state():
             namespace[SOURCE_KEY] = legacy_source
 
 
-def mhs_resolve_source_object(context):
-    mhs_import_legacy_state()
+def tsdraft_resolve_source_object(context):
+    tsdraft_import_legacy_state()
     namespace = bpy.app.driver_namespace
 
     # 1. 従来の一時記憶
@@ -617,7 +617,7 @@ def mhs_resolve_source_object(context):
     # 2. Bounding Box自身に保存した永続情報
     bbox_obj = bpy.data.objects.get(BBOX_NAME)
     if bbox_obj is not None:
-        source_name = bbox_obj.get("mhs_source_name")
+        source_name = bbox_obj.get("tsdraft_source_name")
         if source_name:
             obj = bpy.data.objects.get(source_name)
             if obj is not None:
@@ -633,7 +633,7 @@ def mhs_resolve_source_object(context):
     ):
         namespace[SOURCE_KEY] = active.name
         if bbox_obj is not None:
-            bbox_obj["mhs_source_name"] = active.name
+            bbox_obj["tsdraft_source_name"] = active.name
         return active
 
     # 4. 選択中のメッシュが1個だけならそれを採用
@@ -645,7 +645,7 @@ def mhs_resolve_source_object(context):
         obj = selected_meshes[0]
         namespace[SOURCE_KEY] = obj.name
         if bbox_obj is not None:
-            bbox_obj["mhs_source_name"] = obj.name
+            bbox_obj["tsdraft_source_name"] = obj.name
         return obj
 
     # 5. シーン内に候補メッシュが1個だけなら最後の救済
@@ -657,13 +657,13 @@ def mhs_resolve_source_object(context):
         obj = candidates[0]
         namespace[SOURCE_KEY] = obj.name
         if bbox_obj is not None:
-            bbox_obj["mhs_source_name"] = obj.name
+            bbox_obj["tsdraft_source_name"] = obj.name
         return obj
 
     return None
 
 
-def mhs_project_world_to_view_mm(co, view_key, unit_scale):
+def tsdraft_project_world_to_view_mm(co, view_key, unit_scale):
     """Project a world-space coordinate to orthographic drawing coordinates in mm."""
     mm = unit_scale * 1000.0
 
@@ -679,7 +679,7 @@ def mhs_project_world_to_view_mm(co, view_key, unit_scale):
     return co.x * mm, co.z * mm, co.y * mm
 
 
-def mhs_svg_view_label(view_key):
+def tsdraft_svg_view_label(view_key):
     return {
         "top": "上面",
         "front": "前面",
@@ -688,7 +688,7 @@ def mhs_svg_view_label(view_key):
     }.get(view_key, view_key)
 
 
-def mhs_svg_dimension_axes(view_key):
+def tsdraft_svg_dimension_axes(view_key):
     return {
         "top": {"X", "Y"},
         "front": {"X", "Z"},
@@ -696,22 +696,22 @@ def mhs_svg_dimension_axes(view_key):
     }.get(view_key, set())
 
 
-def mhs_dimension_axis_enabled(scene, view_key, axis_name):
+def tsdraft_dimension_axis_enabled(scene, view_key, axis_name):
     """Return whether a dimension axis should be shown for a drawing view."""
     axis_name = str(axis_name).upper()
-    valid_axes = mhs_svg_dimension_axes(view_key)
+    valid_axes = tsdraft_svg_dimension_axes(view_key)
     if not valid_axes:
         return True
     if axis_name not in valid_axes:
         return False
     return bool(getattr(
         scene,
-        f"mhs_show_dimension_{view_key}_{axis_name.lower()}",
+        f"tsdraft_show_dimension_{view_key}_{axis_name.lower()}",
         True
     ))
 
 
-def mhs_svg_page_for_bbox(width_mm, height_mm, margin_mm=10.0):
+def tsdraft_svg_page_for_bbox(width_mm, height_mm, margin_mm=10.0):
     """
     Pick A4 portrait/landscape without scaling.
     Returns (page_w, page_h, orientation) or None.
@@ -735,7 +735,7 @@ def mhs_svg_page_for_bbox(width_mm, height_mm, margin_mm=10.0):
     return pw, ph, orientation
 
 
-def mhs_svg_color_rgba(color):
+def tsdraft_svg_color_rgba(color):
     r = max(0, min(255, round(color[0] * 255)))
     g = max(0, min(255, round(color[1] * 255)))
     b = max(0, min(255, round(color[2] * 255)))
@@ -744,7 +744,7 @@ def mhs_svg_color_rgba(color):
 
 
 
-def mhs_patch_jpeg_dpi(filepath, dpi):
+def tsdraft_patch_jpeg_dpi(filepath, dpi):
     """Patch JFIF density so Illustrator/other apps know the physical size."""
     path = Path(filepath)
     data = bytearray(path.read_bytes())
@@ -765,7 +765,7 @@ def mhs_patch_jpeg_dpi(filepath, dpi):
 
 
 
-def mhs_patch_png_dpi(filepath, dpi):
+def tsdraft_patch_png_dpi(filepath, dpi):
     """Insert/replace PNG pHYs chunk so Illustrator reads the intended physical size."""
     path = Path(filepath)
     data = path.read_bytes()
@@ -811,7 +811,7 @@ def mhs_patch_png_dpi(filepath, dpi):
     return inserted
 
 
-def mhs_project_world_to_print_space(co, view_key):
+def tsdraft_project_world_to_print_space(co, view_key):
     """Rotate world coordinates into a common XY print plane."""
     if view_key == "top":
         return (co.x, co.y, co.z)
@@ -822,7 +822,7 @@ def mhs_project_world_to_print_space(co, view_key):
     return (co.x, co.z, co.y)
 
 
-def mhs_make_line_quad(name, a, b, width_bu, z, collection, color):
+def tsdraft_make_line_quad(name, a, b, width_bu, z, collection, color):
     """Create a thin rectangle between 2D points a,b."""
     ax, ay = a
     bx, by = b
@@ -856,7 +856,7 @@ def mhs_make_line_quad(name, a, b, width_bu, z, collection, color):
 
 
 
-def mhs_get_last_export_dir():
+def tsdraft_get_last_export_dir():
     path = bpy.app.driver_namespace.get(LAST_EXPORT_DIR_KEY)
 
     if path and os.path.isdir(path):
@@ -872,7 +872,7 @@ def mhs_get_last_export_dir():
     return ""
 
 
-def mhs_remember_export_dir(path):
+def tsdraft_remember_export_dir(path):
     if not path:
         return
 
@@ -887,7 +887,7 @@ def mhs_remember_export_dir(path):
         bpy.app.driver_namespace[LAST_EXPORT_DIR_KEY] = folder
 
 
-def mhs_store_export_view_context(context):
+def tsdraft_store_export_view_context(context):
     """Remember the actual 3D editor before Blender opens the file browser."""
     if context.area is None or context.area.type != 'VIEW_3D':
         return
@@ -904,7 +904,7 @@ def mhs_store_export_view_context(context):
     }
 
 
-def mhs_get_export_view_context(context):
+def tsdraft_get_export_view_context(context):
     """
     Return the VIEW_3D context saved at invoke-time.
     Falls back to scanning open Blender windows if needed.
@@ -951,7 +951,7 @@ def mhs_get_export_view_context(context):
 
 
 
-def mhs_find_view_region(area, wanted_key):
+def tsdraft_find_view_region(area, wanted_key):
     """
     Return (region, rv3d) for the requested orthographic pane.
     In Quad View, pair WINDOW regions with region_quadviews and select
@@ -987,7 +987,7 @@ def mhs_find_view_region(area, wanted_key):
     return None, None
 
 
-def mhs_make_view3d_override(window, screen, area, region):
+def tsdraft_make_view3d_override(window, screen, area, region):
     space = area.spaces.active
     return {
         "window": window,
@@ -999,7 +999,7 @@ def mhs_make_view3d_override(window, screen, area, region):
     }
 
 
-def mhs_sync_ortho_zoom(space):
+def tsdraft_sync_ortho_zoom(space):
     """
     Keep Top / Front / Side view_distance synchronized in Quad View.
     User view stays independent.
@@ -1073,7 +1073,7 @@ def mhs_sync_ortho_zoom(space):
 
 
 
-def mhs_clamp_quad_zoom_to_bbox(area, padding_ratio=0.80):
+def tsdraft_clamp_quad_zoom_to_bbox(area, padding_ratio=0.80):
     """
     Prevent Top / Front / Side Quad View panes from zooming in so far
     that the Bounding Box no longer fits inside the pane.
@@ -1101,7 +1101,7 @@ def mhs_clamp_quad_zoom_to_bbox(area, padding_ratio=0.80):
 
     ortho_items = []
     for key in ("top", "front", "side"):
-        region, rv3d = mhs_find_view_region(area, key)
+        region, rv3d = tsdraft_find_view_region(area, key)
         if region is not None and rv3d is not None:
             ortho_items.append((key, region, rv3d))
 
@@ -1159,7 +1159,7 @@ def mhs_clamp_quad_zoom_to_bbox(area, padding_ratio=0.80):
 
 
 
-def mhs_frame_export_region(context, window, screen, area, region, rv3d, source_obj, bbox_obj, padding_ratio=0.58):
+def tsdraft_frame_export_region(context, window, screen, area, region, rv3d, source_obj, bbox_obj, padding_ratio=0.58):
     """
     Export専用の正規化フレーミング。
     現在のユーザー拡大率が極端でも、まずBlender標準のView Selectedで
@@ -1215,10 +1215,10 @@ def mhs_frame_export_region(context, window, screen, area, region, rv3d, source_
         except Exception:
             pass
 
-        mhs_force_view_redraw(context, area)
-        mhs_force_view_redraw(context, area)
+        tsdraft_force_view_redraw(context, area)
+        tsdraft_force_view_redraw(context, area)
 
-        return mhs_fit_region_to_bbox(
+        return tsdraft_fit_region_to_bbox(
             context,
             area,
             region,
@@ -1245,7 +1245,7 @@ def mhs_frame_export_region(context, window, screen, area, region, rv3d, source_
             pass
 
 
-def mhs_export_bbox_fill_ratio(region, rv3d, bbox_obj, padding_ratio):
+def tsdraft_export_bbox_fill_ratio(region, rv3d, bbox_obj, padding_ratio):
     """BBoxが指定した書き出し占有率にどれくらい近いかを返す。"""
     try:
         projected = []
@@ -1276,7 +1276,7 @@ def mhs_export_bbox_fill_ratio(region, rv3d, bbox_obj, padding_ratio):
         return None
 
 
-def mhs_fit_region_to_bbox(context, area, region, rv3d, bbox_obj, padding_ratio=0.52):
+def tsdraft_fit_region_to_bbox(context, area, region, rv3d, bbox_obj, padding_ratio=0.52):
     """
     Normalize an orthographic pane to the Bounding Box at a predictable size.
 
@@ -1373,7 +1373,7 @@ def mhs_fit_region_to_bbox(context, area, region, rv3d, bbox_obj, padding_ratio=
     return changed
 
 
-def mhs_enforce_quad_zoom_lock_once():
+def tsdraft_enforce_quad_zoom_lock_once():
     """
     Global safety pass for drawing-mode Quad Views.
     Top / Front / Side may zoom out freely, but cannot zoom in far enough
@@ -1399,7 +1399,7 @@ def mhs_enforce_quad_zoom_lock_once():
         if scene is None or screen is None:
             continue
 
-        if not getattr(scene, "mhs_drawing_mode", False):
+        if not getattr(scene, "tsdraft_drawing_mode", False):
             continue
 
         for area in screen.areas:
@@ -1415,7 +1415,7 @@ def mhs_enforce_quad_zoom_lock_once():
 
             items = []
             for key in ("top", "front", "side"):
-                region, rv3d = mhs_find_view_region(area, key)
+                region, rv3d = tsdraft_find_view_region(area, key)
                 if region is not None and rv3d is not None:
                     items.append((key, region, rv3d))
 
@@ -1480,9 +1480,9 @@ def mhs_enforce_quad_zoom_lock_once():
 
 
 
-def mhs_quad_zoom_lock_timer():
+def tsdraft_quad_zoom_lock_timer():
     try:
-        mhs_enforce_quad_zoom_lock_once()
+        tsdraft_enforce_quad_zoom_lock_once()
     except Exception:
         pass
 
@@ -1491,7 +1491,7 @@ def mhs_quad_zoom_lock_timer():
 
 
 
-def mhs_force_view_redraw(context, area):
+def tsdraft_force_view_redraw(context, area):
     """Force Blender to finish drawing the newly switched view before screenshot."""
     try:
         area.tag_redraw()
@@ -1505,7 +1505,7 @@ def mhs_force_view_redraw(context, area):
         pass
 
 
-def mhs_crop_png_with_blender(src_path, dst_path, x0, y0, width, height):
+def tsdraft_crop_png_with_blender(src_path, dst_path, x0, y0, width, height):
     """
     Crop a PNG using Blender's own Image API.
     Coordinates are bottom-left based, matching Blender image pixels.
@@ -1528,7 +1528,7 @@ def mhs_crop_png_with_blender(src_path, dst_path, x0, y0, width, height):
             dst_pixels[dst_start:dst_start + width * 4] = src_pixels[src_start:src_end]
 
         out = bpy.data.images.new(
-            name="MHS_Printable_Crop",
+            name="TSDRAFT_Printable_Crop",
             width=width,
             height=height,
             alpha=False
@@ -1544,7 +1544,7 @@ def mhs_crop_png_with_blender(src_path, dst_path, x0, y0, width, height):
         bpy.data.images.remove(img)
 
 
-def mhs_capture_rv3d_state(rv3d):
+def tsdraft_capture_rv3d_state(rv3d):
     if rv3d is None:
         return None
 
@@ -1562,7 +1562,7 @@ def mhs_capture_rv3d_state(rv3d):
     }
 
 
-def mhs_restore_rv3d_state(rv3d, state):
+def tsdraft_restore_rv3d_state(rv3d, state):
     if rv3d is None or not state:
         return
 
@@ -1584,7 +1584,7 @@ def mhs_restore_rv3d_state(rv3d, state):
         rv3d.view_camera_offset = state["view_camera_offset"]
 
 
-def mhs_capture_export_display_state(space, scene):
+def tsdraft_capture_export_display_state(space, scene):
     shading = space.shading
     overlay = space.overlay
 
@@ -1611,7 +1611,7 @@ def mhs_capture_export_display_state(space, scene):
             for attr in overlay_attrs
         },
         "drawing_mode": bool(
-            getattr(scene, "mhs_drawing_mode", False)
+            getattr(scene, "tsdraft_drawing_mode", False)
         ),
         "driver_view_state": bpy.app.driver_namespace.get(
             VIEW_STATE_KEY,
@@ -1620,7 +1620,7 @@ def mhs_capture_export_display_state(space, scene):
     }
 
 
-def mhs_restore_export_display_state(space, scene, state):
+def tsdraft_restore_export_display_state(space, scene, state):
     if not state:
         return
 
@@ -1654,7 +1654,7 @@ def mhs_restore_export_display_state(space, scene, state):
             except Exception:
                 pass
 
-    scene.mhs_drawing_mode = state.get("drawing_mode", False)
+    scene.tsdraft_drawing_mode = state.get("drawing_mode", False)
 
     # configure_drawing_view() が書き出し中に作った退避状態を残さない。
     bpy.app.driver_namespace[VIEW_STATE_KEY] = state.get(
@@ -1664,12 +1664,12 @@ def mhs_restore_export_display_state(space, scene, state):
 
 
 
-def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_distance=None, fit_padding_ratio=0.58, suppress_dimension_text=False):
+def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_distance=None, fit_padding_ratio=0.58, suppress_dimension_text=False):
     """
     Export the requested view by directly using its matching Quad View pane.
     No fake view switching when Quad View already contains top/front/side.
     """
-    view_ctx = mhs_get_export_view_context(context)
+    view_ctx = tsdraft_get_export_view_context(context)
     if view_ctx is None:
         raise RuntimeError("書き出し元の3Dビューが見つからんかったンゴ")
 
@@ -1678,7 +1678,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
 
     # 書き出しは一時的にビュー方向・背景・オーバーレイを変更するため、
     # 開始時の状態を丸ごと退避して最後に必ず戻す。
-    original_display_state = mhs_capture_export_display_state(
+    original_display_state = tsdraft_capture_export_display_state(
         space,
         context.scene
     )
@@ -1687,11 +1687,11 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
     # 三面図PNGでは事故防止のため必ず表示して撮影し、
     # 最後に元の状態へ戻す。
     original_dimension_state = {
-        "all": bool(getattr(context.scene, "mhs_show_dimensions", True)),
-        "top": bool(getattr(context.scene, "mhs_show_dimensions_top", True)),
-        "front": bool(getattr(context.scene, "mhs_show_dimensions_front", True)),
-        "side": bool(getattr(context.scene, "mhs_show_dimensions_side", True)),
-        "user": bool(getattr(context.scene, "mhs_show_dimensions_user", True)),
+        "all": bool(getattr(context.scene, "tsdraft_show_dimensions", True)),
+        "top": bool(getattr(context.scene, "tsdraft_show_dimensions_top", True)),
+        "front": bool(getattr(context.scene, "tsdraft_show_dimensions_front", True)),
+        "side": bool(getattr(context.scene, "tsdraft_show_dimensions_side", True)),
+        "user": bool(getattr(context.scene, "tsdraft_show_dimensions_user", True)),
     }
 
     # 三面図シートの一時キャプチャでは、寸法文字を最終シート側で描く。
@@ -1699,18 +1699,18 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
     hard_suppress_dimension_text = bool(suppress_dimension_text)
 
     original_user_view_mode = bool(
-        getattr(context.scene, "mhs_user_view_mode", False)
+        getattr(context.scene, "tsdraft_user_view_mode", False)
     )
 
     original_bbox_state = {
-        "all": bool(getattr(context.scene, "mhs_show_bbox", True)),
-        "top": bool(getattr(context.scene, "mhs_show_bbox_top", True)),
-        "front": bool(getattr(context.scene, "mhs_show_bbox_front", True)),
-        "side": bool(getattr(context.scene, "mhs_show_bbox_side", True)),
-        "user": bool(getattr(context.scene, "mhs_show_bbox_user", True)),
+        "all": bool(getattr(context.scene, "tsdraft_show_bbox", True)),
+        "top": bool(getattr(context.scene, "tsdraft_show_bbox_top", True)),
+        "front": bool(getattr(context.scene, "tsdraft_show_bbox_front", True)),
+        "side": bool(getattr(context.scene, "tsdraft_show_bbox_side", True)),
+        "user": bool(getattr(context.scene, "tsdraft_show_bbox_user", True)),
     }
 
-    original_main_rv3d_state = mhs_capture_rv3d_state(
+    original_main_rv3d_state = tsdraft_capture_rv3d_state(
         getattr(space, "region_3d", None)
     )
 
@@ -1718,12 +1718,12 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
     try:
         for rv in list(space.region_quadviews):
             original_quad_states.append(
-                (rv, mhs_capture_rv3d_state(rv))
+                (rv, tsdraft_capture_rv3d_state(rv))
             )
     except Exception:
         pass
 
-    source_obj = mhs_resolve_source_object(context)
+    source_obj = tsdraft_resolve_source_object(context)
     bbox_obj = bpy.data.objects.get(BBOX_NAME)
 
     if source_obj is None:
@@ -1739,40 +1739,40 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
     # 各ビューの軸別ON/OFFはユーザー指定を尊重する。
     # 任意ビューはイメージ用途があるため現在設定を尊重。
     if not is_user_view:
-        scene.mhs_user_view_mode = False
+        scene.tsdraft_user_view_mode = False
 
         # 三面図はクイック非表示中でも、書き出しだけは
         # BOX＋寸法を必ず有効化して事故を防ぐ。
-        scene.mhs_show_bbox = True
-        scene.mhs_show_bbox_top = True
-        scene.mhs_show_bbox_front = True
-        scene.mhs_show_bbox_side = True
+        scene.tsdraft_show_bbox = True
+        scene.tsdraft_show_bbox_top = True
+        scene.tsdraft_show_bbox_front = True
+        scene.tsdraft_show_bbox_side = True
 
-        scene.mhs_show_dimensions = True
-        scene.mhs_show_dimensions_top = True
-        scene.mhs_show_dimensions_front = True
-        scene.mhs_show_dimensions_side = True
+        scene.tsdraft_show_dimensions = True
+        scene.tsdraft_show_dimensions_top = True
+        scene.tsdraft_show_dimensions_front = True
+        scene.tsdraft_show_dimensions_side = True
 
         if hard_suppress_dimension_text:
-            scene.mhs_show_dimensions = False
+            scene.tsdraft_show_dimensions = False
 
     temp_full = str(Path(filepath).with_name(Path(filepath).stem + "_TEMP_AREA.png"))
 
     try:
         # Nパネル/ツールバーは実際には触らない。
         # 画像側のクロップでUI領域を除外するので、撮影後も表示状態が変わらない。
-        mhs_force_view_redraw(context, area)
+        tsdraft_force_view_redraw(context, area)
 
         # -------------------------------------------------
         # Quad View: directly grab the requested pane.
         # Single View: switch that one view to the requested axis.
         # -------------------------------------------------
-        target_region, target_rv3d = mhs_find_view_region(area, view_key)
+        target_region, target_rv3d = tsdraft_find_view_region(area, view_key)
 
         # Quad Viewの最新リージョン情報を使う。
         if target_region is not None:
-            mhs_force_view_redraw(context, area)
-            refreshed_region, refreshed_rv3d = mhs_find_view_region(area, view_key)
+            tsdraft_force_view_redraw(context, area)
+            refreshed_region, refreshed_rv3d = tsdraft_find_view_region(area, view_key)
             if refreshed_region is not None and refreshed_rv3d is not None:
                 target_region, target_rv3d = refreshed_region, refreshed_rv3d
 
@@ -1812,7 +1812,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
                         align_active=False
                     )
 
-                mhs_force_view_redraw(context, area)
+                tsdraft_force_view_redraw(context, area)
                 target_region = main_region
 
         # Keep common orthographic zoom if supplied.
@@ -1831,7 +1831,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
             # even if the user managed to zoom until the object is clipped,
             # force the bbox back inside this pane before screenshot.
             try:
-                mhs_frame_export_region(
+                tsdraft_frame_export_region(
                     context,
                     export_window,
                     export_screen,
@@ -1848,10 +1848,10 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
         # Printable styling.
         # 書き出し背景は白 / グリッド / 黒 / カスタムから選択。
         # 軸・原点・3Dカーソルはconfigure_drawing_view側で常に非表示。
-        export_background = getattr(scene, "mhs_export_background", 'WHITE')
+        export_background = getattr(scene, "tsdraft_export_background", 'WHITE')
         export_custom_color = getattr(
             scene,
-            "mhs_export_background_color",
+            "tsdraft_export_background_color",
             (1.0, 1.0, 1.0)
         )
         configure_drawing_view(
@@ -1859,15 +1859,15 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
             export_background,
             export_custom_color
         )
-        scene.mhs_drawing_mode = True
+        scene.tsdraft_drawing_mode = True
 
-        mhs_force_view_redraw(context, area)
+        tsdraft_force_view_redraw(context, area)
 
         # 最終スクショ直前でも倍率を検証。
         # 初期画面が極端なズーム状態でも、ここで必ず一定のBBox占有率へ戻す。
         if not is_user_view:
             for _verify in range(3):
-                fill = mhs_export_bbox_fill_ratio(
+                fill = tsdraft_export_bbox_fill_ratio(
                     target_region,
                     target_rv3d,
                     bbox_obj,
@@ -1878,7 +1878,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
                     break
 
                 try:
-                    mhs_frame_export_region(
+                    tsdraft_frame_export_region(
                         context,
                         export_window,
                         export_screen,
@@ -1892,7 +1892,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
                 except Exception:
                     break
 
-                mhs_force_view_redraw(context, area)
+                tsdraft_force_view_redraw(context, area)
 
         # -------------------------------------------------
         # Project BBox into the target pane only.
@@ -1908,7 +1908,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
                 projected.append((float(p2.x), float(p2.y)))
 
         if len(projected) < 4:
-            raise RuntimeError(f"{mhs_svg_view_label(view_key)}のBounding Boxを投影できんかったンゴ")
+            raise RuntimeError(f"{tsdraft_svg_view_label(view_key)}のBounding Boxを投影できんかったンゴ")
 
         xs = [p[0] for p in projected]
         ys = [p[1] for p in projected]
@@ -1941,7 +1941,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
             bbox_mm_h = (max(vals_v) - min(vals_v)) * unit_scale * 1000.0
 
             if bbox_px_w <= 1 or bbox_px_h <= 1 or bbox_mm_w <= 0 or bbox_mm_h <= 0:
-                raise RuntimeError(f"{mhs_svg_view_label(view_key)}の実寸対応が取れんかったンゴ")
+                raise RuntimeError(f"{tsdraft_svg_view_label(view_key)}の実寸対応が取れんかったンゴ")
 
             px_per_mm_x = bbox_px_w / bbox_mm_w
             px_per_mm_y = bbox_px_h / bbox_mm_h
@@ -1958,17 +1958,17 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
 
         data = bpy.app.driver_namespace.get(DATA_KEY, [])
         suppress_sheet_dim_text = bool(
-            bpy.app.driver_namespace.get("MHS_SHEET_SUPPRESS_DIM_TEXT", False)
+            bpy.app.driver_namespace.get("TSDRAFT_SHEET_SUPPRESS_DIM_TEXT", False)
         )
         visible_axes = set() if (is_user_view or suppress_sheet_dim_text) else {
-            axis for axis in mhs_svg_dimension_axes(view_key)
-            if mhs_dimension_axis_enabled(scene, view_key, axis)
+            axis for axis in tsdraft_svg_dimension_axes(view_key)
+            if tsdraft_dimension_axis_enabled(scene, view_key, axis)
         }
 
         # Export crop must use the SAME automatic label layout as the viewport.
         # Otherwise the PNG can crop labels that are correctly visible on screen.
         sheet_layout_mode = bool(
-            bpy.app.driver_namespace.get("MHS_SHEET_LAYOUT_MODE", False)
+            bpy.app.driver_namespace.get("TSDRAFT_SHEET_LAYOUT_MODE", False)
         )
         if sheet_layout_mode:
             auto_axis_layout = {
@@ -2001,7 +2001,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
                 },
             }
 
-        requested_font_size = max(1, int(scene.mhs_font_size))
+        requested_font_size = max(1, int(scene.tsdraft_font_size))
 
         # text_heightは各ラベルを測るまで存在しないため、
         # ここでは文字サイズから安全余白の初期値を作る。
@@ -2050,12 +2050,12 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
             axis_lower = axis.lower()
             off_x_mm = getattr(
                 scene,
-                f"mhs_{view_key}_{axis_lower}_offset_x_mm",
+                f"tsdraft_{view_key}_{axis_lower}_offset_x_mm",
                 0.0
             )
             off_y_mm = getattr(
                 scene,
-                f"mhs_{view_key}_{axis_lower}_offset_y_mm",
+                f"tsdraft_{view_key}_{axis_lower}_offset_y_mm",
                 0.0
             )
 
@@ -2192,7 +2192,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
             # BBoxぎりぎりで切らず、モデル本体も確実に残す。
             pad_px = 72.0
         else:
-            pad_px = max(56.0, scene.mhs_font_size * 1.45)
+            pad_px = max(56.0, scene.tsdraft_font_size * 1.45)
         crop_min_x -= pad_px
         crop_max_x += pad_px
         crop_min_y -= pad_px
@@ -2211,7 +2211,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
         else:
             safe_top = max(
                 30.0,
-                float(scene.mhs_font_size) * 0.95
+                float(scene.tsdraft_font_size) * 0.95
             )
 
         target_x0 = float(target_region.x)
@@ -2275,10 +2275,10 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
 
             # Make absolutely sure zoom/layout and text-suppression changes
             # have reached the screen before the screenshot.
-            mhs_force_view_redraw(context, area)
-            mhs_force_view_redraw(context, area)
+            tsdraft_force_view_redraw(context, area)
+            tsdraft_force_view_redraw(context, area)
             if hard_suppress_dimension_text:
-                mhs_force_view_redraw(context, area)
+                tsdraft_force_view_redraw(context, area)
 
             with context.temp_override(
                 window=export_window,
@@ -2293,7 +2293,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
             if old_show_gizmo is not None and hasattr(space, "show_gizmo"):
                 space.show_gizmo = old_show_gizmo
 
-            mhs_force_view_redraw(context, area)
+            tsdraft_force_view_redraw(context, area)
 
         if not Path(temp_full).exists():
             raise RuntimeError("画面スクショを書き出せんかったンゴ")
@@ -2306,7 +2306,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
         crop_w = crop_max_x - crop_min_x
         crop_h = crop_max_y - crop_min_y
 
-        mhs_crop_png_with_blender(
+        tsdraft_crop_png_with_blender(
             temp_full,
             filepath,
             round(crop_x),
@@ -2318,7 +2318,7 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
         if not Path(filepath).exists():
             raise RuntimeError("クロップ済みPNGを書き出せんかったンゴ")
 
-        if not mhs_patch_png_dpi(filepath, dpi):
+        if not tsdraft_patch_png_dpi(filepath, dpi):
             raise RuntimeError("PNGへ実寸dpi情報を書き込めんかったンゴ")
 
         return {
@@ -2340,37 +2340,37 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
 
         # 撮影前の任意ビューモードへ戻す。
         try:
-            scene.mhs_user_view_mode = original_user_view_mode
+            scene.tsdraft_user_view_mode = original_user_view_mode
         except Exception:
             pass
 
         # 撮影前のBOX＋寸法表示状態へ戻す。
         try:
-            scene.mhs_show_bbox = original_bbox_state["all"]
-            scene.mhs_show_bbox_top = original_bbox_state["top"]
-            scene.mhs_show_bbox_front = original_bbox_state["front"]
-            scene.mhs_show_bbox_side = original_bbox_state["side"]
-            scene.mhs_show_bbox_user = original_bbox_state["user"]
+            scene.tsdraft_show_bbox = original_bbox_state["all"]
+            scene.tsdraft_show_bbox_top = original_bbox_state["top"]
+            scene.tsdraft_show_bbox_front = original_bbox_state["front"]
+            scene.tsdraft_show_bbox_side = original_bbox_state["side"]
+            scene.tsdraft_show_bbox_user = original_bbox_state["user"]
 
-            scene.mhs_show_dimensions = original_dimension_state["all"]
-            scene.mhs_show_dimensions_top = original_dimension_state["top"]
-            scene.mhs_show_dimensions_front = original_dimension_state["front"]
-            scene.mhs_show_dimensions_side = original_dimension_state["side"]
-            scene.mhs_show_dimensions_user = original_dimension_state["user"]
+            scene.tsdraft_show_dimensions = original_dimension_state["all"]
+            scene.tsdraft_show_dimensions_top = original_dimension_state["top"]
+            scene.tsdraft_show_dimensions_front = original_dimension_state["front"]
+            scene.tsdraft_show_dimensions_side = original_dimension_state["side"]
+            scene.tsdraft_show_dimensions_user = original_dimension_state["user"]
         except Exception:
             pass
 
         # 撮影前のビュー方向・位置・倍率・背景・グリッド等へ完全復帰。
         try:
-            mhs_restore_rv3d_state(
+            tsdraft_restore_rv3d_state(
                 getattr(space, "region_3d", None),
                 original_main_rv3d_state
             )
 
             for rv, rv_state in original_quad_states:
-                mhs_restore_rv3d_state(rv, rv_state)
+                tsdraft_restore_rv3d_state(rv, rv_state)
 
-            mhs_restore_export_display_state(
+            tsdraft_restore_export_display_state(
                 space,
                 scene,
                 original_display_state
@@ -2391,20 +2391,20 @@ def mhs_export_viewport_exact_png(context, filepath, view_key, common_view_dista
             pass
 
         try:
-            mhs_force_view_redraw(context, area)
-            mhs_force_view_redraw(context, area)
-            mhs_force_view_redraw(context, area)
+            tsdraft_force_view_redraw(context, area)
+            tsdraft_force_view_redraw(context, area)
+            tsdraft_force_view_redraw(context, area)
         except Exception:
             redraw_viewports()
 
 
 
 
-def mhs_svg_export(context, filepath, view_key):
+def tsdraft_svg_export(context, filepath, view_key):
     scene = context.scene
     namespace = bpy.app.driver_namespace
 
-    source_obj = mhs_resolve_source_object(context)
+    source_obj = tsdraft_resolve_source_object(context)
     bbox_obj = bpy.data.objects.get(BBOX_NAME)
 
     if source_obj is None:
@@ -2426,7 +2426,7 @@ def mhs_svg_export(context, filepath, view_key):
     if len(bbox_world) < 8:
         raise RuntimeError("Bounding Boxの頂点が足りんかったンゴ")
 
-    bbox_proj = [mhs_project_world_to_view_mm(v, view_key, unit_scale) for v in bbox_world]
+    bbox_proj = [tsdraft_project_world_to_view_mm(v, view_key, unit_scale) for v in bbox_world]
     bbox_u = [p[0] for p in bbox_proj]
     bbox_v = [p[1] for p in bbox_proj]
 
@@ -2435,10 +2435,10 @@ def mhs_svg_export(context, filepath, view_key):
     width_mm = max_u - min_u
     height_mm = max_v - min_v
 
-    page = mhs_svg_page_for_bbox(width_mm, height_mm, margin_mm=10.0)
+    page = tsdraft_svg_page_for_bbox(width_mm, height_mm, margin_mm=10.0)
     if page is None:
         raise RuntimeError(
-            f"{mhs_svg_view_label(view_key)}は実寸 {width_mm:.1f}×{height_mm:.1f} mm でA4に入らんンゴ"
+            f"{tsdraft_svg_view_label(view_key)}は実寸 {width_mm:.1f}×{height_mm:.1f} mm でA4に入らんンゴ"
         )
 
     page_w, page_h, orientation = page
@@ -2470,7 +2470,7 @@ def mhs_svg_export(context, filepath, view_key):
 
             for idx in poly.vertices:
                 world = mw @ mesh_eval.vertices[idx].co
-                u, v, depth = mhs_project_world_to_view_mm(world, view_key, unit_scale)
+                u, v, depth = tsdraft_project_world_to_view_mm(world, view_key, unit_scale)
                 x, y = svg_xy(u, v)
                 pts.append((x, y))
                 depths.append(depth)
@@ -2486,11 +2486,11 @@ def mhs_svg_export(context, filepath, view_key):
     # -----------------------------------------------------
     # Current visual settings.
     # -----------------------------------------------------
-    frame_rgb, frame_alpha = mhs_svg_color_rgba(scene.mhs_frame_color)
-    text_rgb, text_alpha = mhs_svg_color_rgba(scene.mhs_font_color)
+    frame_rgb, frame_alpha = tsdraft_svg_color_rgba(scene.tsdraft_frame_color)
+    text_rgb, text_alpha = tsdraft_svg_color_rgba(scene.tsdraft_font_color)
 
-    frame_width_mm = max(0.1, scene.mhs_frame_width * SVG_PX_TO_MM)
-    font_size_mm = max(1.5, scene.mhs_font_size * SVG_PX_TO_MM)
+    frame_width_mm = max(0.1, scene.tsdraft_frame_width * SVG_PX_TO_MM)
+    font_size_mm = max(1.5, scene.tsdraft_font_size * SVG_PX_TO_MM)
 
     model_fill = "rgb(205,205,205)"
     model_stroke = "rgb(120,120,120)"
@@ -2542,7 +2542,7 @@ def mhs_svg_export(context, filepath, view_key):
 
     # Dimensions: use the same 3D midpoint data and current per-view offsets.
     dimension_data = namespace.get(DATA_KEY, [])
-    visible_axes = mhs_svg_dimension_axes(view_key)
+    visible_axes = tsdraft_svg_dimension_axes(view_key)
 
     svg.append('  <g id="dimensions">')
 
@@ -2555,12 +2555,12 @@ def mhs_svg_export(context, filepath, view_key):
         if loc is None:
             continue
 
-        u, v, _ = mhs_project_world_to_view_mm(loc, view_key, unit_scale)
+        u, v, _ = tsdraft_project_world_to_view_mm(loc, view_key, unit_scale)
         tx, ty = svg_xy(u, v)
 
         axis_lower = axis.lower()
-        off_x_px = getattr(scene, f"mhs_{view_key}_{axis_lower}_offset_x", 0)
-        off_y_px = getattr(scene, f"mhs_{view_key}_{axis_lower}_offset_y", 0)
+        off_x_px = getattr(scene, f"tsdraft_{view_key}_{axis_lower}_offset_x", 0)
+        off_y_px = getattr(scene, f"tsdraft_{view_key}_{axis_lower}_offset_y", 0)
 
         tx += off_x_px * SVG_PX_TO_MM
         ty -= off_y_px * SVG_PX_TO_MM
@@ -2614,7 +2614,7 @@ def format_dimension_value(length_mm, unit):
 def get_dimension_text(scene, item):
     return format_dimension_value(
         dimension_length_mm(item),
-        scene.mhs_dimension_unit
+        scene.tsdraft_dimension_unit
     )
 
 
@@ -2658,7 +2658,7 @@ def redraw_viewports(self=None, context=None):
 # =========================================================
 
 
-def mhs_view_px_per_mm(region, rv3d, bbox_obj, view_key, unit_scale):
+def tsdraft_view_px_per_mm(region, rv3d, bbox_obj, view_key, unit_scale):
     if bbox_obj is None:
         return 1.0
 
@@ -2703,7 +2703,7 @@ def mhs_view_px_per_mm(region, rv3d, bbox_obj, view_key, unit_scale):
 
 
 def draw_size_labels():
-    mhs_import_legacy_state()
+    tsdraft_import_legacy_state()
     context = bpy.context
 
     if context.area is None or context.area.type != 'VIEW_3D':
@@ -2717,7 +2717,7 @@ def draw_size_labels():
 
     scene = context.scene
 
-    if not scene.mhs_show_dimensions:
+    if not scene.tsdraft_show_dimensions:
         return
 
     namespace = bpy.app.driver_namespace
@@ -2725,7 +2725,7 @@ def draw_size_labels():
     # 三面図シートでは、寸法文字を最終シート上で直接描画する。
     # ビューポート文字をスクショへ焼くと回転・クロップが不安定なので、
     # シート用一時PNGでは文字だけ抑止する。
-    if namespace.get("MHS_SHEET_SUPPRESS_DIM_TEXT", False):
+    if namespace.get("TSDRAFT_SHEET_SUPPRESS_DIM_TEXT", False):
         return
 
     source_name = namespace.get(SOURCE_KEY)
@@ -2739,10 +2739,10 @@ def draw_size_labels():
         return
 
     font_id = 0
-    font_size = scene.mhs_font_size
-    font_color = scene.mhs_font_color
+    font_size = scene.tsdraft_font_size
+    font_color = scene.tsdraft_font_color
 
-    if getattr(scene, "mhs_dark_place", False):
+    if getattr(scene, "tsdraft_dark_place", False):
         draw_color = DARK_TEXT
     else:
         draw_color = font_color
@@ -2761,7 +2761,7 @@ def draw_size_labels():
     view_key, view_dir = get_view_key_from_rv3d(rv3d)
 
     explicit_user_mode = bool(
-        getattr(scene, "mhs_user_view_mode", False)
+        getattr(scene, "tsdraft_user_view_mode", False)
     )
 
     # 「任意」ボタンを押した時だけuser個別設定を使用。
@@ -2812,7 +2812,7 @@ def draw_size_labels():
     # 各三面図で、画面横方向 / 縦方向に対応する寸法軸。
     # 横寸法はBOX上中央、縦寸法はBOX左中央へ自動配置。
     sheet_layout_mode = bool(
-        bpy.app.driver_namespace.get("MHS_SHEET_LAYOUT_MODE", False)
+        bpy.app.driver_namespace.get("TSDRAFT_SHEET_LAYOUT_MODE", False)
     )
 
     if sheet_layout_mode:
@@ -2866,26 +2866,26 @@ def draw_size_labels():
         # 明示的な任意ビューだけ user 個別設定を使う。
         # 普通の斜めデフォルトビューはグローバル表示を優先する。
         if explicit_user_mode:
-            if not getattr(scene, "mhs_show_dimensions_user", True):
+            if not getattr(scene, "tsdraft_show_dimensions_user", True):
                 continue
         elif view_key != "user":
             if not getattr(
                 scene,
-                f"mhs_show_dimensions_{view_key}",
+                f"tsdraft_show_dimensions_{view_key}",
                 True
             ):
                 continue
-            if not mhs_dimension_axis_enabled(scene, view_key, axis_name):
+            if not tsdraft_dimension_axis_enabled(scene, view_key, axis_name):
                 continue
 
         unit_scale = scene.unit_settings.scale_length or 1.0
-        px_per_mm = mhs_view_px_per_mm(
+        px_per_mm = tsdraft_view_px_per_mm(
             region, rv3d, bbox_obj, view_key, unit_scale
         )
 
         # 既存の細かい位置調整は「自動配置位置からの追加オフセット」として残す。
-        vx_mm = getattr(scene, f"mhs_{view_key}_{axis}_offset_x_mm", 0.0)
-        vy_mm = getattr(scene, f"mhs_{view_key}_{axis}_offset_y_mm", 0.0)
+        vx_mm = getattr(scene, f"tsdraft_{view_key}_{axis}_offset_x_mm", 0.0)
+        vy_mm = getattr(scene, f"tsdraft_{view_key}_{axis}_offset_y_mm", 0.0)
         vx = vx_mm * px_per_mm
         vy = vy_mm * px_per_mm
 
@@ -3018,7 +3018,7 @@ def draw_size_labels():
             blf.draw(font_id, display_text)
 
 
-def mhs_remove_legacy_draw_handlers():
+def tsdraft_remove_legacy_draw_handlers():
     """Remove stale pre-Printable/old-version handlers that can double-draw labels."""
     namespace = bpy.app.driver_namespace
 
@@ -3036,7 +3036,7 @@ def ensure_draw_handler():
     namespace = bpy.app.driver_namespace
 
     # First kill known stale handlers from older series/versions.
-    mhs_remove_legacy_draw_handlers()
+    tsdraft_remove_legacy_draw_handlers()
 
     old_handler = namespace.get(HANDLER_KEY)
     if old_handler is not None:
@@ -3071,7 +3071,7 @@ def remove_draw_handler():
 
 
 
-def mhs_get_source_bounds_local(src, depsgraph):
+def tsdraft_get_source_bounds_local(src, depsgraph):
     """Return evaluated local-space min/max corners for the source object."""
     obj_eval = src.evaluated_get(depsgraph)
 
@@ -3102,7 +3102,7 @@ def mhs_get_source_bounds_local(src, depsgraph):
     return xmin, xmax, ymin, ymax, zmin, zmax
 
 
-def mhs_auto_follow_signature(src, bounds):
+def tsdraft_auto_follow_signature(src, bounds):
     matrix_values = tuple(
         round(float(v), 8)
         for row in src.matrix_world
@@ -3112,7 +3112,7 @@ def mhs_auto_follow_signature(src, bounds):
     return bounds_values + matrix_values
 
 
-def mhs_update_bbox_from_source(scene, depsgraph, force=False, request_redraw=True):
+def tsdraft_update_bbox_from_source(scene, depsgraph, force=False, request_redraw=True):
     """Update the existing BBox mesh + dimension data from its source.
 
     request_redraw=False is used by the depsgraph auto-follow handler because
@@ -3125,7 +3125,7 @@ def mhs_update_bbox_from_source(scene, depsgraph, force=False, request_redraw=Tr
     if namespace.get(AUTO_FOLLOW_GUARD_KEY):
         return False
 
-    if not getattr(scene, "mhs_auto_follow", True):
+    if not getattr(scene, "tsdraft_auto_follow", True):
         return False
 
     source_name = namespace.get(SOURCE_KEY)
@@ -3133,7 +3133,7 @@ def mhs_update_bbox_from_source(scene, depsgraph, force=False, request_redraw=Tr
         # Fall back to the persistent name stored on the BBox object.
         bbox_existing = bpy.data.objects.get(BBOX_NAME)
         if bbox_existing is not None:
-            source_name = bbox_existing.get("mhs_source_name")
+            source_name = bbox_existing.get("tsdraft_source_name")
             if source_name:
                 namespace[SOURCE_KEY] = source_name
 
@@ -3146,11 +3146,11 @@ def mhs_update_bbox_from_source(scene, depsgraph, force=False, request_redraw=Tr
     if src is None or bbox_obj is None or src.type != 'MESH':
         return False
 
-    bounds = mhs_get_source_bounds_local(src, depsgraph)
+    bounds = tsdraft_get_source_bounds_local(src, depsgraph)
     if bounds is None:
         return False
 
-    signature = mhs_auto_follow_signature(src, bounds)
+    signature = tsdraft_auto_follow_signature(src, bounds)
     if not force and namespace.get(AUTO_FOLLOW_SIGNATURE_KEY) == signature:
         return False
 
@@ -3184,7 +3184,7 @@ def mhs_update_bbox_from_source(scene, depsgraph, force=False, request_redraw=Tr
         mesh.update()
 
         bbox_obj.matrix_world = src.matrix_world.copy()
-        bbox_obj["mhs_source_name"] = src.name
+        bbox_obj["tsdraft_source_name"] = src.name
 
         unit_scale = scene.unit_settings.scale_length or 1.0
 
@@ -3233,7 +3233,7 @@ def size_bbox_auto_follow_handler(scene, depsgraph):
     try:
         # The depsgraph event itself already schedules viewport redraws.
         # Do not force-redraw every VIEW_3D area again from inside the handler.
-        mhs_update_bbox_from_source(scene, depsgraph, force=False, request_redraw=False)
+        tsdraft_update_bbox_from_source(scene, depsgraph, force=False, request_redraw=False)
     except Exception:
         # Never let the measurement helper break Blender's depsgraph.
         pass
@@ -3315,8 +3315,8 @@ class TSDRAFT_OT_toggle_size_overlay(bpy.types.Operator):
 
         # 両方表示中なら隠す。それ以外ならまとめて表示。
         currently_visible = (
-            bool(getattr(scene, "mhs_show_bbox", True))
-            and bool(getattr(scene, "mhs_show_dimensions", True))
+            bool(getattr(scene, "tsdraft_show_bbox", True))
+            and bool(getattr(scene, "tsdraft_show_dimensions", True))
         )
 
         new_state = not currently_visible
@@ -3324,21 +3324,21 @@ class TSDRAFT_OT_toggle_size_overlay(bpy.types.Operator):
         if new_state:
             # 再表示時はグローバル表示を先にONにしてから、
             # 各ビュー個別フラグも確実にONへ戻す。
-            scene.mhs_show_bbox = True
-            scene.mhs_show_dimensions = True
+            scene.tsdraft_show_bbox = True
+            scene.tsdraft_show_dimensions = True
 
-            scene.mhs_show_bbox_top = True
-            scene.mhs_show_bbox_front = True
-            scene.mhs_show_bbox_side = True
-            scene.mhs_show_bbox_user = True
+            scene.tsdraft_show_bbox_top = True
+            scene.tsdraft_show_bbox_front = True
+            scene.tsdraft_show_bbox_side = True
+            scene.tsdraft_show_bbox_user = True
 
-            scene.mhs_show_dimensions_top = True
-            scene.mhs_show_dimensions_front = True
-            scene.mhs_show_dimensions_side = True
-            scene.mhs_show_dimensions_user = True
+            scene.tsdraft_show_dimensions_top = True
+            scene.tsdraft_show_dimensions_front = True
+            scene.tsdraft_show_dimensions_side = True
+            scene.tsdraft_show_dimensions_user = True
         else:
-            scene.mhs_show_bbox = False
-            scene.mhs_show_dimensions = False
+            scene.tsdraft_show_bbox = False
+            scene.tsdraft_show_dimensions = False
 
         redraw_viewports()
         return {'FINISHED'}
@@ -3458,7 +3458,7 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
             bpy.data.node_groups.remove(node_group)
 
         bbox_obj.name = BBOX_NAME
-        bbox_obj["mhs_source_name"] = src.name
+        bbox_obj["tsdraft_source_name"] = src.name
         bbox_obj.display_type = 'BOUNDS'
         bbox_obj.display_bounds_type = 'BOX'
 
@@ -3526,21 +3526,21 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
 
         # 作成直後は「出た！」が分かるよう、通常斜めビューで必ず表示。
         # 「任意」専用モードはいったん解除する。
-        context.scene.mhs_user_view_mode = False
+        context.scene.tsdraft_user_view_mode = False
 
         # BOXと寸法を必ず表示へリセット
-        context.scene.mhs_show_dimensions = True
-        context.scene.mhs_show_dimensions_top = True
-        context.scene.mhs_show_dimensions_front = True
-        context.scene.mhs_show_dimensions_side = True
-        context.scene.mhs_show_dimensions_user = False
+        context.scene.tsdraft_show_dimensions = True
+        context.scene.tsdraft_show_dimensions_top = True
+        context.scene.tsdraft_show_dimensions_front = True
+        context.scene.tsdraft_show_dimensions_side = True
+        context.scene.tsdraft_show_dimensions_user = False
 
-        context.scene.mhs_show_bbox = True
-        context.scene.mhs_frame_mode = 'BOX'
-        context.scene.mhs_show_bbox_top = True
-        context.scene.mhs_show_bbox_front = True
-        context.scene.mhs_show_bbox_side = True
-        context.scene.mhs_show_bbox_user = False
+        context.scene.tsdraft_show_bbox = True
+        context.scene.tsdraft_frame_mode = 'BOX'
+        context.scene.tsdraft_show_bbox_top = True
+        context.scene.tsdraft_show_bbox_front = True
+        context.scene.tsdraft_show_bbox_side = True
+        context.scene.tsdraft_show_bbox_user = False
 
         ensure_draw_handler()
         ensure_cleanup_handler()
@@ -3557,7 +3557,7 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
 
         # 自動追従の初期署名をここで作る
         try:
-            mhs_update_bbox_from_source(
+            tsdraft_update_bbox_from_source(
                 context.scene,
                 context.evaluated_depsgraph_get(),
                 force=True
@@ -3605,7 +3605,7 @@ class TSDRAFT_OT_delete_bbox(bpy.types.Operator):
 
 
 
-def mhs_sheet_paper_mm(scene):
+def tsdraft_sheet_paper_mm(scene):
     sizes = {
         'A4': (210.0, 297.0),
         'A3': (297.0, 420.0),
@@ -3613,13 +3613,13 @@ def mhs_sheet_paper_mm(scene):
         'A1': (594.0, 841.0),
         'A0': (841.0, 1189.0),
     }
-    paper = getattr(scene, 'mhs_sheet_paper_size', 'A4')
+    paper = getattr(scene, 'tsdraft_sheet_paper_size', 'A4')
     if paper == 'CUSTOM':
-        w = max(10.0, float(getattr(scene, 'mhs_sheet_custom_width_mm', 210.0)))
-        h = max(10.0, float(getattr(scene, 'mhs_sheet_custom_height_mm', 297.0)))
+        w = max(10.0, float(getattr(scene, 'tsdraft_sheet_custom_width_mm', 210.0)))
+        h = max(10.0, float(getattr(scene, 'tsdraft_sheet_custom_height_mm', 297.0)))
     else:
         w, h = sizes.get(paper, (210.0, 297.0))
-    orientation = getattr(scene, 'mhs_sheet_orientation', 'AUTO')
+    orientation = getattr(scene, 'tsdraft_sheet_orientation', 'AUTO')
     if orientation == 'LANDSCAPE':
         return max(w, h), min(w, h)
     if orientation == 'PORTRAIT':
@@ -3627,8 +3627,8 @@ def mhs_sheet_paper_mm(scene):
     return w, h
 
 
-def mhs_sheet_scale_denominator(scene):
-    scale_key = getattr(scene, 'mhs_sheet_scale', '1_1')
+def tsdraft_sheet_scale_denominator(scene):
+    scale_key = getattr(scene, 'tsdraft_sheet_scale', '1_1')
     fixed = {
         '1_1': 1.0,
         '1_2': 2.0,
@@ -3636,16 +3636,16 @@ def mhs_sheet_scale_denominator(scene):
         '1_10': 10.0,
     }
     if scale_key == 'CUSTOM':
-        return max(1.0, float(getattr(scene, 'mhs_sheet_custom_scale', 1.0)))
+        return max(1.0, float(getattr(scene, 'tsdraft_sheet_custom_scale', 1.0)))
     return fixed.get(scale_key, 1.0)
 
 
-def mhs_svg_data_uri_from_png(filepath):
+def tsdraft_svg_data_uri_from_png(filepath):
     data = Path(filepath).read_bytes()
     return 'data:image/png;base64,' + base64.b64encode(data).decode('ascii')
 
 
-def mhs_sheet_layout_aligned(view_data, page_w, page_h, margin=12.0, gutter=10.0, footer=12.0):
+def tsdraft_sheet_layout_aligned(view_data, page_w, page_h, margin=12.0, gutter=10.0, footer=12.0):
     """
     Conventional three-view layout using BBox FRAME positions as the alignment reference:
       TOP directly above FRONT, same frame left/right.
@@ -3724,7 +3724,7 @@ _TSDRAFT_BITMAP_FONT = {
 }
 
 
-def mhs_draw_bitmap_text(canvas, text, x, y_top, scale=3):
+def tsdraft_draw_bitmap_text(canvas, text, x, y_top, scale=3):
     """Tiny dependency-free black bitmap label, top-left coordinate."""
     h, w, _ = canvas.shape
     x = int(x)
@@ -3749,7 +3749,7 @@ def mhs_draw_bitmap_text(canvas, text, x, y_top, scale=3):
 
 
 
-def mhs_sheet_text_rgba(text, font_size_px, color_rgba):
+def tsdraft_sheet_text_rgba(text, font_size_px, color_rgba):
     """Render one text label to an RGBA numpy array using Blender's default font."""
     import numpy as np
     import imbuf
@@ -3793,7 +3793,7 @@ def mhs_sheet_text_rgba(text, font_size_px, color_rgba):
             pass
 
 
-def mhs_sheet_alpha_blit(canvas, rgba, x0, y0):
+def tsdraft_sheet_alpha_blit(canvas, rgba, x0, y0):
     """Alpha-composite RGBA onto Blender-style bottom-up float canvas."""
     x0 = int(round(x0))
     y0 = int(round(y0))
@@ -3828,14 +3828,14 @@ def mhs_sheet_alpha_blit(canvas, rgba, x0, y0):
     dst[..., 3:4] = 1.0
 
 
-def mhs_export_canvas_rgba(scene):
-    mode = getattr(scene, 'mhs_export_background', 'WHITE')
-    custom = getattr(scene, 'mhs_export_background_color', (1.0, 1.0, 1.0))
-    rgb = mhs_background_color(mode, custom)
+def tsdraft_export_canvas_rgba(scene):
+    mode = getattr(scene, 'tsdraft_export_background', 'WHITE')
+    custom = getattr(scene, 'tsdraft_export_background_color', (1.0, 1.0, 1.0))
+    rgb = tsdraft_background_color(mode, custom)
     return (float(rgb[0]), float(rgb[1]), float(rgb[2]), 1.0)
 
 
-def mhs_new_background_canvas(np, height, width, rgba):
+def tsdraft_new_background_canvas(np, height, width, rgba):
     canvas = np.empty((int(height), int(width), 4), dtype=np.float32)
     canvas[..., 0] = rgba[0]
     canvas[..., 1] = rgba[1]
@@ -3844,7 +3844,7 @@ def mhs_new_background_canvas(np, height, width, rgba):
     return canvas
 
 
-def mhs_sheet_draw_dimension_labels(canvas, scene, positions, view_data, sheet_dpi, page_h_mm):
+def tsdraft_sheet_draw_dimension_labels(canvas, scene, positions, view_data, sheet_dpi, page_h_mm):
     """
     Draw sheet dimensions directly on the final raster.
     Horizontal dimensions remain horizontal.
@@ -3869,11 +3869,11 @@ def mhs_sheet_draw_dimension_labels(canvas, scene, positions, view_data, sheet_d
 
     # 図面シート文字は物理mm基準で描くが、UIの「文字サイズ」に素直に追従させる。
     # 20px -> 約3.0mm を基準に比例。極端値だけ広めに安全制限する。
-    design_px = max(4.0, float(getattr(scene, "mhs_font_size", 20)))
+    design_px = max(4.0, float(getattr(scene, "tsdraft_font_size", 20)))
     font_mm = min(12.0, max(1.2, design_px * 0.15))
     font_px = max(6.0, font_mm / 25.4 * float(sheet_dpi))
 
-    color = getattr(scene, "mhs_font_color", (0.05, 0.05, 0.05, 1.0))
+    color = getattr(scene, "tsdraft_font_color", (0.05, 0.05, 0.05, 1.0))
     gap_mm = max(1.2, font_mm * 0.42)
 
     # Same outside-edge convention as the sheet layout.
@@ -3900,7 +3900,7 @@ def mhs_sheet_draw_dimension_labels(canvas, scene, positions, view_data, sheet_d
             if not text:
                 continue
 
-            label = mhs_sheet_text_rgba(text, font_px, color)
+            label = tsdraft_sheet_text_rgba(text, font_px, color)
 
             if side in {"LEFT", "RIGHT"}:
                 # np.rot90 rotates the actual glyph raster. This is deterministic
@@ -3931,10 +3931,10 @@ def mhs_sheet_draw_dimension_labels(canvas, scene, positions, view_data, sheet_d
             # Convert top-down sheet coordinate to bottom-up canvas coordinate.
             y_px = (page_h_mm - y_top_mm - label_h_mm) / 25.4 * sheet_dpi
 
-            mhs_sheet_alpha_blit(canvas, label, x_px, y_px)
+            tsdraft_sheet_alpha_blit(canvas, label, x_px, y_px)
 
 
-def mhs_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
+def tsdraft_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
     """
     Add dimension text to an already exported exact-size PNG.
     Used by '3面まとめて書き出し' so vertical dimension text is rotated
@@ -3975,22 +3975,22 @@ def mhs_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
         bbox_bottom = float(info.get("bbox_bottom_px", 0.0))
         bbox_top = float(src_h) - float(info.get("bbox_top_px", 0.0))
 
-        font_px = max(4.0, float(getattr(scene, "mhs_font_size", 20)))
-        color = getattr(scene, "mhs_font_color", (0.05, 0.05, 0.05, 1.0))
+        font_px = max(4.0, float(getattr(scene, "tsdraft_font_size", 20)))
+        color = getattr(scene, "tsdraft_font_color", (0.05, 0.05, 0.05, 1.0))
         gap_px = max(8.0, font_px * 0.40)
         outer_pad = max(8.0, font_px * 0.35)
 
         labels = []
 
         if horizontal_text:
-            label = mhs_sheet_text_rgba(horizontal_text, font_px, color)
+            label = tsdraft_sheet_text_rgba(horizontal_text, font_px, color)
             lh, lw = label.shape[0], label.shape[1]
             x = (bbox_left + bbox_right) * 0.5 - lw * 0.5
             y = bbox_top + gap_px
             labels.append((label, x, y))
 
         if vertical_text:
-            label = mhs_sheet_text_rgba(vertical_text, font_px, color)
+            label = tsdraft_sheet_text_rgba(vertical_text, font_px, color)
             # Actual raster rotation, independent of viewport BLF rotation.
             label = np.rot90(label, k=1).copy()
             lh, lw = label.shape[0], label.shape[1]
@@ -4008,16 +4008,16 @@ def mhs_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
         out_w = max(1, int(math.ceil(max_x + shift_x)))
         out_h = max(1, int(math.ceil(max_y + shift_y)))
 
-        canvas = mhs_new_background_canvas(
+        canvas = tsdraft_new_background_canvas(
             np,
             out_h,
             out_w,
-            mhs_export_canvas_rgba(scene)
+            tsdraft_export_canvas_rgba(scene)
         )
         canvas[shift_y:shift_y + src_h, shift_x:shift_x + src_w, :] = src
 
         for label, x, y in labels:
-            mhs_sheet_alpha_blit(
+            tsdraft_sheet_alpha_blit(
                 canvas,
                 label,
                 x + shift_x,
@@ -4025,7 +4025,7 @@ def mhs_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
             )
 
         out_image = bpy.data.images.new(
-            name="MHS_Batch_Dimensioned_View",
+            name="TSDRAFT_Batch_Dimensioned_View",
             width=out_w,
             height=out_h,
             alpha=False,
@@ -4040,7 +4040,7 @@ def mhs_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
             bpy.data.images.remove(out_image)
 
         # Expanding the canvas must not change the BBox's physical scale.
-        if not mhs_patch_png_dpi(filepath, float(info["dpi"])):
+        if not tsdraft_patch_png_dpi(filepath, float(info["dpi"])):
             raise RuntimeError("まとめ書き出しPNGへDPI情報を書き戻せんかったンゴ")
 
     finally:
@@ -4049,16 +4049,16 @@ def mhs_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
         except Exception:
             pass
 
-def mhs_make_three_view_sheet_png(scene, filepath, exported):
+def tsdraft_make_three_view_sheet_png(scene, filepath, exported):
     """Compose three exact-size PNGs into a clean, aligned, print-scale PNG sheet."""
     try:
         import numpy as np
     except Exception as exc:
         raise RuntimeError("図面シートPNGの作成に必要なNumPyを読み込めんかったンゴ") from exc
 
-    denominator = mhs_sheet_scale_denominator(scene)
-    paper = getattr(scene, 'mhs_sheet_paper_size', 'A4')
-    orientation = getattr(scene, 'mhs_sheet_orientation', 'AUTO')
+    denominator = tsdraft_sheet_scale_denominator(scene)
+    paper = getattr(scene, 'tsdraft_sheet_paper_size', 'A4')
+    orientation = getattr(scene, 'tsdraft_sheet_orientation', 'AUTO')
 
     paper_sizes = {
         'A4': (210.0, 297.0),
@@ -4068,8 +4068,8 @@ def mhs_make_three_view_sheet_png(scene, filepath, exported):
         'A0': (841.0, 1189.0),
     }
     if paper == 'CUSTOM':
-        base_w = max(10.0, float(getattr(scene, 'mhs_sheet_custom_width_mm', 210.0)))
-        base_h = max(10.0, float(getattr(scene, 'mhs_sheet_custom_height_mm', 297.0)))
+        base_w = max(10.0, float(getattr(scene, 'tsdraft_sheet_custom_width_mm', 210.0)))
+        base_h = max(10.0, float(getattr(scene, 'tsdraft_sheet_custom_height_mm', 297.0)))
     else:
         base_w, base_h = paper_sizes.get(paper, (210.0, 297.0))
 
@@ -4108,7 +4108,7 @@ def mhs_make_three_view_sheet_png(scene, filepath, exported):
     chosen = None
     required = None
     for orient_name, page_w, page_h in candidates:
-        positions, needed = mhs_sheet_layout_aligned(view_data, page_w, page_h)
+        positions, needed = tsdraft_sheet_layout_aligned(view_data, page_w, page_h)
         if positions is not None:
             chosen = (orient_name, page_w, page_h, positions)
             break
@@ -4134,11 +4134,11 @@ def mhs_make_three_view_sheet_png(scene, filepath, exported):
 
     page_px_w = max(1, int(round(page_w / 25.4 * sheet_dpi)))
     page_px_h = max(1, int(round(page_h / 25.4 * sheet_dpi)))
-    canvas = mhs_new_background_canvas(
+    canvas = tsdraft_new_background_canvas(
         np,
         page_px_h,
         page_px_w,
-        mhs_export_canvas_rgba(scene)
+        tsdraft_export_canvas_rgba(scene)
     )
 
     loaded_images = []
@@ -4174,7 +4174,7 @@ def mhs_make_three_view_sheet_png(scene, filepath, exported):
             dst[..., 3:4] = 1.0
 
         # Sheet dimensions are drawn here, not baked into the viewport screenshots.
-        mhs_sheet_draw_dimension_labels(
+        tsdraft_sheet_draw_dimension_labels(
             canvas,
             scene,
             positions,
@@ -4188,10 +4188,10 @@ def mhs_make_three_view_sheet_png(scene, filepath, exported):
         label_scale = max(2, int(round(sheet_dpi / 100.0)))
         label_x = int(round(12.0 / 25.4 * sheet_dpi))
         label_y_top = int(round((page_h - 10.0) / 25.4 * sheet_dpi))
-        mhs_draw_bitmap_text(canvas, label, label_x, label_y_top, label_scale)
+        tsdraft_draw_bitmap_text(canvas, label, label_x, label_y_top, label_scale)
 
         out_image = bpy.data.images.new(
-            name="MHS_Three_View_Sheet",
+            name="TSDRAFT_Three_View_Sheet",
             width=page_px_w,
             height=page_px_h,
             alpha=False,
@@ -4207,7 +4207,7 @@ def mhs_make_three_view_sheet_png(scene, filepath, exported):
         finally:
             bpy.data.images.remove(out_image)
 
-        if not mhs_patch_png_dpi(filepath, sheet_dpi):
+        if not tsdraft_patch_png_dpi(filepath, sheet_dpi):
             raise RuntimeError("図面シートPNGへDPI情報を書き込めんかったンゴ")
     finally:
         for image in loaded_images:
@@ -4228,9 +4228,9 @@ def mhs_make_three_view_sheet_png(scene, filepath, exported):
     }
 
 
-def mhs_build_three_view_sheet(context, filepath):
+def tsdraft_build_three_view_sheet(context, filepath):
     """Shared builder for preview and final export."""
-    source_obj = mhs_resolve_source_object(context)
+    source_obj = tsdraft_resolve_source_object(context)
     if source_obj is None:
         raise RuntimeError('元オブジェクトを選択してクレメンス')
     if bpy.data.objects.get(BBOX_NAME) is None:
@@ -4240,7 +4240,7 @@ def mhs_build_three_view_sheet(context, filepath):
     os.makedirs(out_dir, exist_ok=True)
 
     # 2.4.13: intermediate view PNGs belong in the OS temp area, not beside
-    # the user's exported drawing.  The old .mhs_sheet_temp directory could
+    # the user's exported drawing.  The old .tsdraft_sheet_temp directory could
     # survive on Windows when a file handle was released a little late.
     import tempfile
     import shutil
@@ -4248,15 +4248,15 @@ def mhs_build_three_view_sheet(context, filepath):
 
     exported = {}
     namespace = bpy.app.driver_namespace
-    old_sheet_layout_mode = namespace.get("MHS_SHEET_LAYOUT_MODE", False)
-    old_suppress_dim_text = namespace.get("MHS_SHEET_SUPPRESS_DIM_TEXT", False)
-    namespace["MHS_SHEET_LAYOUT_MODE"] = True
-    namespace["MHS_SHEET_SUPPRESS_DIM_TEXT"] = True
+    old_sheet_layout_mode = namespace.get("TSDRAFT_SHEET_LAYOUT_MODE", False)
+    old_suppress_dim_text = namespace.get("TSDRAFT_SHEET_SUPPRESS_DIM_TEXT", False)
+    namespace["TSDRAFT_SHEET_LAYOUT_MODE"] = True
+    namespace["TSDRAFT_SHEET_SUPPRESS_DIM_TEXT"] = True
 
     try:
         for key, label in (('top', '上面'), ('front', '前面'), ('side', '側面')):
-            tmp = temp_dir / f'__mhs_{os.getpid()}_{key}.png'
-            info = mhs_export_viewport_exact_png(
+            tmp = temp_dir / f'__tsdraft_{os.getpid()}_{key}.png'
+            info = tsdraft_export_viewport_exact_png(
                 context,
                 str(tmp),
                 key,
@@ -4264,10 +4264,10 @@ def mhs_build_three_view_sheet(context, filepath):
                 suppress_dimension_text=True
             )
             exported[key] = {'path': str(tmp), 'info': info, 'label': label}
-        return mhs_make_three_view_sheet_png(context.scene, filepath, exported)
+        return tsdraft_make_three_view_sheet_png(context.scene, filepath, exported)
     finally:
-        namespace["MHS_SHEET_LAYOUT_MODE"] = old_sheet_layout_mode
-        namespace["MHS_SHEET_SUPPRESS_DIM_TEXT"] = old_suppress_dim_text
+        namespace["TSDRAFT_SHEET_LAYOUT_MODE"] = old_sheet_layout_mode
+        namespace["TSDRAFT_SHEET_SUPPRESS_DIM_TEXT"] = old_suppress_dim_text
         for item in exported.values():
             try:
                 Path(item['path']).unlink(missing_ok=True)
@@ -4300,7 +4300,7 @@ class TSDRAFT_OT_preview_three_view_sheet(bpy.types.Operator):
         filepath = preview_dir / '三面図プレビュー.png'
 
         try:
-            info = mhs_build_three_view_sheet(context, str(filepath))
+            info = tsdraft_build_three_view_sheet(context, str(filepath))
             bpy.ops.wm.path_open(filepath=str(filepath))
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
@@ -4322,12 +4322,12 @@ class TSDRAFT_OT_export_three_view_sheet(bpy.types.Operator, ExportHelper):
     filter_glob: bpy.props.StringProperty(default='*.png', options={'HIDDEN'})
 
     def invoke(self, context, event):
-        mhs_store_export_view_context(context)
-        source_obj = mhs_resolve_source_object(context)
+        tsdraft_store_export_view_context(context)
+        source_obj = tsdraft_resolve_source_object(context)
         base = source_obj.name if source_obj is not None else 'drawing'
         safe_base = ''.join(c if c not in '\\/:*?"<>|' else '_' for c in base)
-        last_dir = mhs_get_last_export_dir()
-        default_name = f'{safe_base}_三面図_{context.scene.mhs_sheet_paper_size}_1-{mhs_sheet_scale_denominator(context.scene):g}.png'
+        last_dir = tsdraft_get_last_export_dir()
+        default_name = f'{safe_base}_三面図_{context.scene.tsdraft_sheet_paper_size}_1-{tsdraft_sheet_scale_denominator(context.scene):g}.png'
         self.filepath = os.path.join(last_dir, default_name) if last_dir else default_name
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
@@ -4338,12 +4338,12 @@ class TSDRAFT_OT_export_three_view_sheet(bpy.types.Operator, ExportHelper):
             filepath += '.png'
 
         try:
-            sheet_info = mhs_build_three_view_sheet(context, filepath)
+            sheet_info = tsdraft_build_three_view_sheet(context, filepath)
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 
-        mhs_remember_export_dir(filepath)
+        tsdraft_remember_export_dir(filepath)
         self.report(
             {'INFO'},
             f"{sheet_info['paper']} / 1:{sheet_info['scale_denominator']:g} / {sheet_info['dpi']:.0f}dpi の三面図PNGを書き出したで"
@@ -4374,14 +4374,14 @@ class TSDRAFT_OT_export_actual_png(bpy.types.Operator, ExportHelper):
     )
 
     def invoke(self, context, event):
-        mhs_store_export_view_context(context)
+        tsdraft_store_export_view_context(context)
 
-        source_obj = mhs_resolve_source_object(context)
+        source_obj = tsdraft_resolve_source_object(context)
         base = source_obj.name if source_obj is not None else "drawing"
         safe_base = "".join(c if c not in '\\/:*?"<>|' else "_" for c in base)
 
-        default_name = f"{safe_base}_{mhs_svg_view_label(self.view_key)}.png"
-        last_dir = mhs_get_last_export_dir()
+        default_name = f"{safe_base}_{tsdraft_svg_view_label(self.view_key)}.png"
+        last_dir = tsdraft_get_last_export_dir()
 
         if last_dir:
             self.filepath = os.path.join(last_dir, default_name)
@@ -4393,7 +4393,7 @@ class TSDRAFT_OT_export_actual_png(bpy.types.Operator, ExportHelper):
 
     def execute(self, context):
         try:
-            info = mhs_export_viewport_exact_png(
+            info = tsdraft_export_viewport_exact_png(
                 context,
                 self.filepath,
                 self.view_key
@@ -4402,11 +4402,11 @@ class TSDRAFT_OT_export_actual_png(bpy.types.Operator, ExportHelper):
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 
-        mhs_remember_export_dir(self.filepath)
+        tsdraft_remember_export_dir(self.filepath)
 
         self.report(
             {'INFO'},
-            f"{mhs_svg_view_label(self.view_key)} PNG出力 "
+            f"{tsdraft_svg_view_label(self.view_key)} PNG出力 "
             f"{info['bbox_width_mm']:.1f}×{info['bbox_height_mm']:.1f}mm "
             f"/ {info['dpi']:.1f}dpi"
         )
@@ -4428,16 +4428,16 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
     )
 
     def invoke(self, context, event):
-        mhs_store_export_view_context(context)
+        tsdraft_store_export_view_context(context)
 
-        source_obj = mhs_resolve_source_object(context)
+        source_obj = tsdraft_resolve_source_object(context)
         base = source_obj.name if source_obj is not None else "drawing"
         safe_base = "".join(
             c if c not in '\\/:*?"<>|' else "_"
             for c in base
         )
 
-        last_dir = mhs_get_last_export_dir()
+        last_dir = tsdraft_get_last_export_dir()
         default_name = f"{safe_base}.png"
 
         if last_dir:
@@ -4449,7 +4449,7 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
         return {'RUNNING_MODAL'}
 
     def execute(self, context):
-        source_obj = mhs_resolve_source_object(context)
+        source_obj = tsdraft_resolve_source_object(context)
         if source_obj is None:
             self.report({'ERROR'}, "元オブジェクトを選択してクレメンス")
             return {'CANCELLED'}
@@ -4458,7 +4458,7 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
         target_dir = os.path.dirname(chosen_path)
 
         if not target_dir:
-            target_dir = mhs_get_last_export_dir() or os.getcwd()
+            target_dir = tsdraft_get_last_export_dir() or os.getcwd()
 
         os.makedirs(target_dir, exist_ok=True)
 
@@ -4488,7 +4488,7 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
 
         # 3面まとめて書き出しは現在表示に依存せず、
         # 上面・前面・側面を内部で1面ずつ切り替え、個別フィットして出力する。
-        view_ctx = mhs_get_export_view_context(context)
+        view_ctx = tsdraft_get_export_view_context(context)
         if view_ctx is None:
             self.report({'ERROR'}, "書き出し元の3Dビューが見つからんかったンゴ")
             return {'CANCELLED'}
@@ -4499,14 +4499,14 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
                 f"{safe_base}_{view_label}.png"
             )
             try:
-                info = mhs_export_viewport_exact_png(
+                info = tsdraft_export_viewport_exact_png(
                     context,
                     filepath,
                     view_key,
                     common_view_distance=None,
                     suppress_dimension_text=True
                 )
-                mhs_add_dimension_labels_to_exact_png(
+                tsdraft_add_dimension_labels_to_exact_png(
                     context.scene,
                     filepath,
                     view_key,
@@ -4522,7 +4522,7 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
         if done == 0:
             return {'CANCELLED'}
 
-        mhs_remember_export_dir(target_dir)
+        tsdraft_remember_export_dir(target_dir)
 
         self.report(
             {'INFO'},
@@ -4544,18 +4544,18 @@ class TSDRAFT_OT_dark_place(bpy.types.Operator):
         scene = context.scene
         space = context.area.spaces.active
 
-        if not scene.mhs_dark_place:
+        if not scene.tsdraft_dark_place:
             # 暗所は「通常Blender表示 ↔ 暗所」の往復専用にする。
             # 図面ビュー中なら、暗所へ入る前にまず元の通常表示へ戻す。
-            if getattr(scene, "mhs_drawing_mode", False):
+            if getattr(scene, "tsdraft_drawing_mode", False):
                 try:
                     restore_view_state(space)
                 except Exception:
                     pass
-                scene.mhs_drawing_mode = False
+                scene.tsdraft_drawing_mode = False
 
             # ここで通常表示を暗所の復帰先として保存してから暗所化。
-            scene.mhs_dark_place = True
+            scene.tsdraft_dark_place = True
             apply_dark_place_view(space)
 
             # 暗所中だけ見た目上のグリッドと標準X/Y軸を直接OFF。
@@ -4571,7 +4571,7 @@ class TSDRAFT_OT_dark_place(bpy.types.Operator):
             except Exception:
                 pass
         else:
-            scene.mhs_dark_place = False
+            scene.tsdraft_dark_place = False
 
             # 暗所に入る直前の背景・グリッド状態へそのまま戻す。
             restore_dark_place_view(space)
@@ -4586,40 +4586,40 @@ class TSDRAFT_OT_reset_label_offsets(bpy.types.Operator):
 
     def execute(self, context):
         for prop in (
-            "mhs_label_offset_x", "mhs_label_offset_y",
-            "mhs_x_offset_x", "mhs_x_offset_y",
-            "mhs_y_offset_x", "mhs_y_offset_y",
-            "mhs_z_offset_x", "mhs_z_offset_y",
-            "mhs_front_x_offset_x",
-            "mhs_front_x_offset_y",
-            "mhs_front_y_offset_x",
-            "mhs_front_y_offset_y",
-            "mhs_front_z_offset_x",
-            "mhs_front_z_offset_y",
-            "mhs_top_x_offset_x",
-            "mhs_top_x_offset_y",
-            "mhs_top_y_offset_x",
-            "mhs_top_y_offset_y",
-            "mhs_top_z_offset_x",
-            "mhs_top_z_offset_y",
-            "mhs_side_x_offset_x",
-            "mhs_side_x_offset_y",
-            "mhs_side_y_offset_x",
-            "mhs_side_y_offset_y",
-            "mhs_side_z_offset_x",
-            "mhs_side_z_offset_y",
-            "mhs_user_x_offset_x",
-            "mhs_user_x_offset_y",
-            "mhs_user_y_offset_x",
-            "mhs_user_y_offset_y",
-            "mhs_user_z_offset_x",
-            "mhs_user_z_offset_y"
+            "tsdraft_label_offset_x", "tsdraft_label_offset_y",
+            "tsdraft_x_offset_x", "tsdraft_x_offset_y",
+            "tsdraft_y_offset_x", "tsdraft_y_offset_y",
+            "tsdraft_z_offset_x", "tsdraft_z_offset_y",
+            "tsdraft_front_x_offset_x",
+            "tsdraft_front_x_offset_y",
+            "tsdraft_front_y_offset_x",
+            "tsdraft_front_y_offset_y",
+            "tsdraft_front_z_offset_x",
+            "tsdraft_front_z_offset_y",
+            "tsdraft_top_x_offset_x",
+            "tsdraft_top_x_offset_y",
+            "tsdraft_top_y_offset_x",
+            "tsdraft_top_y_offset_y",
+            "tsdraft_top_z_offset_x",
+            "tsdraft_top_z_offset_y",
+            "tsdraft_side_x_offset_x",
+            "tsdraft_side_x_offset_y",
+            "tsdraft_side_y_offset_x",
+            "tsdraft_side_y_offset_y",
+            "tsdraft_side_z_offset_x",
+            "tsdraft_side_z_offset_y",
+            "tsdraft_user_x_offset_x",
+            "tsdraft_user_x_offset_y",
+            "tsdraft_user_y_offset_x",
+            "tsdraft_user_y_offset_y",
+            "tsdraft_user_z_offset_x",
+            "tsdraft_user_z_offset_y"
         ):
             setattr(context.scene, prop, 0)
         for view in ("front", "top", "side", "user"):
             for axis in ("x", "y", "z"):
-                setattr(context.scene, f"mhs_{view}_{axis}_offset_x_mm", 0.0)
-                setattr(context.scene, f"mhs_{view}_{axis}_offset_y_mm", 0.0)
+                setattr(context.scene, f"tsdraft_{view}_{axis}_offset_x_mm", 0.0)
+                setattr(context.scene, f"tsdraft_{view}_{axis}_offset_y_mm", 0.0)
 
         redraw_viewports()
         return {'FINISHED'}
@@ -4680,7 +4680,7 @@ def save_view_state(space):
     }
 
 
-def mhs_background_color(mode, custom_color=(1.0, 1.0, 1.0)):
+def tsdraft_background_color(mode, custom_color=(1.0, 1.0, 1.0)):
     """Return viewport/page RGB for the selected background preset."""
     mode = str(mode or 'WHITE').upper()
     if mode == 'BLACK':
@@ -4699,7 +4699,7 @@ def configure_drawing_view(space, background_mode='WHITE', custom_color=(1.0, 1.
 
     mode = str(background_mode or 'WHITE').upper()
     show_grid = (mode == 'GRID')
-    bg_color = mhs_background_color(mode, custom_color)
+    bg_color = tsdraft_background_color(mode, custom_color)
 
     shading = space.shading
     shading.type = 'SOLID'
@@ -4778,20 +4778,20 @@ def restore_view_state(space):
 
 
 def update_drawing_background(self, context):
-    if not getattr(context.scene, "mhs_drawing_mode", False):
+    if not getattr(context.scene, "tsdraft_drawing_mode", False):
         # 通常Blender表示では背景やoverlayを勝手に変更しない。
         return
 
     if context.area and context.area.type == 'VIEW_3D':
         configure_drawing_view(
             context.area.spaces.active,
-            getattr(context.scene, "mhs_drawing_background", 'WHITE'),
-            getattr(context.scene, "mhs_drawing_background_color", (1.0, 1.0, 1.0))
+            getattr(context.scene, "tsdraft_drawing_background", 'WHITE'),
+            getattr(context.scene, "tsdraft_drawing_background_color", (1.0, 1.0, 1.0))
         )
         redraw_viewports()
 
 
-def mhs_fit_quad_for_drawing(context, area, padding_factor=1.28):
+def tsdraft_fit_quad_for_drawing(context, area, padding_factor=1.28):
     """
     Quad Viewの上面・前面・側面をBBox中心へ寄せ、
     寸法文字のために少し余白を持たせる。
@@ -4816,7 +4816,7 @@ def mhs_fit_quad_for_drawing(context, area, padding_factor=1.28):
 
     ortho_items = []
     for key in ("top", "front", "side"):
-        region, rv3d = mhs_find_view_region(area, key)
+        region, rv3d = tsdraft_find_view_region(area, key)
         if region is None or rv3d is None:
             continue
         ortho_items.append((key, region, rv3d))
@@ -4896,10 +4896,10 @@ def switch_single_view(context, axis_type=None):
 
     configure_drawing_view(
         space,
-        getattr(context.scene, "mhs_drawing_background", 'WHITE'),
-        getattr(context.scene, "mhs_drawing_background_color", (1.0, 1.0, 1.0))
+        getattr(context.scene, "tsdraft_drawing_background", 'WHITE'),
+        getattr(context.scene, "tsdraft_drawing_background_color", (1.0, 1.0, 1.0))
     )
-    context.scene.mhs_drawing_mode = True
+    context.scene.tsdraft_drawing_mode = True
 
     if is_quad_view(space):
         with context.temp_override(**override):
@@ -4941,20 +4941,20 @@ class TSDRAFT_OT_quad_view(bpy.types.Operator):
 
         configure_drawing_view(
             space,
-            context.scene.mhs_show_grid
+            context.scene.tsdraft_show_grid
         )
-        context.scene.mhs_drawing_mode = True
+        context.scene.tsdraft_drawing_mode = True
 
         # 三面図モードでは、上面・前面・側面は図面表示、
         # 任意ビューだけイメージ確認用にBOX/寸法を隠す。
-        context.scene.mhs_show_bbox_top = True
-        context.scene.mhs_show_bbox_front = True
-        context.scene.mhs_show_bbox_side = True
-        context.scene.mhs_show_dimensions_top = True
-        context.scene.mhs_show_dimensions_front = True
-        context.scene.mhs_show_dimensions_side = True
-        context.scene.mhs_show_bbox_user = False
-        context.scene.mhs_show_dimensions_user = False
+        context.scene.tsdraft_show_bbox_top = True
+        context.scene.tsdraft_show_bbox_front = True
+        context.scene.tsdraft_show_bbox_side = True
+        context.scene.tsdraft_show_dimensions_top = True
+        context.scene.tsdraft_show_dimensions_front = True
+        context.scene.tsdraft_show_dimensions_side = True
+        context.scene.tsdraft_show_bbox_user = False
+        context.scene.tsdraft_show_dimensions_user = False
 
         if not is_quad_view(space):
             with context.temp_override(**override):
@@ -4962,12 +4962,12 @@ class TSDRAFT_OT_quad_view(bpy.types.Operator):
 
         # Quad View生成直後にBBox＋寸法の余白を確保。
         try:
-            mhs_fit_quad_for_drawing(context, override["area"])
+            tsdraft_fit_quad_for_drawing(context, override["area"])
         except Exception:
             pass
 
         try:
-            mhs_sync_ortho_zoom(space)
+            tsdraft_sync_ortho_zoom(space)
         except Exception:
             pass
 
@@ -4980,7 +4980,7 @@ class TSDRAFT_OT_front_view(bpy.types.Operator):
     bl_label = "正面"
 
     def execute(self, context):
-        context.scene.mhs_user_view_mode = False
+        context.scene.tsdraft_user_view_mode = False
         if not switch_single_view(context, 'FRONT'):
             return {'CANCELLED'}
         return {'FINISHED'}
@@ -4991,7 +4991,7 @@ class TSDRAFT_OT_top_view(bpy.types.Operator):
     bl_label = "上面"
 
     def execute(self, context):
-        context.scene.mhs_user_view_mode = False
+        context.scene.tsdraft_user_view_mode = False
         if not switch_single_view(context, 'TOP'):
             return {'CANCELLED'}
         return {'FINISHED'}
@@ -5002,7 +5002,7 @@ class TSDRAFT_OT_side_view(bpy.types.Operator):
     bl_label = "側面"
 
     def execute(self, context):
-        context.scene.mhs_user_view_mode = False
+        context.scene.tsdraft_user_view_mode = False
         if not switch_single_view(context, 'RIGHT'):
             return {'CANCELLED'}
         return {'FINISHED'}
@@ -5013,7 +5013,7 @@ class TSDRAFT_OT_user_view(bpy.types.Operator):
     bl_label = "任意"
 
     def execute(self, context):
-        context.scene.mhs_user_view_mode = True
+        context.scene.tsdraft_user_view_mode = True
         if not switch_single_view(context, None):
             return {'CANCELLED'}
         redraw_viewports()
@@ -5030,10 +5030,10 @@ class TSDRAFT_OT_apply_drawing_style(bpy.types.Operator):
 
         configure_drawing_view(
             context.area.spaces.active,
-            getattr(context.scene, "mhs_drawing_background", 'WHITE'),
-            getattr(context.scene, "mhs_drawing_background_color", (1.0, 1.0, 1.0))
+            getattr(context.scene, "tsdraft_drawing_background", 'WHITE'),
+            getattr(context.scene, "tsdraft_drawing_background_color", (1.0, 1.0, 1.0))
         )
-        context.scene.mhs_drawing_mode = True
+        context.scene.tsdraft_drawing_mode = True
 
         redraw_viewports()
         return {'FINISHED'}
@@ -5064,13 +5064,13 @@ class TSDRAFT_OT_restore_view(bpy.types.Operator):
 
             space = override["space_data"]
 
-        if getattr(context.scene, "mhs_dark_place", False):
-            context.scene.mhs_dark_place = False
+        if getattr(context.scene, "tsdraft_dark_place", False):
+            context.scene.tsdraft_dark_place = False
             restore_dark_place_view(space)
 
         restore_view_state(space)
-        context.scene.mhs_drawing_mode = False
-        context.scene.mhs_user_view_mode = False
+        context.scene.tsdraft_drawing_mode = False
+        context.scene.tsdraft_user_view_mode = False
         redraw_viewports()
 
         self.report({'INFO'}, "通常表示に戻したで")
@@ -5110,8 +5110,8 @@ class TSDRAFT_PT_main(bpy.types.Panel):
         )
 
         overlay_visible = (
-            context.scene.mhs_show_bbox
-            and context.scene.mhs_show_dimensions
+            context.scene.tsdraft_show_bbox
+            and context.scene.tsdraft_show_dimensions
         )
 
         box.operator(
@@ -5126,7 +5126,7 @@ class TSDRAFT_PT_main(bpy.types.Panel):
 
         box.prop(
             context.scene,
-            "mhs_auto_follow",
+            "tsdraft_auto_follow",
             text="自動追従",
             toggle=True
         )
@@ -5141,37 +5141,37 @@ class TSDRAFT_PT_main(bpy.types.Panel):
 
         box.prop(
             context.scene,
-            "mhs_font_size",
+            "tsdraft_font_size",
             text="文字サイズ"
         )
 
         box.prop(
             context.scene,
-            "mhs_font_color",
+            "tsdraft_font_color",
             text="文字色"
         )
 
         box.prop(
             context.scene,
-            "mhs_dimension_unit",
+            "tsdraft_dimension_unit",
             text="単位"
         )
 
         box.prop(
             context.scene,
-            "mhs_frame_mode",
+            "tsdraft_frame_mode",
             text="枠表示"
         )
 
         box.prop(
             context.scene,
-            "mhs_frame_color",
+            "tsdraft_frame_color",
             text="枠線色"
         )
 
         box.prop(
             context.scene,
-            "mhs_frame_width",
+            "tsdraft_frame_width",
             text="枠線の太さ"
         )
 
@@ -5185,13 +5185,13 @@ class TSDRAFT_PT_main(bpy.types.Panel):
 
         box.prop(
             context.scene,
-            "mhs_export_background",
+            "tsdraft_export_background",
             text="書き出し背景"
         )
-        if context.scene.mhs_export_background == 'CUSTOM':
+        if context.scene.tsdraft_export_background == 'CUSTOM':
             box.prop(
                 context.scene,
-                "mhs_export_background_color",
+                "tsdraft_export_background_color",
                 text="カスタム色"
             )
 
@@ -5215,15 +5215,15 @@ class TSDRAFT_PT_main(bpy.types.Panel):
         sheet = box.box()
         sheet.label(text="図面シート")
         row = sheet.row(align=True)
-        row.prop(context.scene, "mhs_sheet_paper_size", text="用紙")
-        row.prop(context.scene, "mhs_sheet_orientation", text="向き")
-        if context.scene.mhs_sheet_paper_size == 'CUSTOM':
+        row.prop(context.scene, "tsdraft_sheet_paper_size", text="用紙")
+        row.prop(context.scene, "tsdraft_sheet_orientation", text="向き")
+        if context.scene.tsdraft_sheet_paper_size == 'CUSTOM':
             row = sheet.row(align=True)
-            row.prop(context.scene, "mhs_sheet_custom_width_mm", text="幅(mm)")
-            row.prop(context.scene, "mhs_sheet_custom_height_mm", text="高さ(mm)")
-        sheet.prop(context.scene, "mhs_sheet_scale", text="縮率")
-        if context.scene.mhs_sheet_scale == 'CUSTOM':
-            sheet.prop(context.scene, "mhs_sheet_custom_scale", text="1 :")
+            row.prop(context.scene, "tsdraft_sheet_custom_width_mm", text="幅(mm)")
+            row.prop(context.scene, "tsdraft_sheet_custom_height_mm", text="高さ(mm)")
+        sheet.prop(context.scene, "tsdraft_sheet_scale", text="縮率")
+        if context.scene.tsdraft_sheet_scale == 'CUSTOM':
+            sheet.prop(context.scene, "tsdraft_sheet_custom_scale", text="1 :")
         row = sheet.row(align=True)
         row.operator(
             "truescale_draft.preview_three_view_sheet_safe",
@@ -5246,13 +5246,13 @@ class TSDRAFT_PT_main(bpy.types.Panel):
 
         box.prop(
             context.scene,
-            "mhs_drawing_background",
+            "tsdraft_drawing_background",
             text="ビュー背景"
         )
-        if context.scene.mhs_drawing_background == 'CUSTOM':
+        if context.scene.tsdraft_drawing_background == 'CUSTOM':
             box.prop(
                 context.scene,
-                "mhs_drawing_background_color",
+                "tsdraft_drawing_background_color",
                 text="カスタム色"
             )
 
@@ -5270,13 +5270,13 @@ class TSDRAFT_PT_main(bpy.types.Panel):
         row = sub.row(align=True)
         row.prop(
             context.scene,
-            "mhs_show_bbox_user",
+            "tsdraft_show_bbox_user",
             text="枠線",
             toggle=True
         )
         row.prop(
             context.scene,
-            "mhs_show_dimensions_user",
+            "tsdraft_show_dimensions_user",
             text="寸法",
             toggle=True
         )
@@ -5296,13 +5296,13 @@ class TSDRAFT_PT_main(bpy.types.Panel):
         row = box.row(align=True)
         row.prop(
             context.scene,
-            "mhs_show_dimension_adjustments",
+            "tsdraft_show_dimension_adjustments",
             text="寸法位置の微調整",
-            icon='TRIA_DOWN' if context.scene.mhs_show_dimension_adjustments else 'TRIA_RIGHT',
+            icon='TRIA_DOWN' if context.scene.tsdraft_show_dimension_adjustments else 'TRIA_RIGHT',
             emboss=False
         )
 
-        if context.scene.mhs_show_dimension_adjustments:
+        if context.scene.tsdraft_show_dimension_adjustments:
             box.label(text="自動配置位置からの追加調整")
 
             view_specs = (
@@ -5341,12 +5341,12 @@ class TSDRAFT_PT_main(bpy.types.Panel):
 
                     row.prop(
                         context.scene,
-                        f"mhs_{view_key}_{axis}_offset_x_mm",
+                        f"tsdraft_{view_key}_{axis}_offset_x_mm",
                         text="左右(mm)"
                     )
                     row.prop(
                         context.scene,
-                        f"mhs_{view_key}_{axis}_offset_y_mm",
+                        f"tsdraft_{view_key}_{axis}_offset_y_mm",
                         text="上下(mm)"
                     )
 
@@ -5391,7 +5391,7 @@ classes = (
 
 
 
-def mhs_reset_scene_settings_to_defaults(scene):
+def tsdraft_reset_scene_settings_to_defaults(scene):
     """
     Remove persisted addon setting values from the Scene.
     Registered bpy.props defaults then become active again.
@@ -5403,30 +5403,30 @@ def mhs_reset_scene_settings_to_defaults(scene):
         return
 
     for key in keys:
-        if isinstance(key, str) and key.startswith("mhs_"):
+        if isinstance(key, str) and key.startswith("tsdraft_"):
             try:
                 del scene[key]
             except Exception:
                 pass
 
 
-def mhs_reset_all_scenes_to_defaults():
+def tsdraft_reset_all_scenes_to_defaults():
     # During add-on registration Blender may expose _RestrictData,
     # which has no .scenes attribute yet.
     if not hasattr(bpy.data, "scenes"):
         return False
 
     for scene in bpy.data.scenes:
-        mhs_reset_scene_settings_to_defaults(scene)
+        tsdraft_reset_scene_settings_to_defaults(scene)
 
     ns = bpy.app.driver_namespace
     ns[AUTO_FOLLOW_SIGNATURE_KEY] = None
     return True
 
 
-def mhs_deferred_startup_reset():
+def tsdraft_deferred_startup_reset():
     try:
-        if mhs_reset_all_scenes_to_defaults():
+        if tsdraft_reset_all_scenes_to_defaults():
             redraw_viewports()
             return None
     except Exception:
@@ -5437,25 +5437,25 @@ def mhs_deferred_startup_reset():
 
 
 @persistent
-def mhs_reset_defaults_on_load(_dummy):
+def tsdraft_reset_defaults_on_load(_dummy):
     # Run after a .blend/startup file is loaded so old saved UI values
     # do not carry into the new session.
     try:
-        mhs_reset_all_scenes_to_defaults()
+        tsdraft_reset_all_scenes_to_defaults()
         redraw_viewports()
     except Exception:
         pass
 
 
 def register():
-    bpy.types.Scene.mhs_auto_follow = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_auto_follow = bpy.props.BoolProperty(
         name="自動追従",
         description="元オブジェクトの形状・変形に合わせてBounding Boxと寸法を自動更新",
         default=True,
         update=redraw_viewports
     )
 
-    bpy.types.Scene.mhs_font_size = bpy.props.IntProperty(
+    bpy.types.Scene.tsdraft_font_size = bpy.props.IntProperty(
         name="文字サイズ",
         default=30,
         min=10,
@@ -5463,7 +5463,7 @@ def register():
         update=redraw_viewports
     )
 
-    bpy.types.Scene.mhs_font_color = bpy.props.FloatVectorProperty(
+    bpy.types.Scene.tsdraft_font_color = bpy.props.FloatVectorProperty(
         name="文字色",
         subtype='COLOR',
         size=4,
@@ -5473,72 +5473,72 @@ def register():
         update=redraw_viewports
     )
 
-    bpy.types.Scene.mhs_label_offset_x = bpy.props.IntProperty(name="全体 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_label_offset_y = bpy.props.IntProperty(name="全体 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_front_x_offset_x_mm = bpy.props.FloatProperty(name="前面 X 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_front_x_offset_y_mm = bpy.props.FloatProperty(name="前面 X 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_front_y_offset_x_mm = bpy.props.FloatProperty(name="前面 Y 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_front_y_offset_y_mm = bpy.props.FloatProperty(name="前面 Y 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_front_z_offset_x_mm = bpy.props.FloatProperty(name="前面 Z 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_front_z_offset_y_mm = bpy.props.FloatProperty(name="前面 Z 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_x_offset_x_mm = bpy.props.FloatProperty(name="上面 X 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_x_offset_y_mm = bpy.props.FloatProperty(name="上面 X 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_y_offset_x_mm = bpy.props.FloatProperty(name="上面 Y 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_y_offset_y_mm = bpy.props.FloatProperty(name="上面 Y 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_z_offset_x_mm = bpy.props.FloatProperty(name="上面 Z 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_z_offset_y_mm = bpy.props.FloatProperty(name="上面 Z 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_x_offset_x_mm = bpy.props.FloatProperty(name="側面 X 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_x_offset_y_mm = bpy.props.FloatProperty(name="側面 X 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_y_offset_x_mm = bpy.props.FloatProperty(name="側面 Y 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_y_offset_y_mm = bpy.props.FloatProperty(name="側面 Y 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_z_offset_x_mm = bpy.props.FloatProperty(name="側面 Z 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_z_offset_y_mm = bpy.props.FloatProperty(name="側面 Z 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_x_offset_x_mm = bpy.props.FloatProperty(name="任意 X 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_x_offset_y_mm = bpy.props.FloatProperty(name="任意 X 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_y_offset_x_mm = bpy.props.FloatProperty(name="任意 Y 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_y_offset_y_mm = bpy.props.FloatProperty(name="任意 Y 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_z_offset_x_mm = bpy.props.FloatProperty(name="任意 Z 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_z_offset_y_mm = bpy.props.FloatProperty(name="任意 Z 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_label_offset_x = bpy.props.IntProperty(name="全体 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_label_offset_y = bpy.props.IntProperty(name="全体 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_x_offset_x_mm = bpy.props.FloatProperty(name="前面 X 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_x_offset_y_mm = bpy.props.FloatProperty(name="前面 X 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_y_offset_x_mm = bpy.props.FloatProperty(name="前面 Y 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_y_offset_y_mm = bpy.props.FloatProperty(name="前面 Y 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_z_offset_x_mm = bpy.props.FloatProperty(name="前面 Z 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_z_offset_y_mm = bpy.props.FloatProperty(name="前面 Z 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_x_offset_x_mm = bpy.props.FloatProperty(name="上面 X 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_x_offset_y_mm = bpy.props.FloatProperty(name="上面 X 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_y_offset_x_mm = bpy.props.FloatProperty(name="上面 Y 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_y_offset_y_mm = bpy.props.FloatProperty(name="上面 Y 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_z_offset_x_mm = bpy.props.FloatProperty(name="上面 Z 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_z_offset_y_mm = bpy.props.FloatProperty(name="上面 Z 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_x_offset_x_mm = bpy.props.FloatProperty(name="側面 X 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_x_offset_y_mm = bpy.props.FloatProperty(name="側面 X 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_y_offset_x_mm = bpy.props.FloatProperty(name="側面 Y 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_y_offset_y_mm = bpy.props.FloatProperty(name="側面 Y 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_z_offset_x_mm = bpy.props.FloatProperty(name="側面 Z 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_z_offset_y_mm = bpy.props.FloatProperty(name="側面 Z 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_x_offset_x_mm = bpy.props.FloatProperty(name="任意 X 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_x_offset_y_mm = bpy.props.FloatProperty(name="任意 X 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_y_offset_x_mm = bpy.props.FloatProperty(name="任意 Y 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_y_offset_y_mm = bpy.props.FloatProperty(name="任意 Y 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_z_offset_x_mm = bpy.props.FloatProperty(name="任意 Z 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_z_offset_y_mm = bpy.props.FloatProperty(name="任意 Z 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
 
-    bpy.types.Scene.mhs_front_x_offset_x = bpy.props.IntProperty(name="前面 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_front_x_offset_y = bpy.props.IntProperty(name="前面 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_front_y_offset_x = bpy.props.IntProperty(name="前面 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_front_y_offset_y = bpy.props.IntProperty(name="前面 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_front_z_offset_x = bpy.props.IntProperty(name="前面 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_front_z_offset_y = bpy.props.IntProperty(name="前面 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_x_offset_x = bpy.props.IntProperty(name="上面 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_x_offset_y = bpy.props.IntProperty(name="上面 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_y_offset_x = bpy.props.IntProperty(name="上面 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_y_offset_y = bpy.props.IntProperty(name="上面 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_z_offset_x = bpy.props.IntProperty(name="上面 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_top_z_offset_y = bpy.props.IntProperty(name="上面 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_x_offset_x = bpy.props.IntProperty(name="側面 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_x_offset_y = bpy.props.IntProperty(name="側面 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_y_offset_x = bpy.props.IntProperty(name="側面 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_y_offset_y = bpy.props.IntProperty(name="側面 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_z_offset_x = bpy.props.IntProperty(name="側面 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_side_z_offset_y = bpy.props.IntProperty(name="側面 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_x_offset_x = bpy.props.IntProperty(name="任意 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_x_offset_y = bpy.props.IntProperty(name="任意 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_y_offset_x = bpy.props.IntProperty(name="任意 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_y_offset_y = bpy.props.IntProperty(name="任意 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_z_offset_x = bpy.props.IntProperty(name="任意 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_user_z_offset_y = bpy.props.IntProperty(name="任意 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_x_offset_x = bpy.props.IntProperty(name="前面 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_x_offset_y = bpy.props.IntProperty(name="前面 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_y_offset_x = bpy.props.IntProperty(name="前面 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_y_offset_y = bpy.props.IntProperty(name="前面 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_z_offset_x = bpy.props.IntProperty(name="前面 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_front_z_offset_y = bpy.props.IntProperty(name="前面 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_x_offset_x = bpy.props.IntProperty(name="上面 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_x_offset_y = bpy.props.IntProperty(name="上面 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_y_offset_x = bpy.props.IntProperty(name="上面 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_y_offset_y = bpy.props.IntProperty(name="上面 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_z_offset_x = bpy.props.IntProperty(name="上面 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_top_z_offset_y = bpy.props.IntProperty(name="上面 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_x_offset_x = bpy.props.IntProperty(name="側面 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_x_offset_y = bpy.props.IntProperty(name="側面 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_y_offset_x = bpy.props.IntProperty(name="側面 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_y_offset_y = bpy.props.IntProperty(name="側面 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_z_offset_x = bpy.props.IntProperty(name="側面 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_side_z_offset_y = bpy.props.IntProperty(name="側面 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_x_offset_x = bpy.props.IntProperty(name="任意 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_x_offset_y = bpy.props.IntProperty(name="任意 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_y_offset_x = bpy.props.IntProperty(name="任意 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_y_offset_y = bpy.props.IntProperty(name="任意 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_z_offset_x = bpy.props.IntProperty(name="任意 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_user_z_offset_y = bpy.props.IntProperty(name="任意 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
 
-    bpy.types.Scene.mhs_x_offset_x = bpy.props.IntProperty(name="X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_x_offset_y = bpy.props.IntProperty(name="X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_y_offset_x = bpy.props.IntProperty(name="Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_y_offset_y = bpy.props.IntProperty(name="Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_z_offset_x = bpy.props.IntProperty(name="Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.mhs_z_offset_y = bpy.props.IntProperty(name="Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_x_offset_x = bpy.props.IntProperty(name="X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_x_offset_y = bpy.props.IntProperty(name="X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_y_offset_x = bpy.props.IntProperty(name="Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_y_offset_y = bpy.props.IntProperty(name="Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_z_offset_x = bpy.props.IntProperty(name="Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
+    bpy.types.Scene.tsdraft_z_offset_y = bpy.props.IntProperty(name="Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
 
-    bpy.types.Scene.mhs_show_bbox = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_show_bbox = bpy.props.BoolProperty(
         name="BOXを表示",
         default=True,
         update=update_bbox_visibility
     )
 
-    bpy.types.Scene.mhs_frame_mode = bpy.props.EnumProperty(
+    bpy.types.Scene.tsdraft_frame_mode = bpy.props.EnumProperty(
         name="枠表示",
         description="サイズ枠の表示方法",
         items=(
@@ -5550,7 +5550,7 @@ def register():
         update=redraw_viewports
     )
 
-    bpy.types.Scene.mhs_frame_color = bpy.props.FloatVectorProperty(
+    bpy.types.Scene.tsdraft_frame_color = bpy.props.FloatVectorProperty(
         name="枠線色",
         subtype='COLOR',
         size=4,
@@ -5560,7 +5560,7 @@ def register():
         update=redraw_viewports
     )
 
-    bpy.types.Scene.mhs_frame_width = bpy.props.FloatProperty(
+    bpy.types.Scene.tsdraft_frame_width = bpy.props.FloatProperty(
         name="枠線の太さ",
         default=1.5,
         min=1.0,
@@ -5569,37 +5569,37 @@ def register():
         update=redraw_viewports
     )
 
-    bpy.types.Scene.mhs_show_bbox_top = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_show_bbox_top = bpy.props.BoolProperty(
         name="上面 BOX表示",
         default=False,
         update=update_bbox_visibility
     )
 
-    bpy.types.Scene.mhs_show_bbox_front = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_show_bbox_front = bpy.props.BoolProperty(
         name="前面 BOX表示",
         default=False,
         update=update_bbox_visibility
     )
 
-    bpy.types.Scene.mhs_show_bbox_side = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_show_bbox_side = bpy.props.BoolProperty(
         name="側面 BOX表示",
         default=False,
         update=update_bbox_visibility
     )
 
-    bpy.types.Scene.mhs_show_bbox_user = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_show_bbox_user = bpy.props.BoolProperty(
         name="任意 BOX表示",
         default=False,
         update=update_bbox_visibility
     )
 
-    bpy.types.Scene.mhs_show_dimensions = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_show_dimensions = bpy.props.BoolProperty(
         name="寸法を表示",
         default=True,
         update=redraw_viewports
     )
 
-    bpy.types.Scene.mhs_dimension_unit = bpy.props.EnumProperty(
+    bpy.types.Scene.tsdraft_dimension_unit = bpy.props.EnumProperty(
         name="単位",
         description="寸法表示に使う単位",
         items=(
@@ -5611,32 +5611,32 @@ def register():
         update=redraw_viewports
     )
 
-    bpy.types.Scene.mhs_show_dimensions_top = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_show_dimensions_top = bpy.props.BoolProperty(
         name="上面 寸法表示",
         default=False,
         update=redraw_viewports
     )
 
-    bpy.types.Scene.mhs_show_dimensions_front = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_show_dimensions_front = bpy.props.BoolProperty(
         name="前面 寸法表示",
         default=False,
         update=redraw_viewports
     )
 
-    bpy.types.Scene.mhs_show_dimensions_side = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_show_dimensions_side = bpy.props.BoolProperty(
         name="側面 寸法表示",
         default=False,
         update=redraw_viewports
     )
 
-    bpy.types.Scene.mhs_show_dimensions_user = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_show_dimensions_user = bpy.props.BoolProperty(
         name="任意 寸法表示",
         default=False,
         update=redraw_viewports
     )
 
-    # 旧ファイル互換用。UIではmhs_drawing_backgroundを使用。
-    bpy.types.Scene.mhs_show_grid = bpy.props.BoolProperty(
+    # 旧ファイル互換用。UIではtsdraft_drawing_backgroundを使用。
+    bpy.types.Scene.tsdraft_show_grid = bpy.props.BoolProperty(
         name="グリッド表示（旧）",
         default=False
     )
@@ -5648,7 +5648,7 @@ def register():
         ('CUSTOM', "カスタム", "好きな背景色を指定"),
     )
 
-    bpy.types.Scene.mhs_drawing_background = bpy.props.EnumProperty(
+    bpy.types.Scene.tsdraft_drawing_background = bpy.props.EnumProperty(
         name="図面ビュー背景",
         description="図面ビューの背景表示",
         items=background_items,
@@ -5656,7 +5656,7 @@ def register():
         update=update_drawing_background
     )
 
-    bpy.types.Scene.mhs_drawing_background_color = bpy.props.FloatVectorProperty(
+    bpy.types.Scene.tsdraft_drawing_background_color = bpy.props.FloatVectorProperty(
         name="図面ビューのカスタム背景色",
         subtype='COLOR',
         size=3,
@@ -5666,14 +5666,14 @@ def register():
         update=update_drawing_background
     )
 
-    bpy.types.Scene.mhs_export_background = bpy.props.EnumProperty(
+    bpy.types.Scene.tsdraft_export_background = bpy.props.EnumProperty(
         name="書き出し背景",
         description="実寸PNGを書き出す時の背景表示。軸・原点・3Dカーソルは常に非表示です",
         items=background_items,
         default='WHITE'
     )
 
-    bpy.types.Scene.mhs_export_background_color = bpy.props.FloatVectorProperty(
+    bpy.types.Scene.tsdraft_export_background_color = bpy.props.FloatVectorProperty(
         name="書き出しのカスタム背景色",
         subtype='COLOR',
         size=3,
@@ -5682,7 +5682,7 @@ def register():
         max=1.0
     )
 
-    bpy.types.Scene.mhs_sheet_paper_size = bpy.props.EnumProperty(
+    bpy.types.Scene.tsdraft_sheet_paper_size = bpy.props.EnumProperty(
         name="用紙サイズ",
         items=(
             ('A4', "A4", "210×297mm"),
@@ -5695,7 +5695,7 @@ def register():
         default='A4'
     )
 
-    bpy.types.Scene.mhs_sheet_custom_width_mm = bpy.props.FloatProperty(
+    bpy.types.Scene.tsdraft_sheet_custom_width_mm = bpy.props.FloatProperty(
         name="カスタム幅",
         description="カスタム用紙の幅(mm)",
         default=210.0,
@@ -5704,7 +5704,7 @@ def register():
         precision=1
     )
 
-    bpy.types.Scene.mhs_sheet_custom_height_mm = bpy.props.FloatProperty(
+    bpy.types.Scene.tsdraft_sheet_custom_height_mm = bpy.props.FloatProperty(
         name="カスタム高さ",
         description="カスタム用紙の高さ(mm)",
         default=297.0,
@@ -5713,7 +5713,7 @@ def register():
         precision=1
     )
 
-    bpy.types.Scene.mhs_sheet_orientation = bpy.props.EnumProperty(
+    bpy.types.Scene.tsdraft_sheet_orientation = bpy.props.EnumProperty(
         name="用紙の向き",
         items=(
             ('AUTO', "自動", "収まる向きを自動選択"),
@@ -5723,7 +5723,7 @@ def register():
         default='AUTO'
     )
 
-    bpy.types.Scene.mhs_sheet_scale = bpy.props.EnumProperty(
+    bpy.types.Scene.tsdraft_sheet_scale = bpy.props.EnumProperty(
         name="縮率",
         items=(
             ('1_1', "1:1", "原寸"),
@@ -5735,7 +5735,7 @@ def register():
         default='1_1'
     )
 
-    bpy.types.Scene.mhs_sheet_custom_scale = bpy.props.FloatProperty(
+    bpy.types.Scene.tsdraft_sheet_custom_scale = bpy.props.FloatProperty(
         name="任意縮率",
         description="1:N の N を指定します",
         default=2.0,
@@ -5744,22 +5744,22 @@ def register():
         precision=2
     )
 
-    bpy.types.Scene.mhs_show_dimension_adjustments = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_show_dimension_adjustments = bpy.props.BoolProperty(
         name="寸法位置の微調整",
         default=False
     )
 
-    bpy.types.Scene.mhs_drawing_mode = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_drawing_mode = bpy.props.BoolProperty(
         name="図面モード",
         default=False
     )
 
-    bpy.types.Scene.mhs_user_view_mode = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_user_view_mode = bpy.props.BoolProperty(
         name="任意ビューモード",
         default=False
     )
 
-    bpy.types.Scene.mhs_dark_place = bpy.props.BoolProperty(
+    bpy.types.Scene.tsdraft_dark_place = bpy.props.BoolProperty(
         name="なんかずっと暗いとこ",
         default=False,
         update=redraw_viewports
@@ -5768,30 +5768,30 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    mhs_remove_legacy_draw_handlers()
+    tsdraft_remove_legacy_draw_handlers()
     ensure_draw_handler()
     ensure_bbox_draw_handler()
     ensure_view_label_handler()
     ensure_cleanup_handler()
 
-    if mhs_reset_defaults_on_load not in bpy.app.handlers.load_post:
-        bpy.app.handlers.load_post.append(mhs_reset_defaults_on_load)
+    if tsdraft_reset_defaults_on_load not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(tsdraft_reset_defaults_on_load)
 
     # register()中はbpy.dataが_RestrictDataのことがあるため、
     # 初期化はBlenderが通常状態へ戻ってから実行する。
     try:
-        if not bpy.app.timers.is_registered(mhs_deferred_startup_reset):
+        if not bpy.app.timers.is_registered(tsdraft_deferred_startup_reset):
             bpy.app.timers.register(
-                mhs_deferred_startup_reset,
+                tsdraft_deferred_startup_reset,
                 first_interval=0.25
             )
     except Exception:
         pass
 
     try:
-        if not bpy.app.timers.is_registered(mhs_quad_zoom_lock_timer):
+        if not bpy.app.timers.is_registered(tsdraft_quad_zoom_lock_timer):
             bpy.app.timers.register(
-                mhs_quad_zoom_lock_timer,
+                tsdraft_quad_zoom_lock_timer,
                 first_interval=0.10,
                 persistent=True
             )
@@ -5800,18 +5800,18 @@ def register():
 
 
 def unregister():
-    if mhs_reset_defaults_on_load in bpy.app.handlers.load_post:
-        bpy.app.handlers.load_post.remove(mhs_reset_defaults_on_load)
+    if tsdraft_reset_defaults_on_load in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(tsdraft_reset_defaults_on_load)
 
     try:
-        if bpy.app.timers.is_registered(mhs_deferred_startup_reset):
-            bpy.app.timers.unregister(mhs_deferred_startup_reset)
+        if bpy.app.timers.is_registered(tsdraft_deferred_startup_reset):
+            bpy.app.timers.unregister(tsdraft_deferred_startup_reset)
     except Exception:
         pass
 
     try:
-        if bpy.app.timers.is_registered(mhs_quad_zoom_lock_timer):
-            bpy.app.timers.unregister(mhs_quad_zoom_lock_timer)
+        if bpy.app.timers.is_registered(tsdraft_quad_zoom_lock_timer):
+            bpy.app.timers.unregister(tsdraft_quad_zoom_lock_timer)
     except Exception:
         pass
 
@@ -5832,92 +5832,92 @@ def unregister():
         bpy.utils.unregister_class(cls)
 
     for prop_name in (
-        "mhs_front_x_offset_x_mm",
-        "mhs_front_x_offset_y_mm",
-        "mhs_front_y_offset_x_mm",
-        "mhs_front_y_offset_y_mm",
-        "mhs_front_z_offset_x_mm",
-        "mhs_front_z_offset_y_mm",
-        "mhs_top_x_offset_x_mm",
-        "mhs_top_x_offset_y_mm",
-        "mhs_top_y_offset_x_mm",
-        "mhs_top_y_offset_y_mm",
-        "mhs_top_z_offset_x_mm",
-        "mhs_top_z_offset_y_mm",
-        "mhs_side_x_offset_x_mm",
-        "mhs_side_x_offset_y_mm",
-        "mhs_side_y_offset_x_mm",
-        "mhs_side_y_offset_y_mm",
-        "mhs_side_z_offset_x_mm",
-        "mhs_side_z_offset_y_mm",
-        "mhs_user_x_offset_x_mm",
-        "mhs_user_x_offset_y_mm",
-        "mhs_user_y_offset_x_mm",
-        "mhs_user_y_offset_y_mm",
-        "mhs_user_z_offset_x_mm",
-        "mhs_user_z_offset_y_mm",
-        "mhs_font_size",
-        "mhs_font_color",
-        "mhs_label_offset_x",
-        "mhs_label_offset_y",
-        "mhs_front_x_offset_x",
-        "mhs_front_x_offset_y",
-        "mhs_front_y_offset_x",
-        "mhs_front_y_offset_y",
-        "mhs_front_z_offset_x",
-        "mhs_front_z_offset_y",
-        "mhs_top_x_offset_x",
-        "mhs_top_x_offset_y",
-        "mhs_top_y_offset_x",
-        "mhs_top_y_offset_y",
-        "mhs_top_z_offset_x",
-        "mhs_top_z_offset_y",
-        "mhs_side_x_offset_x",
-        "mhs_side_x_offset_y",
-        "mhs_side_y_offset_x",
-        "mhs_side_y_offset_y",
-        "mhs_side_z_offset_x",
-        "mhs_side_z_offset_y",
-        "mhs_user_x_offset_x",
-        "mhs_user_x_offset_y",
-        "mhs_user_y_offset_x",
-        "mhs_user_y_offset_y",
-        "mhs_user_z_offset_x",
-        "mhs_user_z_offset_y",
-        "mhs_x_offset_x",
-        "mhs_x_offset_y",
-        "mhs_y_offset_x",
-        "mhs_y_offset_y",
-        "mhs_z_offset_x",
-        "mhs_z_offset_y",
-        "mhs_show_bbox",
-        "mhs_frame_mode",
-        "mhs_frame_color",
-        "mhs_show_bbox_top",
-        "mhs_show_bbox_front",
-        "mhs_show_bbox_side",
-        "mhs_show_bbox_user",
-        "mhs_show_dimensions",
-        "mhs_dimension_unit",
-        "mhs_show_dimensions_top",
-        "mhs_show_dimensions_front",
-        "mhs_show_dimensions_side",
-        "mhs_show_dimensions_user",
-        "mhs_show_grid",
-        "mhs_drawing_background",
-        "mhs_drawing_background_color",
-        "mhs_export_background",
-        "mhs_export_background_color",
-        "mhs_sheet_paper_size",
-        "mhs_sheet_custom_width_mm",
-        "mhs_sheet_custom_height_mm",
-        "mhs_sheet_orientation",
-        "mhs_sheet_scale",
-        "mhs_sheet_custom_scale",
-        "mhs_show_dimension_adjustments",
-        "mhs_drawing_mode",
-        "mhs_user_view_mode",
-        "mhs_dark_place",
+        "tsdraft_front_x_offset_x_mm",
+        "tsdraft_front_x_offset_y_mm",
+        "tsdraft_front_y_offset_x_mm",
+        "tsdraft_front_y_offset_y_mm",
+        "tsdraft_front_z_offset_x_mm",
+        "tsdraft_front_z_offset_y_mm",
+        "tsdraft_top_x_offset_x_mm",
+        "tsdraft_top_x_offset_y_mm",
+        "tsdraft_top_y_offset_x_mm",
+        "tsdraft_top_y_offset_y_mm",
+        "tsdraft_top_z_offset_x_mm",
+        "tsdraft_top_z_offset_y_mm",
+        "tsdraft_side_x_offset_x_mm",
+        "tsdraft_side_x_offset_y_mm",
+        "tsdraft_side_y_offset_x_mm",
+        "tsdraft_side_y_offset_y_mm",
+        "tsdraft_side_z_offset_x_mm",
+        "tsdraft_side_z_offset_y_mm",
+        "tsdraft_user_x_offset_x_mm",
+        "tsdraft_user_x_offset_y_mm",
+        "tsdraft_user_y_offset_x_mm",
+        "tsdraft_user_y_offset_y_mm",
+        "tsdraft_user_z_offset_x_mm",
+        "tsdraft_user_z_offset_y_mm",
+        "tsdraft_font_size",
+        "tsdraft_font_color",
+        "tsdraft_label_offset_x",
+        "tsdraft_label_offset_y",
+        "tsdraft_front_x_offset_x",
+        "tsdraft_front_x_offset_y",
+        "tsdraft_front_y_offset_x",
+        "tsdraft_front_y_offset_y",
+        "tsdraft_front_z_offset_x",
+        "tsdraft_front_z_offset_y",
+        "tsdraft_top_x_offset_x",
+        "tsdraft_top_x_offset_y",
+        "tsdraft_top_y_offset_x",
+        "tsdraft_top_y_offset_y",
+        "tsdraft_top_z_offset_x",
+        "tsdraft_top_z_offset_y",
+        "tsdraft_side_x_offset_x",
+        "tsdraft_side_x_offset_y",
+        "tsdraft_side_y_offset_x",
+        "tsdraft_side_y_offset_y",
+        "tsdraft_side_z_offset_x",
+        "tsdraft_side_z_offset_y",
+        "tsdraft_user_x_offset_x",
+        "tsdraft_user_x_offset_y",
+        "tsdraft_user_y_offset_x",
+        "tsdraft_user_y_offset_y",
+        "tsdraft_user_z_offset_x",
+        "tsdraft_user_z_offset_y",
+        "tsdraft_x_offset_x",
+        "tsdraft_x_offset_y",
+        "tsdraft_y_offset_x",
+        "tsdraft_y_offset_y",
+        "tsdraft_z_offset_x",
+        "tsdraft_z_offset_y",
+        "tsdraft_show_bbox",
+        "tsdraft_frame_mode",
+        "tsdraft_frame_color",
+        "tsdraft_show_bbox_top",
+        "tsdraft_show_bbox_front",
+        "tsdraft_show_bbox_side",
+        "tsdraft_show_bbox_user",
+        "tsdraft_show_dimensions",
+        "tsdraft_dimension_unit",
+        "tsdraft_show_dimensions_top",
+        "tsdraft_show_dimensions_front",
+        "tsdraft_show_dimensions_side",
+        "tsdraft_show_dimensions_user",
+        "tsdraft_show_grid",
+        "tsdraft_drawing_background",
+        "tsdraft_drawing_background_color",
+        "tsdraft_export_background",
+        "tsdraft_export_background_color",
+        "tsdraft_sheet_paper_size",
+        "tsdraft_sheet_custom_width_mm",
+        "tsdraft_sheet_custom_height_mm",
+        "tsdraft_sheet_orientation",
+        "tsdraft_sheet_scale",
+        "tsdraft_sheet_custom_scale",
+        "tsdraft_show_dimension_adjustments",
+        "tsdraft_drawing_mode",
+        "tsdraft_user_view_mode",
+        "tsdraft_dark_place",
     ):
         if hasattr(bpy.types.Scene, prop_name):
             delattr(bpy.types.Scene, prop_name)
