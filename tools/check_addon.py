@@ -165,8 +165,11 @@ class AddonAnalyzer(ast.NodeVisitor):
     # --- 文字列定数（unregister 内のプロパティ名リスト用） ---
 
     def visit_Constant(self, node):
+        # unregister 本体だけでなく、そこから呼ばれる _unregister_* も見る。
+        # 削除対象を接頭辞で指定する実装があるため。
         if isinstance(node.value, str) and self._func_stack:
-            if self._func_stack[-1] == "unregister":
+            current = self._func_stack[-1]
+            if current == "unregister" or current.lstrip("_").startswith("unregister"):
                 self.unregistered_props.add(node.value)
         self.generic_visit(node)
 
@@ -249,9 +252,16 @@ def analyze(path: Path):
         problems.append(("register されていない Scene プロパティを参照している", undeclared))
 
     # 5. unregister で消されないプロパティ
+    #    接頭辞をまとめて消す実装（delattr を prefix で回すもの）にも対応する
+    def deleted_by_prefix(name):
+        return any(
+            s.endswith("_") and name.startswith(s) and name != s
+            for s in analyzer.unregistered_props
+        )
+
     leaked = sorted(
         name for name in analyzer.registered_props
-        if name not in analyzer.unregistered_props
+        if name not in analyzer.unregistered_props and not deleted_by_prefix(name)
     )
     if leaked:
         problems.append(("unregister で削除されない Scene プロパティ", leaked))

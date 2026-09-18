@@ -1,4 +1,5 @@
 import bpy
+import traceback
 import gpu
 from bpy.props import EnumProperty, StringProperty, FloatProperty, BoolProperty, FloatVectorProperty
 from bpy_extras.io_utils import ExportHelper
@@ -11911,6 +11912,22 @@ def register():
         bpy.app.handlers.load_post.append(_tsunfold_reset_overlays_on_load)
 
 
+def _unregister_scene_props():
+    """このアドオンが register() で作った Scene プロパティを全て削除する。
+
+    以前は削除対象を手書きのタプルで列挙していたが、register() 側に
+    プロパティを足したときに追従されず、消し残しが発生していた。
+    列挙をやめ、接頭辞で特定することで register() と必ず一致させる。
+    """
+    prefix = "tsunfold_"
+    for name in [n for n in dir(bpy.types.Scene) if n.startswith(prefix)]:
+        try:
+            delattr(bpy.types.Scene, name)
+        except Exception:
+            # 1つ失敗しても残りの削除は続ける。内容は握り潰さず出す。
+            traceback.print_exc()
+
+
 def unregister():
 
     if _tsunfold_reset_overlays_on_load in bpy.app.handlers.load_post:
@@ -11942,40 +11959,7 @@ def unregister():
             pass
         _pattern_text_handle = None
 
-    for prop in (
-        "tsunfold_notch_mode",
-        "tsunfold_auto_notch_divisions",
-        "tsunfold_active_tool",
-        "tsunfold_mark_color",
-        "tsunfold_notch_color",
-        "tsunfold_number_color",
-        "tsunfold_text_color",
-        "tsunfold_arrow_color",
-        "tsunfold_notch_length_mm",
-        "tsunfold_number_size_mm",
-        "tsunfold_text_size_mm",
-        "tsunfold_custom_text",
-        "tsunfold_pattern_preview",
-        "tsunfold_number_start",
-        "tsunfold_arrow_head_mm",
-        "tsunfold_arrow_thickness_mm",
-        "tsunfold_next_number",
-        "tsunfold_preview",
-        "tsunfold_show_paper",
-        "tsunfold_orientation",
-        "tsunfold_paper_size",
-        "tsunfold_custom_paper_width_mm",
-        "tsunfold_custom_paper_height_mm",
-        "tsunfold_spacing_mm",
-    ):
-        if hasattr(bpy.types.Scene, prop):
-            delattr(bpy.types.Scene, prop)
-
-    if hasattr(bpy.types.Scene, "tsunfold_lightweight_view"):
-        del bpy.types.Scene.tsunfold_lightweight_view
-
-    if hasattr(bpy.types.Scene, "tsunfold_notch_thickness_mm"):
-        del bpy.types.Scene.tsunfold_notch_thickness_mm
+    _unregister_scene_props()
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

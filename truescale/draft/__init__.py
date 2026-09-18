@@ -1,4 +1,5 @@
 import bpy
+import traceback
 import os
 import html
 import math
@@ -5806,6 +5807,22 @@ def register():
         pass
 
 
+def _unregister_scene_props():
+    """このアドオンが register() で作った Scene プロパティを全て削除する。
+
+    以前は削除対象を手書きのタプルで列挙していたが、register() 側に
+    プロパティを足したときに追従されず、消し残しが発生していた。
+    列挙をやめ、接頭辞で特定することで register() と必ず一致させる。
+    """
+    prefix = "tsdraft_"
+    for name in [n for n in dir(bpy.types.Scene) if n.startswith(prefix)]:
+        try:
+            delattr(bpy.types.Scene, name)
+        except Exception:
+            # 1つ失敗しても残りの削除は続ける。内容は握り潰さず出す。
+            traceback.print_exc()
+
+
 def unregister():
     if tsdraft_reset_defaults_on_load in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(tsdraft_reset_defaults_on_load)
@@ -5838,97 +5855,7 @@ def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 
-    for prop_name in (
-        "tsdraft_front_x_offset_x_mm",
-        "tsdraft_front_x_offset_y_mm",
-        "tsdraft_front_y_offset_x_mm",
-        "tsdraft_front_y_offset_y_mm",
-        "tsdraft_front_z_offset_x_mm",
-        "tsdraft_front_z_offset_y_mm",
-        "tsdraft_top_x_offset_x_mm",
-        "tsdraft_top_x_offset_y_mm",
-        "tsdraft_top_y_offset_x_mm",
-        "tsdraft_top_y_offset_y_mm",
-        "tsdraft_top_z_offset_x_mm",
-        "tsdraft_top_z_offset_y_mm",
-        "tsdraft_side_x_offset_x_mm",
-        "tsdraft_side_x_offset_y_mm",
-        "tsdraft_side_y_offset_x_mm",
-        "tsdraft_side_y_offset_y_mm",
-        "tsdraft_side_z_offset_x_mm",
-        "tsdraft_side_z_offset_y_mm",
-        "tsdraft_user_x_offset_x_mm",
-        "tsdraft_user_x_offset_y_mm",
-        "tsdraft_user_y_offset_x_mm",
-        "tsdraft_user_y_offset_y_mm",
-        "tsdraft_user_z_offset_x_mm",
-        "tsdraft_user_z_offset_y_mm",
-        "tsdraft_font_size",
-        "tsdraft_font_color",
-        "tsdraft_label_offset_x",
-        "tsdraft_label_offset_y",
-        "tsdraft_front_x_offset_x",
-        "tsdraft_front_x_offset_y",
-        "tsdraft_front_y_offset_x",
-        "tsdraft_front_y_offset_y",
-        "tsdraft_front_z_offset_x",
-        "tsdraft_front_z_offset_y",
-        "tsdraft_top_x_offset_x",
-        "tsdraft_top_x_offset_y",
-        "tsdraft_top_y_offset_x",
-        "tsdraft_top_y_offset_y",
-        "tsdraft_top_z_offset_x",
-        "tsdraft_top_z_offset_y",
-        "tsdraft_side_x_offset_x",
-        "tsdraft_side_x_offset_y",
-        "tsdraft_side_y_offset_x",
-        "tsdraft_side_y_offset_y",
-        "tsdraft_side_z_offset_x",
-        "tsdraft_side_z_offset_y",
-        "tsdraft_user_x_offset_x",
-        "tsdraft_user_x_offset_y",
-        "tsdraft_user_y_offset_x",
-        "tsdraft_user_y_offset_y",
-        "tsdraft_user_z_offset_x",
-        "tsdraft_user_z_offset_y",
-        "tsdraft_x_offset_x",
-        "tsdraft_x_offset_y",
-        "tsdraft_y_offset_x",
-        "tsdraft_y_offset_y",
-        "tsdraft_z_offset_x",
-        "tsdraft_z_offset_y",
-        "tsdraft_show_bbox",
-        "tsdraft_frame_mode",
-        "tsdraft_frame_color",
-        "tsdraft_show_bbox_top",
-        "tsdraft_show_bbox_front",
-        "tsdraft_show_bbox_side",
-        "tsdraft_show_bbox_user",
-        "tsdraft_show_dimensions",
-        "tsdraft_dimension_unit",
-        "tsdraft_show_dimensions_top",
-        "tsdraft_show_dimensions_front",
-        "tsdraft_show_dimensions_side",
-        "tsdraft_show_dimensions_user",
-        "tsdraft_show_grid",
-        "tsdraft_drawing_background",
-        "tsdraft_drawing_background_color",
-        "tsdraft_export_background",
-        "tsdraft_export_background_color",
-        "tsdraft_sheet_paper_size",
-        "tsdraft_sheet_custom_width_mm",
-        "tsdraft_sheet_custom_height_mm",
-        "tsdraft_sheet_orientation",
-        "tsdraft_sheet_scale",
-        "tsdraft_sheet_custom_scale",
-        "tsdraft_show_dimension_adjustments",
-        "tsdraft_drawing_mode",
-        "tsdraft_user_view_mode",
-        "tsdraft_dark_place",
-    ):
-        if hasattr(bpy.types.Scene, prop_name):
-            delattr(bpy.types.Scene, prop_name)
-
+    _unregister_scene_props()
 
 if __name__ == "__main__":
     register()
