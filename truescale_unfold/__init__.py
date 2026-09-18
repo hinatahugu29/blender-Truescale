@@ -2148,8 +2148,8 @@ def _delete_object_and_data(obj):
 # ------------------------------------------------------------
 
 
-class UNFOLDHELPER_OT_surface_seam_pen(bpy.types.Operator):
-    bl_idname = "unfold_helper.surface_seam_pen"
+class TSUNFOLD_OT_surface_seam_pen(bpy.types.Operator):
+    bl_idname = "truescale_unfold.surface_seam_pen"
     bl_label = "表面にカーブを描く"
     bl_description = "Illustratorのペンツール風に、クリックでアンカー・ドラッグでハンドルを作りながら表面カーブを描きます"
     bl_options = {'REGISTER', 'UNDO'}
@@ -2514,8 +2514,8 @@ class UNFOLDHELPER_OT_surface_seam_pen(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
 
-class UNFOLDHELPER_OT_annotation_to_curve_guide(bpy.types.Operator):
-    bl_idname = "unfold_helper.annotation_to_curve_guide"
+class TSUNFOLD_OT_annotation_to_curve_guide(bpy.types.Operator):
+    bl_idname = "truescale_unfold.annotation_to_curve_guide"
     bl_label = "アノテート → 綺麗なカーブ"
     bl_description = "アノテート線を少し整えてBezierカーブ化します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -2551,8 +2551,8 @@ class UNFOLDHELPER_OT_annotation_to_curve_guide(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_annotation_curve_snap(bpy.types.Operator):
-    bl_idname = "unfold_helper.annotation_curve_snap"
+class TSUNFOLD_OT_annotation_curve_snap(bpy.types.Operator):
+    bl_idname = "truescale_unfold.annotation_curve_snap"
     bl_label = "カーブを表面に吸着"
     bl_description = "生成したカーブガイドを選択Mesh表面へShrinkwrapします"
     bl_options = {'REGISTER', 'UNDO'}
@@ -2604,8 +2604,8 @@ class UNFOLDHELPER_OT_annotation_curve_snap(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_annotation_curve_knife_seam(bpy.types.Operator):
-    bl_idname = "unfold_helper.annotation_curve_knife_seam"
+class TSUNFOLD_OT_annotation_curve_knife_seam(bpy.types.Operator):
+    bl_idname = "truescale_unfold.annotation_curve_knife_seam"
     bl_label = "描いた線で切ってシーム化"
     bl_description = "サーフェスペンのCurveをそのままKnife Projectし、切断エッジをシーム化します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -2723,8 +2723,8 @@ class UNFOLDHELPER_OT_annotation_curve_knife_seam(bpy.types.Operator):
                 context.view_layer.objects.active = mesh_obj
 
 
-class UNFOLDHELPER_OT_delete_annotation_curve_guide(bpy.types.Operator):
-    bl_idname = "unfold_helper.delete_annotation_curve_guide"
+class TSUNFOLD_OT_delete_annotation_curve_guide(bpy.types.Operator):
+    bl_idname = "truescale_unfold.delete_annotation_curve_guide"
     bl_label = "カーブガイド削除"
     bl_description = "生成したアノテートカーブガイドを削除します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -2740,8 +2740,8 @@ class UNFOLDHELPER_OT_delete_annotation_curve_guide(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_prepare_annotation(bpy.types.Operator):
-    bl_idname = "unfold_helper.prepare_annotation"
+class TSUNFOLD_OT_prepare_annotation(bpy.types.Operator):
+    bl_idname = "truescale_unfold.prepare_annotation"
     bl_label = "表面にアノテートを描く"
     bl_description = "3Dアノテートの配置をSurfaceにし、アノテートツールを起動します"
 
@@ -2761,8 +2761,8 @@ class UNFOLDHELPER_OT_prepare_annotation(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_annotation_to_rough_seam(bpy.types.Operator):
-    bl_idname = "unfold_helper.annotation_to_rough_seam"
+class TSUNFOLD_OT_annotation_to_rough_seam(bpy.types.Operator):
+    bl_idname = "truescale_unfold.annotation_to_rough_seam"
     bl_label = "アノテート → ざっくりシーム"
     bl_description = "表面アノテートの近くを通る既存エッジ列を自動でシーム化します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -2866,8 +2866,8 @@ class UNFOLDHELPER_OT_annotation_to_rough_seam(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_snap_curve_to_surface(bpy.types.Operator):
-    bl_idname = "unfold_helper.snap_curve_to_surface"
+class TSUNFOLD_OT_snap_curve_to_surface(bpy.types.Operator):
+    bl_idname = "truescale_unfold.snap_curve_to_surface"
     bl_label = "カーブを表面に吸着"
     bl_description = "選択したCurveを選択Meshの表面へShrinkwrapで吸着します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -2908,8 +2908,8 @@ class UNFOLDHELPER_OT_snap_curve_to_surface(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_curve_to_seam(bpy.types.Operator):
-    bl_idname = "unfold_helper.curve_to_seam"
+class TSUNFOLD_OT_curve_to_seam(bpy.types.Operator):
+    bl_idname = "truescale_unfold.curve_to_seam"
     bl_label = "カーブからシーム確定"
     bl_description = "選択Curveを現在の3Dビュー方向からMeshへKnife Projectし、新規エッジをシーム化します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3021,8 +3021,8 @@ class UNFOLDHELPER_OT_curve_to_seam(bpy.types.Operator):
                     context.view_layer.objects.active = mesh_obj
 
 
-class UNFOLDHELPER_OT_delete_seam_guides(bpy.types.Operator):
-    bl_idname = "unfold_helper.delete_seam_guides"
+class TSUNFOLD_OT_delete_seam_guides(bpy.types.Operator):
+    bl_idname = "truescale_unfold.delete_seam_guides"
     bl_label = "選択カーブを削除"
     bl_description = "選択中のCurveガイドだけを削除します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3621,8 +3621,8 @@ def _pattern_delete_generated_for_source(context, source_obj):
     return total
 
 
-class PATTERNHELPER_OT_refresh_auto_notches(bpy.types.Operator):
-    bl_idname = "pattern_helper.refresh_auto_notches"
+class TSUNFOLD_OT_refresh_auto_notches(bpy.types.Operator):
+    bl_idname = "truescale_unfold.refresh_auto_notches"
     bl_label = "オート合印を更新"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -3679,8 +3679,8 @@ class PATTERNHELPER_OT_refresh_auto_notches(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_remove_auto_notches(bpy.types.Operator):
-    bl_idname = "pattern_helper.remove_auto_notches"
+class TSUNFOLD_OT_remove_auto_notches(bpy.types.Operator):
+    bl_idname = "truescale_unfold.remove_auto_notches"
     bl_label = "オート合印を削除"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -3694,8 +3694,8 @@ class PATTERNHELPER_OT_remove_auto_notches(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_end_seam(bpy.types.Operator):
-    bl_idname = "unfold_helper.end_seam"
+class TSUNFOLD_OT_end_seam(bpy.types.Operator):
+    bl_idname = "truescale_unfold.end_seam"
     bl_label = "シーム終了"
     bl_description = "シーム編集を終了してオブジェクトモードへ戻ります"
 
@@ -3743,8 +3743,8 @@ def _focus_selected_unfold(context, top_view=False):
         pass
 
 
-class UNFOLDHELPER_OT_start_seam(bpy.types.Operator):
-    bl_idname = "unfold_helper.start_seam"
+class TSUNFOLD_OT_start_seam(bpy.types.Operator):
+    bl_idname = "truescale_unfold.start_seam"
     bl_label = "シームを開始"
     bl_description = "編集モード＋エッジ選択でシーム編集を開始します"
 
@@ -3780,8 +3780,8 @@ class UNFOLDHELPER_OT_start_seam(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_clear_seam(bpy.types.Operator):
-    bl_idname = "unfold_helper.clear_seam"
+class TSUNFOLD_OT_clear_seam(bpy.types.Operator):
+    bl_idname = "truescale_unfold.clear_seam"
     bl_label = "シームをクリア"
     bl_description = "Blender標準の『シームをクリア』を選択エッジに実行します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3810,8 +3810,8 @@ class UNFOLDHELPER_OT_clear_seam(bpy.types.Operator):
 
 
 
-class UNFOLDHELPER_OT_mark_seam(bpy.types.Operator):
-    bl_idname = "unfold_helper.mark_seam"
+class TSUNFOLD_OT_mark_seam(bpy.types.Operator):
+    bl_idname = "truescale_unfold.mark_seam"
     bl_label = "シームを入れる"
     bl_description = "選択エッジをシーム化します。対称ON時は対称位置も一緒に処理します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3832,8 +3832,8 @@ class UNFOLDHELPER_OT_mark_seam(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_unfold_real_mesh(bpy.types.Operator):
-    bl_idname = "unfold_helper.unfold_real_mesh"
+class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
+    bl_idname = "truescale_unfold.unfold_real_mesh"
     bl_label = "展開"
     bl_description = "シームに従ってUV展開し、実寸スケールの平面Meshを生成します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3973,8 +3973,8 @@ def _pattern_seam_source(context):
 
 
 
-class PATTERNHELPER_OT_load_seamed_object(bpy.types.Operator):
-    bl_idname = "pattern_helper.load_seamed_object"
+class TSUNFOLD_OT_load_seamed_object(bpy.types.Operator):
+    bl_idname = "truescale_unfold.load_seamed_object"
     bl_label = "シーム付きモデルを読み込む"
     bl_description = "選択中のMeshを型紙元モデルとして登録します。既存のBlenderシームをそのまま使用します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4045,8 +4045,8 @@ class PATTERNHELPER_OT_load_seamed_object(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_build_pattern(bpy.types.Operator):
-    bl_idname = "pattern_helper.build_pattern"
+class TSUNFOLD_OT_build_pattern(bpy.types.Operator):
+    bl_idname = "truescale_unfold.build_pattern"
     bl_label = "型紙作成"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -4091,7 +4091,7 @@ class PATTERNHELPER_OT_build_pattern(bpy.types.Operator):
             )
             return {'CANCELLED'}
 
-        result = bpy.ops.unfold_helper.unfold_real_mesh()
+        result = bpy.ops.truescale_unfold.unfold_real_mesh()
         if 'FINISHED' not in result:
             return {'CANCELLED'}
 
@@ -4123,8 +4123,8 @@ class PATTERNHELPER_OT_build_pattern(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_cancel_pattern(bpy.types.Operator):
-    bl_idname = "pattern_helper.cancel_pattern"
+class TSUNFOLD_OT_cancel_pattern(bpy.types.Operator):
+    bl_idname = "truescale_unfold.cancel_pattern"
     bl_label = "キャンセル"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -4176,8 +4176,8 @@ class PATTERNHELPER_OT_cancel_pattern(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_confirm_pattern(bpy.types.Operator):
-    bl_idname = "pattern_helper.confirm_pattern"
+class TSUNFOLD_OT_confirm_pattern(bpy.types.Operator):
+    bl_idname = "truescale_unfold.confirm_pattern"
     bl_label = "確定"
 
     def execute(self, context):
@@ -4234,8 +4234,8 @@ class PATTERNHELPER_OT_confirm_pattern(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_make_smooth_line(bpy.types.Operator):
-    bl_idname = "unfold_helper.make_smooth_line"
+class TSUNFOLD_OT_make_smooth_line(bpy.types.Operator):
+    bl_idname = "truescale_unfold.make_smooth_line"
     bl_label = "ラインをなめらかに"
     bl_description = "展開図の外周から、元の周長をほぼ維持した滑らかなCurveを別オブジェクトとして作ります"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4278,8 +4278,8 @@ class UNFOLDHELPER_OT_make_smooth_line(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_select_unfold_source(bpy.types.Operator):
-    bl_idname = "unfold_helper.select_unfold_source"
+class TSUNFOLD_OT_select_unfold_source(bpy.types.Operator):
+    bl_idname = "truescale_unfold.select_unfold_source"
     bl_label = "元の展開図を選択"
     bl_description = "なめらか線の元になった展開図Meshを選択します"
 
@@ -4304,8 +4304,8 @@ class UNFOLDHELPER_OT_select_unfold_source(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_show_poly(bpy.types.Operator):
-    bl_idname = "unfold_helper.show_poly"
+class TSUNFOLD_OT_show_poly(bpy.types.Operator):
+    bl_idname = "truescale_unfold.show_poly"
     bl_label = "ローポリ表示"
     bl_description = "ローポリ展開図を表示し、なめらか線を非表示にします"
 
@@ -4343,8 +4343,8 @@ class UNFOLDHELPER_OT_show_poly(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_show_smooth(bpy.types.Operator):
-    bl_idname = "unfold_helper.show_smooth"
+class TSUNFOLD_OT_show_smooth(bpy.types.Operator):
+    bl_idname = "truescale_unfold.show_smooth"
     bl_label = "なめらか表示"
     bl_description = "なめらか線がなければ生成し、表示を切り替えます"
 
@@ -4464,8 +4464,8 @@ def _resolve_unfold_mesh_for_layout(context):
     return None
 
 
-class UNFOLDHELPER_OT_auto_layout(bpy.types.Operator):
-    bl_idname = "unfold_helper.auto_layout"
+class TSUNFOLD_OT_auto_layout(bpy.types.Operator):
+    bl_idname = "truescale_unfold.auto_layout"
     bl_label = "用紙に自動レイアウト"
     bl_description = "表示中の用紙枠へ、実寸のままアイランドを自動配置します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4502,8 +4502,8 @@ class UNFOLDHELPER_OT_auto_layout(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_layout_edit(bpy.types.Operator):
-    bl_idname = "unfold_helper.layout_edit"
+class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
+    bl_idname = "truescale_unfold.layout_edit"
     bl_label = "レイアウトの変更"
     bl_description = "編集モードに入り、面を1枚選ぶだけでアイランド全体を自動選択します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4700,8 +4700,8 @@ class UNFOLDHELPER_OT_layout_edit(bpy.types.Operator):
 
 
 
-class UNFOLDHELPER_OT_layout_confirm(bpy.types.Operator):
-    bl_idname = "unfold_helper.layout_confirm"
+class TSUNFOLD_OT_layout_confirm(bpy.types.Operator):
+    bl_idname = "truescale_unfold.layout_confirm"
     bl_label = "レイアウト確定"
     bl_description = "手動レイアウト編集を終了してObject Modeへ戻ります"
 
@@ -4756,8 +4756,8 @@ class UNFOLDHELPER_OT_layout_confirm(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_delete_unfold(bpy.types.Operator):
-    bl_idname = "unfold_helper.delete_unfold"
+class TSUNFOLD_OT_delete_unfold(bpy.types.Operator):
+    bl_idname = "truescale_unfold.delete_unfold"
     bl_label = "展開図を削除"
     bl_description = "生成されたローポリ展開図となめらか線をまとめて削除します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4812,8 +4812,8 @@ class UNFOLDHELPER_OT_delete_unfold(bpy.types.Operator):
 
 
 
-class PATTERNHELPER_OT_toggle_source_visibility(bpy.types.Operator):
-    bl_idname = "pattern_helper.toggle_source_visibility"
+class TSUNFOLD_OT_toggle_source_visibility(bpy.types.Operator):
+    bl_idname = "truescale_unfold.toggle_source_visibility"
     bl_label = "元モデル表示 / 非表示"
     bl_description = "読み込み済みの元3Dモデルだけを表示/非表示します。型紙やビュー位置は変更しません"
 
@@ -4849,8 +4849,8 @@ class PATTERNHELPER_OT_toggle_source_visibility(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_toggle_pattern_preview(bpy.types.Operator):
-    bl_idname = "pattern_helper.toggle_pattern_preview"
+class TSUNFOLD_OT_toggle_pattern_preview(bpy.types.Operator):
+    bl_idname = "truescale_unfold.toggle_pattern_preview"
     bl_label = "型紙を表示 / 隠す"
     bl_description = "実際に生成された型紙オブジェクトを表示/非表示し、元モデルとの確認を切り替えます"
 
@@ -4933,8 +4933,8 @@ class PATTERNHELPER_OT_toggle_pattern_preview(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class UNFOLDHELPER_OT_toggle_preview(bpy.types.Operator):
-    bl_idname = "unfold_helper.toggle_preview"
+class TSUNFOLD_OT_toggle_preview(bpy.types.Operator):
+    bl_idname = "truescale_unfold.toggle_preview"
     bl_label = "印刷プレビュー"
     bl_description = "必要ならObject Modeへ戻して、用紙と最終印刷輪郭を3Dビューに表示します"
 
@@ -5117,8 +5117,8 @@ def _pattern_text_outline_segments(context, text, world_pos, size_mm, angle=0.0)
                 pass
 
 
-class UNFOLDHELPER_OT_export_png(bpy.types.Operator, ExportHelper):
-    bl_idname = "unfold_helper.export_png"
+class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
+    bl_idname = "truescale_unfold.export_png"
     bl_label = "実寸PNGを書き出し"
     bl_description = "選択した展開図を実寸PNGとして300dpiで書き出します"
 
@@ -5709,8 +5709,8 @@ def _pattern_restore_work_state(context):
     _tag_redraw()
 
 
-class PATTERNHELPER_OT_finish_marking(bpy.types.Operator):
-    bl_idname = "pattern_helper.finish_marking"
+class TSUNFOLD_OT_finish_marking(bpy.types.Operator):
+    bl_idname = "truescale_unfold.finish_marking"
     bl_label = "マーキング終了"
     bl_description = "3D型紙マーキングを終了し、開始前の選択・モードへ戻ります"
 
@@ -9850,8 +9850,8 @@ def _pattern_modal_common(operator, context, event):
 
     return {'PASS_THROUGH'}
 
-class PATTERNHELPER_OT_marking_tool_off(bpy.types.Operator):
-    bl_idname = "pattern_helper.marking_tool_off"
+class TSUNFOLD_OT_marking_tool_off(bpy.types.Operator):
+    bl_idname = "truescale_unfold.marking_tool_off"
     bl_label = "マーキングツールOFF"
     bl_description = "現在の合印・番号・矢印・文字の連続配置ツールを停止します"
 
@@ -9865,8 +9865,8 @@ class PATTERNHELPER_OT_marking_tool_off(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_place_notch(bpy.types.Operator):
-    bl_idname = "pattern_helper.place_notch"
+class TSUNFOLD_OT_place_notch(bpy.types.Operator):
+    bl_idname = "truescale_unfold.place_notch"
     bl_label = "合印モード"
 
     _source_name = ""
@@ -9888,8 +9888,8 @@ class PATTERNHELPER_OT_place_notch(bpy.types.Operator):
         return _pattern_modal_common(self, context, event)
 
 
-class PATTERNHELPER_OT_place_number(bpy.types.Operator):
-    bl_idname = "pattern_helper.place_number"
+class TSUNFOLD_OT_place_number(bpy.types.Operator):
+    bl_idname = "truescale_unfold.place_number"
     bl_label = "型紙番号モード"
 
     _source_name = ""
@@ -9911,8 +9911,8 @@ class PATTERNHELPER_OT_place_number(bpy.types.Operator):
         return _pattern_modal_common(self, context, event)
 
 
-class PATTERNHELPER_OT_place_arrow(bpy.types.Operator):
-    bl_idname = "pattern_helper.place_arrow"
+class TSUNFOLD_OT_place_arrow(bpy.types.Operator):
+    bl_idname = "truescale_unfold.place_arrow"
     bl_label = "上方向矢印モード"
 
     _source_name = ""
@@ -9935,8 +9935,8 @@ class PATTERNHELPER_OT_place_arrow(bpy.types.Operator):
 
 
 
-class PATTERNHELPER_OT_set_text(bpy.types.Operator):
-    bl_idname = "pattern_helper.set_text"
+class TSUNFOLD_OT_set_text(bpy.types.Operator):
+    bl_idname = "truescale_unfold.set_text"
     bl_label = "文字を入力 / 変更"
 
     text_value: StringProperty(
@@ -9965,8 +9965,8 @@ class PATTERNHELPER_OT_set_text(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_place_text(bpy.types.Operator):
-    bl_idname = "pattern_helper.place_text"
+class TSUNFOLD_OT_place_text(bpy.types.Operator):
+    bl_idname = "truescale_unfold.place_text"
     bl_label = "任意テキストモード"
 
     _source_name = ""
@@ -10128,8 +10128,8 @@ def _pattern_raycast_any_visible(context, event):
 
 
 
-class PATTERNHELPER_OT_place_flat_memo(bpy.types.Operator):
-    bl_idname = "pattern_helper.place_flat_memo"
+class TSUNFOLD_OT_place_flat_memo(bpy.types.Operator):
+    bl_idname = "truescale_unfold.place_flat_memo"
     bl_label = "型紙にメモを追加"
     bl_description = "型紙上をクリックして、文字入力ダイアログを開きます"
     bl_options = {'REGISTER', 'UNDO'}
@@ -10165,7 +10165,7 @@ class PATTERNHELPER_OT_place_flat_memo(bpy.types.Operator):
 
         unfold, local = hit
 
-        bpy.ops.pattern_helper.confirm_flat_memo(
+        bpy.ops.truescale_unfold.confirm_flat_memo(
             'INVOKE_DEFAULT',
             unfold_name=unfold.name,
             local_pos=(
@@ -10177,8 +10177,8 @@ class PATTERNHELPER_OT_place_flat_memo(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_confirm_flat_memo(bpy.types.Operator):
-    bl_idname = "pattern_helper.confirm_flat_memo"
+class TSUNFOLD_OT_confirm_flat_memo(bpy.types.Operator):
+    bl_idname = "truescale_unfold.confirm_flat_memo"
     bl_label = "型紙メモ"
     bl_description = "型紙に配置するメモ文字を入力します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -10262,7 +10262,7 @@ class PATTERNHELPER_OT_confirm_flat_memo(bpy.types.Operator):
 
         # Place first, then let the user visually rotate it in the viewport.
         try:
-            bpy.ops.pattern_helper.rotate_flat_memo(
+            bpy.ops.truescale_unfold.rotate_flat_memo(
                 'INVOKE_DEFAULT',
                 unfold_name=unfold.name,
                 memo_index=memo_index,
@@ -10276,8 +10276,8 @@ class PATTERNHELPER_OT_confirm_flat_memo(bpy.types.Operator):
 
 
 
-class PATTERNHELPER_OT_rotate_flat_memo(bpy.types.Operator):
-    bl_idname = "pattern_helper.rotate_flat_memo"
+class TSUNFOLD_OT_rotate_flat_memo(bpy.types.Operator):
+    bl_idname = "truescale_unfold.rotate_flat_memo"
     bl_label = "メモを回転"
     bl_description = "配置したメモをマウスで回転し、左クリックで確定します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -10381,8 +10381,8 @@ class PATTERNHELPER_OT_rotate_flat_memo(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
 
-class PATTERNHELPER_OT_edit_flat_memo(bpy.types.Operator):
-    bl_idname = "pattern_helper.edit_flat_memo"
+class TSUNFOLD_OT_edit_flat_memo(bpy.types.Operator):
+    bl_idname = "truescale_unfold.edit_flat_memo"
     bl_label = "型紙メモ編集"
     bl_description = "選択した型紙メモをRで回転、X/Deleteで削除します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -10490,8 +10490,8 @@ class PATTERNHELPER_OT_edit_flat_memo(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
 
-class PATTERNHELPER_OT_clear_flat_memos(bpy.types.Operator):
-    bl_idname = "pattern_helper.clear_flat_memos"
+class TSUNFOLD_OT_clear_flat_memos(bpy.types.Operator):
+    bl_idname = "truescale_unfold.clear_flat_memos"
     bl_label = "メモを全削除"
     bl_description = "型紙に直接配置したメモだけをすべて削除します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -10516,12 +10516,12 @@ class PATTERNHELPER_OT_clear_flat_memos(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_pick_corresponding_island(bpy.types.Operator):
+class TSUNFOLD_OT_pick_corresponding_island(bpy.types.Operator):
     _last_click_time = 0.0
     _last_click_x = -10000
     _last_click_y = -10000
 
-    bl_idname = "pattern_helper.pick_corresponding_island"
+    bl_idname = "truescale_unfold.pick_corresponding_island"
     bl_label = "対応確認"
 
     def invoke(self, context, event):
@@ -10574,7 +10574,7 @@ class PATTERNHELPER_OT_pick_corresponding_island(bpy.types.Operator):
                 picked_memo = _pattern_pick_flat_memo_at_mouse(context, event)
                 if picked_memo is not None:
                     try:
-                        bpy.ops.pattern_helper.edit_flat_memo(
+                        bpy.ops.truescale_unfold.edit_flat_memo(
                             'INVOKE_DEFAULT'
                         )
                     except Exception:
@@ -10606,7 +10606,7 @@ class PATTERNHELPER_OT_pick_corresponding_island(bpy.types.Operator):
                     if hit is not None:
                         unfold, local = hit
                         try:
-                            bpy.ops.pattern_helper.confirm_flat_memo(
+                            bpy.ops.truescale_unfold.confirm_flat_memo(
                                 'INVOKE_DEFAULT',
                                 unfold_name=unfold.name,
                                 local_pos=(
@@ -10712,8 +10712,8 @@ class PATTERNHELPER_OT_pick_corresponding_island(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
-class PATTERNHELPER_OT_clear_island_highlight(bpy.types.Operator):
-    bl_idname = "pattern_helper.clear_island_highlight"
+class TSUNFOLD_OT_clear_island_highlight(bpy.types.Operator):
+    bl_idname = "truescale_unfold.clear_island_highlight"
     bl_label = "対応表示を解除"
 
     def execute(self, context):
@@ -10726,8 +10726,8 @@ class PATTERNHELPER_OT_clear_island_highlight(bpy.types.Operator):
 
 
 
-class PATTERNHELPER_OT_toggle_direction_arrow(bpy.types.Operator):
-    bl_idname = "pattern_helper.toggle_direction_arrow"
+class TSUNFOLD_OT_toggle_direction_arrow(bpy.types.Operator):
+    bl_idname = "truescale_unfold.toggle_direction_arrow"
     bl_label = "水色の方向ガイド"
     bl_description = "画面左側の水色の方向矢印を表示/非表示します"
 
@@ -10740,8 +10740,8 @@ class PATTERNHELPER_OT_toggle_direction_arrow(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_return_default(bpy.types.Operator):
-    bl_idname = "pattern_helper.return_default"
+class TSUNFOLD_OT_return_default(bpy.types.Operator):
+    bl_idname = "truescale_unfold.return_default"
     bl_label = "作業終了・型紙を片付ける"
     bl_description = "型紙とマーキングを削除して終了します。元モデルに設定済みのシームは保持します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -10855,8 +10855,8 @@ class PATTERNHELPER_OT_return_default(bpy.types.Operator):
 
 
 
-class PATTERNHELPER_OT_clear_arrows_all(bpy.types.Operator):
-    bl_idname = "pattern_helper.clear_arrows_all"
+class TSUNFOLD_OT_clear_arrows_all(bpy.types.Operator):
+    bl_idname = "truescale_unfold.clear_arrows_all"
     bl_label = "矢印を全削除"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -10885,8 +10885,8 @@ class PATTERNHELPER_OT_clear_arrows_all(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_delete_last_type(bpy.types.Operator):
-    bl_idname = "pattern_helper.delete_last_type"
+class TSUNFOLD_OT_delete_last_type(bpy.types.Operator):
+    bl_idname = "truescale_unfold.delete_last_type"
     bl_label = "種類別マーキング削除"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -10935,8 +10935,8 @@ class PATTERNHELPER_OT_delete_last_type(bpy.types.Operator):
 
 
 
-class PATTERNHELPER_OT_reset_number(bpy.types.Operator):
-    bl_idname = "pattern_helper.reset_number"
+class TSUNFOLD_OT_reset_number(bpy.types.Operator):
+    bl_idname = "truescale_unfold.reset_number"
     bl_label = "番号を1に戻す"
 
     def execute(self, context):
@@ -10945,8 +10945,8 @@ class PATTERNHELPER_OT_reset_number(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_delete_last_annotation(bpy.types.Operator):
-    bl_idname = "pattern_helper.delete_last_annotation"
+class TSUNFOLD_OT_delete_last_annotation(bpy.types.Operator):
+    bl_idname = "truescale_unfold.delete_last_annotation"
     bl_label = "最後の印を削除"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -10963,8 +10963,8 @@ class PATTERNHELPER_OT_delete_last_annotation(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PATTERNHELPER_OT_clear_annotations(bpy.types.Operator):
-    bl_idname = "pattern_helper.clear_annotations"
+class TSUNFOLD_OT_clear_annotations(bpy.types.Operator):
+    bl_idname = "truescale_unfold.clear_annotations"
     bl_label = "型紙印を全部削除"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -11039,9 +11039,9 @@ def _pattern_draw_digits_rgb(buffer, width, height, x, y, text, scale=2):
 # UI
 # ------------------------------------------------------------
 
-class UNFOLDHELPER_PT_main(bpy.types.Panel):
+class TSUNFOLD_PT_main(bpy.types.Panel):
     bl_label = "Truescale Unfold"
-    bl_idname = "UNFOLDHELPER_PT_main"
+    bl_idname = "TSUNFOLD_PT_main"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "Truescale"
@@ -11089,7 +11089,7 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
         loaded_obj = bpy.data.objects.get(loaded_name) if loaded_name else None
 
         source_box.operator(
-            "pattern_helper.load_seamed_object",
+            "truescale_unfold.load_seamed_object",
             text="モデルの読み込み",
             icon='IMPORT',
         )
@@ -11097,7 +11097,7 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
         if loaded_obj is not None and loaded_obj.type == 'MESH':
             vis_row = source_box.row(align=True)
             vis_row.operator(
-                "pattern_helper.toggle_source_visibility",
+                "truescale_unfold.toggle_source_visibility",
                 text=(
                     "元モデルを表示"
                     if loaded_obj.hide_get()
@@ -11118,7 +11118,7 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
             and any(bool(edge.use_seam) for edge in loaded_obj.data.edges)
         )
         build_row.operator(
-            "pattern_helper.build_pattern",
+            "truescale_unfold.build_pattern",
             text="型紙を作成 / 更新",
             icon='UV',
         )
@@ -11126,7 +11126,7 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
         delete_row = source_box.row()
         delete_row.enabled = (unfold_obj is not None)
         delete_row.operator(
-            "unfold_helper.delete_unfold",
+            "truescale_unfold.delete_unfold",
             text="型紙を削除",
             icon='TRASH',
         )
@@ -11168,18 +11168,18 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
         if scene.pattern_helper_notch_mode == "AUTO":
             row = notch_box.row(align=True)
             row.operator(
-                "pattern_helper.refresh_auto_notches",
+                "truescale_unfold.refresh_auto_notches",
                 text="作成 / 更新",
             )
             row.operator(
-                "pattern_helper.clear_notches",
+                "truescale_unfold.clear_notches",
                 text="合印削除",
                 icon='X',
             )
 
         if scene.pattern_helper_notch_mode != "NONE":
             notch_box.operator(
-                "pattern_helper.start_notch",
+                "truescale_unfold.start_notch",
                 text="手動で合印を追加",
             )
 
@@ -11293,12 +11293,12 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
 
             if scene.pattern_helper_arrow_mode in {"AUTO", "CUSTOM"}:
                 arrow_box.operator(
-                    "pattern_helper.start_arrow",
+                    "truescale_unfold.start_arrow",
                     text="手動で矢印を追加",
                 )
 
             arrow_box.operator(
-                "pattern_helper.clear_arrows_all",
+                "truescale_unfold.clear_arrows_all",
                 text="矢印を全削除",
                 icon='TRASH',
             )
@@ -11308,7 +11308,7 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
         # -------------------------
         # Common destructive action only.
         marking.operator(
-            "pattern_helper.clear_all_marks",
+            "truescale_unfold.clear_all_marks",
             text="すべてのマーキングをクリア",
             icon='TRASH',
         )
@@ -11322,7 +11322,7 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
         head.label(text="◆ 対応確認・メモ", icon='RESTRICT_SELECT_OFF')
 
         corr_box.operator(
-            "pattern_helper.pick_corresponding_island",
+            "truescale_unfold.pick_corresponding_island",
             text=(
                 "対応確認を終了"
                 if scene.pattern_helper_correspondence_mode
@@ -11331,7 +11331,7 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
             depress=scene.pattern_helper_correspondence_mode,
         )
         corr_box.operator(
-            "pattern_helper.clear_corresponding_island",
+            "truescale_unfold.clear_corresponding_island",
             text="対応ハイライトをクリア",
         )
 
@@ -11342,11 +11342,11 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
         corr_box.separator()
         memo_row = corr_box.row(align=True)
         memo_row.operator(
-            "pattern_helper.place_flat_memo",
+            "truescale_unfold.place_flat_memo",
             text="型紙にメモを追加",
         )
         memo_row.operator(
-            "pattern_helper.clear_flat_memos",
+            "truescale_unfold.clear_flat_memos",
             text="メモ全削除",
             icon='TRASH',
         )
@@ -11413,17 +11413,17 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
             output.label(text="レイアウト")
             row = output.row(align=True)
             row.operator(
-                "unfold_helper.auto_layout",
+                "truescale_unfold.auto_layout",
                 text="自動レイアウト",
                 icon='NODE_CORNER',
             )
             row.operator(
-                "unfold_helper.layout_edit",
+                "truescale_unfold.layout_edit",
                 text="手動で調整",
                 icon='EDITMODE_HLT',
             )
             output.operator(
-                "unfold_helper.layout_confirm",
+                "truescale_unfold.layout_confirm",
                 text="レイアウト確定",
                 icon='CHECKMARK',
             )
@@ -11436,7 +11436,7 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
             output.label(text="印刷・書き出し")
 
             output.operator(
-                "unfold_helper.toggle_preview",
+                "truescale_unfold.toggle_preview",
                 text=(
                     "印刷プレビューを終了"
                     if scene.unfold_helper_preview
@@ -11447,14 +11447,14 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
             )
 
             output.operator(
-                "unfold_helper.export_png",
+                "truescale_unfold.export_png",
                 text="実寸PNGを書き出し（300dpi）",
                 icon='EXPORT',
             )
 
         finish = layout.box()
         finish.operator(
-            "pattern_helper.return_default",
+            "truescale_unfold.return_default",
             text="作業終了・型紙を片付ける",
             icon='HOME',
         )
@@ -11464,40 +11464,40 @@ class UNFOLDHELPER_PT_main(bpy.types.Panel):
 
 
 classes = (
-    PATTERNHELPER_OT_edit_flat_memo,
-    PATTERNHELPER_OT_rotate_flat_memo,
-    PATTERNHELPER_OT_confirm_flat_memo,
-    PATTERNHELPER_OT_place_flat_memo,
-    PATTERNHELPER_OT_clear_flat_memos,
-    PATTERNHELPER_OT_toggle_source_visibility,
-    PATTERNHELPER_OT_load_seamed_object,
-    PATTERNHELPER_OT_toggle_direction_arrow,
-    UNFOLDHELPER_OT_layout_confirm,
-    PATTERNHELPER_OT_return_default,
-    PATTERNHELPER_OT_clear_arrows_all,
-    PATTERNHELPER_OT_clear_island_highlight,
-    PATTERNHELPER_OT_pick_corresponding_island,
-    PATTERNHELPER_OT_build_pattern,
-    PATTERNHELPER_OT_remove_auto_notches,
-    PATTERNHELPER_OT_refresh_auto_notches,
-    PATTERNHELPER_OT_reset_number,
-    PATTERNHELPER_OT_delete_last_type,
-    PATTERNHELPER_OT_marking_tool_off,
-    PATTERNHELPER_OT_toggle_pattern_preview,
-    PATTERNHELPER_OT_finish_marking,
-    PATTERNHELPER_OT_place_notch,
-    PATTERNHELPER_OT_place_number,
-    PATTERNHELPER_OT_place_arrow,
-    PATTERNHELPER_OT_delete_last_annotation,
-    PATTERNHELPER_OT_clear_annotations,
-    UNFOLDHELPER_OT_unfold_real_mesh,
-    UNFOLDHELPER_OT_select_unfold_source,
-    UNFOLDHELPER_OT_auto_layout,
-    UNFOLDHELPER_OT_layout_edit,
-    UNFOLDHELPER_OT_delete_unfold,
-    UNFOLDHELPER_OT_toggle_preview,
-    UNFOLDHELPER_OT_export_png,
-    UNFOLDHELPER_PT_main,
+    TSUNFOLD_OT_edit_flat_memo,
+    TSUNFOLD_OT_rotate_flat_memo,
+    TSUNFOLD_OT_confirm_flat_memo,
+    TSUNFOLD_OT_place_flat_memo,
+    TSUNFOLD_OT_clear_flat_memos,
+    TSUNFOLD_OT_toggle_source_visibility,
+    TSUNFOLD_OT_load_seamed_object,
+    TSUNFOLD_OT_toggle_direction_arrow,
+    TSUNFOLD_OT_layout_confirm,
+    TSUNFOLD_OT_return_default,
+    TSUNFOLD_OT_clear_arrows_all,
+    TSUNFOLD_OT_clear_island_highlight,
+    TSUNFOLD_OT_pick_corresponding_island,
+    TSUNFOLD_OT_build_pattern,
+    TSUNFOLD_OT_remove_auto_notches,
+    TSUNFOLD_OT_refresh_auto_notches,
+    TSUNFOLD_OT_reset_number,
+    TSUNFOLD_OT_delete_last_type,
+    TSUNFOLD_OT_marking_tool_off,
+    TSUNFOLD_OT_toggle_pattern_preview,
+    TSUNFOLD_OT_finish_marking,
+    TSUNFOLD_OT_place_notch,
+    TSUNFOLD_OT_place_number,
+    TSUNFOLD_OT_place_arrow,
+    TSUNFOLD_OT_delete_last_annotation,
+    TSUNFOLD_OT_clear_annotations,
+    TSUNFOLD_OT_unfold_real_mesh,
+    TSUNFOLD_OT_select_unfold_source,
+    TSUNFOLD_OT_auto_layout,
+    TSUNFOLD_OT_layout_edit,
+    TSUNFOLD_OT_delete_unfold,
+    TSUNFOLD_OT_toggle_preview,
+    TSUNFOLD_OT_export_png,
+    TSUNFOLD_PT_main,
 )
 
 

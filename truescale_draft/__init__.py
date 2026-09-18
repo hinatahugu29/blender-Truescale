@@ -54,7 +54,7 @@ def get_addon_preferences(context=None):
     return None
 
 
-class MHS_AddonPreferences(bpy.types.AddonPreferences):
+class TSDRAFT_Preferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
     show_dark_place_button: bpy.props.BoolProperty(
@@ -3300,8 +3300,8 @@ def remove_cleanup_handler():
 # =========================================================
 
 
-class MHS_OT_toggle_size_overlay(bpy.types.Operator):
-    bl_idname = "mhs.toggle_size_overlay"
+class TSDRAFT_OT_toggle_size_overlay(bpy.types.Operator):
+    bl_idname = "truescale_draft.toggle_size_overlay"
     bl_label = "BOX＋寸法 表示切替"
     bl_description = "BOXと寸法を削除せず、一時的に表示／非表示を切り替えます"
 
@@ -3345,8 +3345,8 @@ class MHS_OT_toggle_size_overlay(bpy.types.Operator):
 
 
 
-class MHS_OT_make_size_bbox(bpy.types.Operator):
-    bl_idname = "mhs.make_size_bbox"
+class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
+    bl_idname = "truescale_draft.make_size_bbox"
     bl_label = "BOX＋寸法を作成"
     bl_description = "選択オブジェクトからサイズ用Bounding Boxを作成し、3辺の寸法を表示します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3575,8 +3575,8 @@ class MHS_OT_make_size_bbox(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class MHS_OT_delete_bbox(bpy.types.Operator):
-    bl_idname = "mhs.delete_bbox"
+class TSDRAFT_OT_delete_bbox(bpy.types.Operator):
+    bl_idname = "truescale_draft.delete_bbox"
     bl_label = "BOX＋寸法を削除"
     bl_description = "サイズ用Bounding Boxと寸法表示を削除します"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3594,7 +3594,7 @@ class MHS_OT_delete_bbox(bpy.types.Operator):
         # BOX＋寸法を消したら、そのまま通常表示へ帰還
         if context.area is not None and context.area.type == 'VIEW_3D':
             try:
-                bpy.ops.mhs.restore_view()
+                bpy.ops.truescale_draft.restore_view()
             except Exception:
                 pass
 
@@ -3702,7 +3702,7 @@ def mhs_sheet_layout_aligned(view_data, page_w, page_h, margin=12.0, gutter=10.0
     return positions, (content_w, content_h + footer)
 
 
-_MHS_BITMAP_FONT = {
+_TSDRAFT_BITMAP_FONT = {
     'S': ("11111","10000","10000","11111","00001","00001","11111"),
     'C': ("11111","10000","10000","10000","10000","10000","11111"),
     'A': ("01110","10001","10001","11111","10001","10001","10001"),
@@ -3731,7 +3731,7 @@ def mhs_draw_bitmap_text(canvas, text, x, y_top, scale=3):
     y_top = int(y_top)
     cursor = x
     for ch in text.upper():
-        glyph = _MHS_BITMAP_FONT.get(ch, _MHS_BITMAP_FONT[' '])
+        glyph = _TSDRAFT_BITMAP_FONT.get(ch, _TSDRAFT_BITMAP_FONT[' '])
         for gy, row in enumerate(glyph):
             for gx, bit in enumerate(row):
                 if bit != '1':
@@ -4282,10 +4282,10 @@ def mhs_build_three_view_sheet(context, filepath):
             pass
 
 
-class MHS_OT_preview_three_view_sheet(bpy.types.Operator):
+class TSDRAFT_OT_preview_three_view_sheet(bpy.types.Operator):
     # 2.4.12: use a fresh operator id so an old/stale registration can never
     # resolve the Preview button to the ExportHelper operator after updating.
-    bl_idname = 'mhs.preview_three_view_sheet_safe'
+    bl_idname = 'truescale_draft.preview_three_view_sheet_safe'
     bl_label = '三面図シートをプレビュー'
     bl_description = '一時PNGを作ってプレビューします。保存先の指定は行いません'
 
@@ -4313,8 +4313,8 @@ class MHS_OT_preview_three_view_sheet(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class MHS_OT_export_three_view_sheet(bpy.types.Operator, ExportHelper):
-    bl_idname = 'mhs.export_three_view_sheet'
+class TSDRAFT_OT_export_three_view_sheet(bpy.types.Operator, ExportHelper):
+    bl_idname = 'truescale_draft.export_three_view_sheet'
     bl_label = '三面図シートを書き出し'
     bl_description = '上面・前面・側面を選択した用紙サイズと縮率で1枚のPNG図面にまとめます'
 
@@ -4351,8 +4351,8 @@ class MHS_OT_export_three_view_sheet(bpy.types.Operator, ExportHelper):
         return {'FINISHED'}
 
 
-class MHS_OT_export_actual_png(bpy.types.Operator, ExportHelper):
-    bl_idname = "mhs.export_actual_png"
+class TSDRAFT_OT_export_actual_png(bpy.types.Operator, ExportHelper):
+    bl_idname = "truescale_draft.export_actual_png"
     bl_label = "実寸PNGを書き出し"
     bl_description = "現在のBlender図面ビューをそのままPNG化し、Bounding Box実寸で物理サイズを合わせます"
 
@@ -4413,8 +4413,8 @@ class MHS_OT_export_actual_png(bpy.types.Operator, ExportHelper):
         return {'FINISHED'}
 
 
-class MHS_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
-    bl_idname = "mhs.export_all_actual_png"
+class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
+    bl_idname = "truescale_draft.export_all_actual_png"
     bl_label = "3面まとめてPNG"
     bl_description = (
         "上面・前面・側面を実寸PNGとして一括書き出します。"
@@ -4531,8 +4531,8 @@ class MHS_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
         return {'FINISHED'}
 
 
-class MHS_OT_dark_place(bpy.types.Operator):
-    bl_idname = "mhs.dark_place"
+class TSDRAFT_OT_dark_place(bpy.types.Operator):
+    bl_idname = "truescale_draft.dark_place"
     bl_label = "なんかずっと暗いとこ"
     bl_description = "押すたびに暗所表示のON/OFFを切り替えます"
 
@@ -4580,8 +4580,8 @@ class MHS_OT_dark_place(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class MHS_OT_reset_label_offsets(bpy.types.Operator):
-    bl_idname = "mhs.reset_label_offsets"
+class TSDRAFT_OT_reset_label_offsets(bpy.types.Operator):
+    bl_idname = "truescale_draft.reset_label_offsets"
     bl_label = "文字位置をリセット"
 
     def execute(self, context):
@@ -4925,8 +4925,8 @@ def switch_single_view(context, axis_type=None):
 # 図面ビュー：Operator
 # =========================================================
 
-class MHS_OT_quad_view(bpy.types.Operator):
-    bl_idname = "mhs.quad_view"
+class TSDRAFT_OT_quad_view(bpy.types.Operator):
+    bl_idname = "truescale_draft.quad_view"
     bl_label = "三面＋任意ビュー"
 
     def execute(self, context):
@@ -4975,8 +4975,8 @@ class MHS_OT_quad_view(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class MHS_OT_front_view(bpy.types.Operator):
-    bl_idname = "mhs.front_view"
+class TSDRAFT_OT_front_view(bpy.types.Operator):
+    bl_idname = "truescale_draft.front_view"
     bl_label = "正面"
 
     def execute(self, context):
@@ -4986,8 +4986,8 @@ class MHS_OT_front_view(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class MHS_OT_top_view(bpy.types.Operator):
-    bl_idname = "mhs.top_view"
+class TSDRAFT_OT_top_view(bpy.types.Operator):
+    bl_idname = "truescale_draft.top_view"
     bl_label = "上面"
 
     def execute(self, context):
@@ -4997,8 +4997,8 @@ class MHS_OT_top_view(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class MHS_OT_side_view(bpy.types.Operator):
-    bl_idname = "mhs.side_view"
+class TSDRAFT_OT_side_view(bpy.types.Operator):
+    bl_idname = "truescale_draft.side_view"
     bl_label = "側面"
 
     def execute(self, context):
@@ -5008,8 +5008,8 @@ class MHS_OT_side_view(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class MHS_OT_user_view(bpy.types.Operator):
-    bl_idname = "mhs.user_view"
+class TSDRAFT_OT_user_view(bpy.types.Operator):
+    bl_idname = "truescale_draft.user_view"
     bl_label = "任意"
 
     def execute(self, context):
@@ -5020,8 +5020,8 @@ class MHS_OT_user_view(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class MHS_OT_apply_drawing_style(bpy.types.Operator):
-    bl_idname = "mhs.apply_drawing_style"
+class TSDRAFT_OT_apply_drawing_style(bpy.types.Operator):
+    bl_idname = "truescale_draft.apply_drawing_style"
     bl_label = "図面表示を再適用"
 
     def execute(self, context):
@@ -5039,8 +5039,8 @@ class MHS_OT_apply_drawing_style(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class MHS_OT_restore_view(bpy.types.Operator):
-    bl_idname = "mhs.restore_view"
+class TSDRAFT_OT_restore_view(bpy.types.Operator):
+    bl_idname = "truescale_draft.restore_view"
     bl_label = "元の表示に戻す"
     bl_description = "図面ビューに入る前のビューポート表示へ戻します"
 
@@ -5081,9 +5081,9 @@ class MHS_OT_restore_view(bpy.types.Operator):
 # Nパネル：統合
 # =========================================================
 
-class VIEW3D_PT_modeling_helper_suite(bpy.types.Panel):
+class TSDRAFT_PT_main(bpy.types.Panel):
     bl_label = "Truescale Draft"
-    bl_idname = "VIEW3D_PT_modeling_helper_suite"
+    bl_idname = "TSDRAFT_PT_main"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "Truescale"
@@ -5098,13 +5098,13 @@ class VIEW3D_PT_modeling_helper_suite(bpy.types.Panel):
         box.label(text="サイズ表示")
 
         box.operator(
-            "mhs.make_size_bbox",
+            "truescale_draft.make_size_bbox",
             text="BOX＋寸法を作成",
             icon='CUBE'
         )
 
         box.operator(
-            "mhs.delete_bbox",
+            "truescale_draft.delete_bbox",
             text="BOX＋寸法を削除",
             icon='TRASH'
         )
@@ -5115,7 +5115,7 @@ class VIEW3D_PT_modeling_helper_suite(bpy.types.Panel):
         )
 
         box.operator(
-            "mhs.toggle_size_overlay",
+            "truescale_draft.toggle_size_overlay",
             text=(
                 "BOX＋寸法を非表示"
                 if overlay_visible
@@ -5196,18 +5196,18 @@ class VIEW3D_PT_modeling_helper_suite(bpy.types.Panel):
             )
 
         row = box.row(align=True)
-        op = row.operator("mhs.export_actual_png", text="上面")
+        op = row.operator("truescale_draft.export_actual_png", text="上面")
         op.view_key = 'top'
-        op = row.operator("mhs.export_actual_png", text="前面")
+        op = row.operator("truescale_draft.export_actual_png", text="前面")
         op.view_key = 'front'
-        op = row.operator("mhs.export_actual_png", text="側面")
+        op = row.operator("truescale_draft.export_actual_png", text="側面")
         op.view_key = 'side'
 
-        op = box.operator("mhs.export_actual_png", text="任意")
+        op = box.operator("truescale_draft.export_actual_png", text="任意")
         op.view_key = 'user'
 
         box.operator(
-            "mhs.export_all_actual_png",
+            "truescale_draft.export_all_actual_png",
             text="3面まとめて書き出し",
             icon='EXPORT'
         )
@@ -5226,12 +5226,12 @@ class VIEW3D_PT_modeling_helper_suite(bpy.types.Panel):
             sheet.prop(context.scene, "mhs_sheet_custom_scale", text="1 :")
         row = sheet.row(align=True)
         row.operator(
-            "mhs.preview_three_view_sheet_safe",
+            "truescale_draft.preview_three_view_sheet_safe",
             text="プレビュー（保存しない）",
             icon='HIDE_OFF'
         )
         row.operator(
-            "mhs.export_three_view_sheet",
+            "truescale_draft.export_three_view_sheet",
             text="書き出し",
             icon='FILE_IMAGE'
         )
@@ -5257,12 +5257,12 @@ class VIEW3D_PT_modeling_helper_suite(bpy.types.Panel):
             )
 
         row = box.row(align=True)
-        row.operator("mhs.front_view", text="正面")
-        row.operator("mhs.top_view", text="上面")
+        row.operator("truescale_draft.front_view", text="正面")
+        row.operator("truescale_draft.top_view", text="上面")
 
         row = box.row(align=True)
-        row.operator("mhs.side_view", text="側面")
-        row.operator("mhs.user_view", text="任意")
+        row.operator("truescale_draft.side_view", text="側面")
+        row.operator("truescale_draft.user_view", text="任意")
 
         sub = box.box()
         sub.label(text="任意ビュー表示")
@@ -5282,7 +5282,7 @@ class VIEW3D_PT_modeling_helper_suite(bpy.types.Panel):
         )
 
         box.operator(
-            "mhs.restore_view",
+            "truescale_draft.restore_view",
             text="元の表示に戻す",
             icon='LOOP_BACK'
         )
@@ -5353,7 +5353,7 @@ class VIEW3D_PT_modeling_helper_suite(bpy.types.Panel):
                 box.separator()
 
             box.operator(
-                "mhs.reset_label_offsets",
+                "truescale_draft.reset_label_offsets",
                 text="文字位置をリセット"
             )
 
@@ -5363,30 +5363,30 @@ class VIEW3D_PT_modeling_helper_suite(bpy.types.Panel):
             layout.separator()
             box = layout.box()
             box.operator(
-                "mhs.dark_place",
+                "truescale_draft.dark_place",
                 text="なんかずっと暗いとこ"
             )
 
 
 classes = (
-    MHS_AddonPreferences,
-    MHS_OT_toggle_size_overlay,
-    MHS_OT_export_actual_png,
-    MHS_OT_export_all_actual_png,
-    MHS_OT_preview_three_view_sheet,
-    MHS_OT_export_three_view_sheet,
-    MHS_OT_make_size_bbox,
-    MHS_OT_delete_bbox,
-    MHS_OT_dark_place,
-    MHS_OT_reset_label_offsets,
-    MHS_OT_quad_view,
-    MHS_OT_front_view,
-    MHS_OT_top_view,
-    MHS_OT_side_view,
-    MHS_OT_user_view,
-    MHS_OT_apply_drawing_style,
-    MHS_OT_restore_view,
-    VIEW3D_PT_modeling_helper_suite,
+    TSDRAFT_Preferences,
+    TSDRAFT_OT_toggle_size_overlay,
+    TSDRAFT_OT_export_actual_png,
+    TSDRAFT_OT_export_all_actual_png,
+    TSDRAFT_OT_preview_three_view_sheet,
+    TSDRAFT_OT_export_three_view_sheet,
+    TSDRAFT_OT_make_size_bbox,
+    TSDRAFT_OT_delete_bbox,
+    TSDRAFT_OT_dark_place,
+    TSDRAFT_OT_reset_label_offsets,
+    TSDRAFT_OT_quad_view,
+    TSDRAFT_OT_front_view,
+    TSDRAFT_OT_top_view,
+    TSDRAFT_OT_side_view,
+    TSDRAFT_OT_user_view,
+    TSDRAFT_OT_apply_drawing_style,
+    TSDRAFT_OT_restore_view,
+    TSDRAFT_PT_main,
 )
 
 
