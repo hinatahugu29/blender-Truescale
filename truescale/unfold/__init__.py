@@ -6,6 +6,7 @@ from bpy_extras.io_utils import ExportHelper
 from bpy_extras import view3d_utils
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector
+from mathutils import Matrix
 from mathutils import geometry
 from mathutils.kdtree import KDTree
 from statistics import median
@@ -61,6 +62,43 @@ _pattern_auto_island_cache = {
 # analysis can stay cached across viewport redraws.
 _pattern_cache_epoch = 0
 _pattern_draw_cache = {}
+
+# 描画用の重い解析は「型紙オブジェクトのローカル空間」で計算してキャッシュし、
+# ワールド変換はキャッシュの外で毎回掛ける。
+#
+# 以前は matrix_world をキャッシュキーに含めていたため、オブジェクトを
+# G で動かすと1フレームごとにキーが変わり、島内配置の探索などが毎フレーム
+# 走っていた。ビューを回すだけなら matrix_world は変わらないのでキャッシュが
+# 効くため、「移動したときだけ極端に重い」という症状になっていた。
+_TS_IDENTITY = Matrix.Identity(4)
+
+# キャッシュの上限。超えたら全部捨てる。
+# 以前は上限が無く、キーが変わるたびにエントリが増え続けていた。
+_PATTERN_DRAW_CACHE_LIMIT = 64
+
+
+def _pattern_draw_cache_store(key, value):
+    global _pattern_draw_cache
+    if len(_pattern_draw_cache) >= _PATTERN_DRAW_CACHE_LIMIT:
+        _pattern_draw_cache = {}
+    _pattern_draw_cache[key] = value
+    return value
+
+
+def _pattern_transform_rows(rows, matrix, point_indices):
+    """タプルの並びのうち、指定した位置の座標だけを変換して返す。
+
+    角度・色・太さはローカルとワールドで変わらないのでそのまま通す。
+    文字の角度は元々ローカルの接線から求めており matrix_world の影響を
+    受けない実装なので、ここでも触らない。
+    """
+    result = []
+    for row in rows:
+        row = list(row)
+        for index in point_indices:
+            row[index] = matrix @ row[index]
+        result.append(tuple(row))
+    return result
 
 
 
@@ -6988,7 +7026,8 @@ def _pattern_compute_auto_flat_oriented_text_items(
             (0.0, 0.0, 0.0),
         )
     )
-    mw = unfold_obj.matrix_world
+    # ローカル空間で計算する。ワールド変換は呼び出し側で掛ける。
+    mw = _TS_IDENTITY
     result = []
 
     for record in records:
@@ -7068,7 +7107,6 @@ def _pattern_auto_flat_oriented_text_items(
         int(_pattern_cache_epoch),
         source_obj.name if source_obj else "",
         unfold_obj.name if unfold_obj else "",
-        tuple(round(float(v), 7) for row in unfold_obj.matrix_world for v in row),
         str(getattr(scene, "tsunfold_island_id_style", "ALPHA")),
         round(float(getattr(scene, "tsunfold_island_id_size_mm", 8.0)), 4),
         tuple(
@@ -7083,16 +7121,18 @@ def _pattern_auto_flat_oriented_text_items(
     )
 
     cached = _pattern_draw_cache.get(key)
-    if cached is not None:
-        return cached
+    if cached is None:
+        cached = _pattern_draw_cache_store(
+            key,
+            _pattern_compute_auto_flat_oriented_text_items(
+                context,
+                source_obj,
+                unfold_obj,
+            ),
+        )
 
-    result = _pattern_compute_auto_flat_oriented_text_items(
-        context,
-        source_obj,
-        unfold_obj,
-    )
-    _pattern_draw_cache[key] = result
-    return result
+    # キャッシュはローカル空間。位置だけワールドへ移す。
+    return _pattern_transform_rows(cached, unfold_obj.matrix_world, (1,))
 
 
 def _pattern_auto_flat_id_text_items(context, source_obj, unfold_obj):
@@ -7783,7 +7823,8 @@ def _pattern_compute_auto_arrow_segments(context, source_obj, unfold_obj):
 
     flat_to_source = _pattern_flat_vertex_source_indices(unfold_obj)
     scene = context.scene
-    mw = unfold_obj.matrix_world
+    # ローカル空間で計算する。ワールド変換は呼び出し側で掛ける。
+    mw = _TS_IDENTITY
 
     requested_length = _mm_to_bu(
         scene,
@@ -7856,16 +7897,18 @@ def _pattern_compute_auto_arrow_segments(context, source_obj, unfold_obj):
 
 
 
-def _pattern_auto_arrow_segments(context, source_obj, unfold_obj):
-    global _pattern_draw_cache
+def _pattern_auto_arrow_segments_local(context, source_obj, unfold_obj):
+    """矢印のセグメントを型紙のローカル空間で返す（キャッシュ対象）。
 
+    matrix_world をキーに含めないので、オブジェクトを動かしても
+    キャッシュが効く。
+    """
     scene = context.scene
     key = (
         "auto_arrows",
         int(_pattern_cache_epoch),
         source_obj.name if source_obj else "",
         unfold_obj.name if unfold_obj else "",
-        tuple(round(float(v), 7) for row in unfold_obj.matrix_world for v in row),
         str(getattr(scene, "tsunfold_arrow_mode", "AUTO")),
         str(getattr(scene, "tsunfold_arrow_up_axis", "Z")),
         round(float(getattr(scene, "tsunfold_auto_arrow_length_mm", 24.0)), 4),
@@ -7885,16 +7928,19 @@ def _pattern_auto_arrow_segments(context, source_obj, unfold_obj):
     if cached is not None:
         return cached
 
-    result = _pattern_compute_auto_arrow_segments(
-        context,
-        source_obj,
-        unfold_obj,
+    return _pattern_draw_cache_store(
+        key,
+        _pattern_compute_auto_arrow_segments(context, source_obj, unfold_obj),
     )
-    _pattern_draw_cache[key] = result
-    return result
 
 
-def _pattern_flat_notch_segments(context, source_obj, unfold_obj, item):
+def _pattern_flat_notch_segments(
+    context,
+    source_obj,
+    unfold_obj,
+    item,
+    matrix=None,
+):
     try:
         source_edge_index = int(item.get("edge", -1))
         source_fraction = float(item.get("t", 0.5))
@@ -7919,7 +7965,8 @@ def _pattern_flat_notch_segments(context, source_obj, unfold_obj, item):
 
     face_map = _pattern_flat_edge_faces(unfold_obj)
     mesh = unfold_obj.data
-    mw = unfold_obj.matrix_world
+    # 呼び出し側がローカル空間を求める場合は matrix に恒等行列が渡る。
+    mw = unfold_obj.matrix_world if matrix is None else matrix
 
     length = _mm_to_bu(
         context.scene,
@@ -8180,7 +8227,8 @@ def _pattern_source_colored_segments(context, source_obj):
 def _pattern_compute_flat_colored_segments(context, source_obj, unfold_obj):
     segments = []
     size = _mm_to_bu(context.scene, 8.0)
-    mw = unfold_obj.matrix_world
+    # ローカル空間で計算する。ワールド変換は呼び出し側で掛ける。
+    mw = _TS_IDENTITY
 
     for item in _pattern_get_annotations(source_obj):
         kind = item.get("type")
@@ -8188,11 +8236,18 @@ def _pattern_compute_flat_colored_segments(context, source_obj, unfold_obj):
 
         if kind == "notch_edge":
             if context.scene.get("tsunfold_display_mode", "POLY") == "SMOOTH":
-                notch_segments = _pattern_smooth_notch_segments(
-                    context,
-                    source_obj,
-                    unfold_obj,
-                    item,
+                # なめらか表示はワールド空間のカーブへ投影するため、
+                # 結果をローカルへ戻してから他と揃える。
+                inverse = unfold_obj.matrix_world.inverted_safe()
+                notch_segments = _pattern_transform_rows(
+                    _pattern_smooth_notch_segments(
+                        context,
+                        source_obj,
+                        unfold_obj,
+                        item,
+                    ),
+                    inverse,
+                    (0, 1),
                 )
             else:
                 notch_segments = _pattern_flat_notch_segments(
@@ -8200,6 +8255,7 @@ def _pattern_compute_flat_colored_segments(context, source_obj, unfold_obj):
                     source_obj,
                     unfold_obj,
                     item,
+                    matrix=_TS_IDENTITY,
                 )
 
             notch_thickness = float(
@@ -8253,8 +8309,9 @@ def _pattern_compute_flat_colored_segments(context, source_obj, unfold_obj):
                     (b, back - side * head * 0.45, color, thickness)
                 )
 
+    # この関数自体がローカル空間を返すので、矢印もローカル版を使う。
     segments.extend(
-        _pattern_auto_arrow_segments(
+        _pattern_auto_arrow_segments_local(
             context,
             source_obj,
             unfold_obj,
@@ -8278,7 +8335,6 @@ def _pattern_flat_colored_segments(context, source_obj, unfold_obj):
         int(_pattern_cache_epoch),
         source_obj.name if source_obj else "",
         unfold_obj.name if unfold_obj else "",
-        tuple(round(float(v), 7) for row in unfold_obj.matrix_world for v in row),
         annotations_raw,
         str(getattr(scene, "tsunfold_arrow_mode", "AUTO")),
         round(float(getattr(scene, "tsunfold_notch_length_mm", 6.0)), 4),
@@ -8286,16 +8342,18 @@ def _pattern_flat_colored_segments(context, source_obj, unfold_obj):
     )
 
     cached = _pattern_draw_cache.get(key)
-    if cached is not None:
-        return cached
+    if cached is None:
+        cached = _pattern_draw_cache_store(
+            key,
+            _pattern_compute_flat_colored_segments(
+                context,
+                source_obj,
+                unfold_obj,
+            ),
+        )
 
-    result = _pattern_compute_flat_colored_segments(
-        context,
-        source_obj,
-        unfold_obj,
-    )
-    _pattern_draw_cache[key] = result
-    return result
+    # キャッシュはローカル空間。両端の座標だけワールドへ移す。
+    return _pattern_transform_rows(cached, unfold_obj.matrix_world, (0, 1))
 
 
 def _pattern_source_text_items(source_obj):
