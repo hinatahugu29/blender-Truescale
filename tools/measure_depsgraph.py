@@ -21,11 +21,15 @@
 #   ハンドラは計測後に必ず元へ戻します。
 # ------------------------------------------------------------
 
+import inspect
 import time
 
 import bpy
 
-MEASURE_SECONDS = 12.0
+# これだけ depsgraph 更新を集めたら自動で集計を出す
+TARGET_UPDATES = 300
+# 更新が集まらなくても、この秒数で打ち切る
+MAX_SECONDS = 120.0
 
 _stats = {}          # 表示名 -> [呼ばれた回数, 合計ミリ秒]
 _originals = None    # 元のハンドラ並び
@@ -41,13 +45,43 @@ def _label(func):
     return f"{module}.{name}"
 
 
+def _param_count(func):
+    """ハンドラが受け取る引数の数を調べる。
+
+    Blender のハンドラには (scene) だけを取るものと
+    (scene, depsgraph) を取るものがあり、決め打ちで渡すと
+    TypeError で相手のハンドラを壊してしまう。
+    """
+    try:
+        params = inspect.signature(func).parameters
+    except (TypeError, ValueError):
+        return 2
+
+    # *args を取るものは2つ渡して問題ない
+    for param in params.values():
+        if param.kind is inspect.Parameter.VAR_POSITIONAL:
+            return 2
+
+    positional = [
+        p for p in params.values()
+        if p.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+    ]
+    return len(positional)
+
+
 def _wrap(func):
     label = _label(func)
+    takes_depsgraph = _param_count(func) >= 2
 
     def wrapper(scene, depsgraph):
         start = time.perf_counter()
         try:
-            return func(scene, depsgraph)
+            if takes_depsgraph:
+                return func(scene, depsgraph)
+            return func(scene)
         finally:
             entry = _stats.setdefault(label, [0, 0.0])
             entry[0] += 1
@@ -79,7 +113,8 @@ def install():
 
     print(f"  {len(_originals)} 個のハンドラを計測対象にしました:")
     for func in _originals:
-        print(f"      {_label(func)}")
+        args = "scene, depsgraph" if _param_count(func) >= 2 else "scene"
+        print(f"      {_label(func)}  ({args})")
 
 
 def restore():
@@ -141,15 +176,27 @@ class TSMEASURE_OT_depsgraph(bpy.types.Operator):
 
     def modal(self, context, event):
         if event.type == 'TIMER':
+            collected = _update_count[0]
             elapsed = time.perf_counter() - self._start
-            remain = MEASURE_SECONDS - elapsed
-            if remain <= 0:
+
+            # 十分な回数が集まったか、時間切れになったら終了する。
+            # 時間ではなく回数を主な条件にしているのは、
+            # ワークスペースの切り替えなどで操作開始が遅れても
+            # 計測が空振りしないようにするため。
+            if collected >= TARGET_UPDATES or elapsed >= MAX_SECONDS:
                 self.finish(context)
                 return {'FINISHED'}
+
             context.workspace.status_text_set(
-                f"計測中... 残り {remain:.0f} 秒 / "
-                f"オブジェクトを G で動かしてください"
+                f"計測中 {collected}/{TARGET_UPDATES} 回 "
+                f"（残り {MAX_SECONDS - elapsed:.0f} 秒）/ "
+                f"オブジェクトを G で動かしてください  [Escで中止]"
             )
+
+        if event.type == 'ESC':
+            self.finish(context)
+            return {'CANCELLED'}
+
         return {'PASS_THROUGH'}
 
     def invoke(self, context, event):
@@ -161,8 +208,9 @@ class TSMEASURE_OT_depsgraph(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.2, window=context.window)
         wm.modal_handler_add(self)
-        print(f"\n  計測開始（{MEASURE_SECONDS:.0f}秒）")
-        print("  3Dビューでオブジェクトを G キーで動かしてください\n")
+        print(f"\n  計測開始: depsgraph 更新を {TARGET_UPDATES} 回集めるまで待ちます")
+        print(f"  （最長 {MAX_SECONDS:.0f} 秒。Esc で中止）")
+        print("  Layout へ移り、重いと感じる移動を実際に行ってください\n")
         return {'RUNNING_MODAL'}
 
     def finish(self, context):
