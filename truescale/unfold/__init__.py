@@ -11095,6 +11095,32 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             icon='IMPORT',
         )
 
+        # 編集モードで選んだエッジをその場でシーム化できるようにする。
+        # これが無いと、シームを足すたびにパネルの外へ出る必要があった。
+        seam_box = source_box.box()
+        seam_box.label(text="シーム編集", icon='EDGESEL')
+
+        if context.mode == 'EDIT_MESH':
+            seam_row = seam_box.row(align=True)
+            seam_row.operator(
+                "truescale_unfold.mark_seam",
+                text="シームを入れる",
+                icon='ADD',
+            )
+            seam_row.operator(
+                "truescale_unfold.clear_seam",
+                text="外す",
+                icon='REMOVE',
+            )
+
+            sym_row = seam_box.row(align=True)
+            sym_row.label(text="対称")
+            sym_row.prop(scene, "tsunfold_seam_symmetry_x", text="X", toggle=True)
+            sym_row.prop(scene, "tsunfold_seam_symmetry_y", text="Y", toggle=True)
+            sym_row.prop(scene, "tsunfold_seam_symmetry_z", text="Z", toggle=True)
+        else:
+            seam_box.label(text="編集モードでエッジを選ぶと使えます")
+
         if loaded_obj is not None and loaded_obj.type == 'MESH':
             vis_row = source_box.row(align=True)
             vis_row.operator(
@@ -11491,6 +11517,8 @@ classes = (
     TSUNFOLD_OT_place_arrow,
     TSUNFOLD_OT_delete_last_annotation,
     TSUNFOLD_OT_clear_annotations,
+    TSUNFOLD_OT_mark_seam,
+    TSUNFOLD_OT_clear_seam,
     TSUNFOLD_OT_unfold_real_mesh,
     TSUNFOLD_OT_select_unfold_source,
     TSUNFOLD_OT_auto_layout,
@@ -11552,6 +11580,28 @@ def register():
 
     for cls in classes:
         bpy.utils.register_class(cls)
+
+    # シーム化の対称オプション。
+    # _apply_selected_edges_seam_strict_symmetry と
+    # _sync_blender_mesh_symmetry が参照するが、これまで register されて
+    # おらず、getattr の既定値で常に False に落ちていた。
+    bpy.types.Scene.tsunfold_seam_symmetry_x = BoolProperty(
+        name="X対称",
+        description="シーム化するとき、X軸で対称な位置のエッジも一緒に処理します",
+        default=False,
+    )
+
+    bpy.types.Scene.tsunfold_seam_symmetry_y = BoolProperty(
+        name="Y対称",
+        description="シーム化するとき、Y軸で対称な位置のエッジも一緒に処理します",
+        default=False,
+    )
+
+    bpy.types.Scene.tsunfold_seam_symmetry_z = BoolProperty(
+        name="Z対称",
+        description="シーム化するとき、Z軸で対称な位置のエッジも一緒に処理します",
+        default=False,
+    )
 
     bpy.types.Scene.tsunfold_spacing_mm = FloatProperty(
         name="アイランド間隔",
