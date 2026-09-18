@@ -9,12 +9,17 @@ Blenderを起動せずに、以下のズレを検出する。
   4. 参照されているが register されていない Scene プロパティ
   5. register されているが unregister で消されない Scene プロパティ
   6. register されているがどこからも参照されていない Scene プロパティ
+  7. どこからも呼ばれていないモジュール直下の関数
 
 使い方:
-    python tools/check_addon.py truescale_unfold/__init__.py
-    python tools/check_addon.py truescale_unfold/__init__.py truescale_draft/__init__.py
+    python tools/check_addon.py truescale/unfold/__init__.py
+    python tools/check_addon.py truescale/unfold/__init__.py truescale/draft/__init__.py
 
 終了コード: 問題が1件でもあれば 1、なければ 0。
+
+既知の限界:
+  7番の判定は1段階のみで、推移的ではない。死にコードから呼ばれている
+  関数は「使われている」と見なされる。到達可能性の解析ではない。
 """
 
 import ast
@@ -55,6 +60,9 @@ def _joinedstr_shape(node: ast.JoinedStr):
 class AddonAnalyzer(ast.NodeVisitor):
     def __init__(self):
         self.dynamic_prop_patterns = set()  # (前方一致, 後方一致)
+        self.module_functions = {}   # モジュール直下の関数名 -> 行番号
+        self.name_loads = set()      # 読み取られた名前（関数が使われたか判定用）
+        self._class_stack = []
         self.classes = {}            # クラス名 -> {"bl_idname": str|None, "bases": list}
         self.registered_classes = [] # classes タプルに並んだクラス名
         self.referenced_operators = {}  # idname -> [行番号]
@@ -86,7 +94,9 @@ class AddonAnalyzer(ast.NodeVisitor):
                         bl_idname = stmt.value.value
 
         self.classes[node.name] = {"bl_idname": bl_idname, "bases": bases}
+        self._class_stack.append(node.name)
         self.generic_visit(node)
+        self._class_stack.pop()
 
     # --- 代入 ---
 
@@ -108,12 +118,22 @@ class AddonAnalyzer(ast.NodeVisitor):
 
         self.generic_visit(node)
 
-    # --- 関数（unregister の中身を拾うため） ---
+    # --- 関数（unregister の中身を拾うため / 呼び出し関係の記録） ---
 
     def visit_FunctionDef(self, node):
+        if len(self._func_stack) == 0 and len(self._class_stack) == 0:
+            # モジュール直下の関数だけを対象にする
+            self.module_functions[node.name] = node.lineno
         self._func_stack.append(node.name)
         self.generic_visit(node)
         self._func_stack.pop()
+
+    # --- 名前の参照（関数が使われているかの判定） ---
+
+    def visit_Name(self, node):
+        if isinstance(node.ctx, ast.Load):
+            self.name_loads.add(node.id)
+        self.generic_visit(node)
 
     # --- 呼び出し ---
 
@@ -280,6 +300,20 @@ def analyze(path: Path):
     )
     if orphan:
         problems.append(("register されているがどこからも参照されていないプロパティ", orphan))
+
+    # 7. どこからも呼ばれていないモジュール直下の関数
+    #    分割リファクタリング時に、死にコードと一緒に落とせる候補を洗い出す。
+    #    register / unregister は Blender が直接呼ぶので除外する。
+    ENTRY_POINTS = {"register", "unregister"}
+    dead_functions = sorted(
+        f"{name}  (行 {lineno})"
+        for name, lineno in analyzer.module_functions.items()
+        if name not in analyzer.name_loads and name not in ENTRY_POINTS
+    )
+    if dead_functions:
+        problems.append(
+            ("どこからも呼ばれていないモジュール直下の関数", dead_functions)
+        )
 
     stats = {
         "行数": len(source.splitlines()),
