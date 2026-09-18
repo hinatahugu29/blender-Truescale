@@ -1,0 +1,16 @@
+schema_version = "1.0.0"
+
+id = "truescale"
+version = "0.2.0"
+name = "Truescale"
+tagline = "Real-size patterns, dimensions and drawing sheets from Blender"
+maintainer = "hinata"
+type = "add-on"
+
+# draft 側が 5.2 を宣言していたため、統合後もそれに合わせている。
+# 5.2 固有のAPIは見つかっていないので 4.2 まで下げられる見込みだが、未検証。
+blender_version_min = "5.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]

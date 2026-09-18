@@ -1,4 +1,4 @@
-Truescale Unfold v0.1.0
+Truescale Unfold（型紙）
 ================================
 
 Blenderでシームを設定した3Dモデルから、
@@ -91,7 +91,7 @@ matrix_worldを使ったワールド寸法を実寸計算へ反映します。
 1. Blenderを開きます。
 2. 編集 > プリファレンス > エクステンション を開きます。
 3. 右上メニューから「ディスクからインストール」を選びます。
-4. 「truescale_unfold.zip」を選択します。
+4. 「truescale.zip」を選択します。
 5. 3DビューのNパネル「Truescale」タブに追加されます。
 
 

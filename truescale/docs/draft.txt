@@ -1,4 +1,4 @@
-Truescale Draft v0.1.0
+Truescale Draft（製図）
 ================================
 
 Blenderでの造形作業向けに、Bounding Box・寸法表示・実寸PNG・

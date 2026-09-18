@@ -43,10 +43,17 @@ DARK_TEXT = (0.72, 0.88, 0.96, 1.0)
 
 
 
+# AddonPreferences の bl_idname は、サブパッケージ名ではなく
+# アドオン本体のパッケージ名でなければならない。
+# このモジュールは <アドオン>.draft として読み込まれるので、
+# 末尾の ".draft" を落としたものが本体のパッケージ名になる。
+ADDON_PACKAGE = __package__.rpartition(".")[0]
+
+
 def get_addon_preferences(context=None):
     context = context or bpy.context
     try:
-        addon = context.preferences.addons.get(__package__)
+        addon = context.preferences.addons.get(ADDON_PACKAGE)
         if addon is not None:
             return addon.preferences
     except Exception:
@@ -55,7 +62,7 @@ def get_addon_preferences(context=None):
 
 
 class TSDRAFT_Preferences(bpy.types.AddonPreferences):
-    bl_idname = __package__
+    bl_idname = ADDON_PACKAGE
 
     show_dark_place_button: bpy.props.BoolProperty(
         name="「なんかずっと暗いとこ」を表示",
