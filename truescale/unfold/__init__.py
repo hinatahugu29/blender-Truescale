@@ -674,34 +674,83 @@ def _pattern_setting_updated(self, context):
     _pattern_invalidate_layout_cache()
 
 
-def _pattern_notch_setting_updated(self, context):
-    """Live-update notch geometry/settings without requiring the update button."""
+def _pattern_notch_source_for_update(context):
+    """合印設定の更新対象になる元モデルを返す。無ければ None。"""
     scene = context.scene
+    if str(getattr(scene, "tsunfold_notch_mode", "AUTO")) != "AUTO":
+        return None
 
-    # Any length/thickness/color change must invalidate cached viewport data.
+    source = _pattern_seam_source(context)
+    if source is None:
+        source = _pattern_source_object_from_context(context)
+
+    if source is None or source.type != 'MESH':
+        return None
+
+    return source
+
+
+def _pattern_notch_divisions_updated(self, context):
+    """分割数の変更。合印の位置が変わるので作り直す必要がある。
+
+    アノテーションに保存しているのは type / edge / t / color / auto だけで、
+    位置を決めるのは t（辺上の比率）。分割数が変わると t が変わるため、
+    ここだけはシームを辿り直して作り直す。
+    """
+    try:
+        source = _pattern_notch_source_for_update(context)
+        if source is not None:
+            _pattern_refresh_auto_notches(context, source)
+    except Exception:
+        # プロパティのコールバックでUI操作を壊さない。
+        # ただし内容は握り潰さずに出す。
+        traceback.print_exc()
+
     _pattern_invalidate_layout_cache()
 
-    # Division changes in AUTO mode also rebuild the actual auto-notch
-    # annotations immediately, so the count/positions update live.
+
+def _pattern_notch_color_updated(self, context):
+    """合印の色の変更。
+
+    以前はここでも合印を全て作り直していた。色はアノテーションに保存されて
+    いるので更新自体は必要だが、位置は変わらないのでシームを辿り直す必要は
+    ない。カラーピッカーはドラッグ中のマウス移動ごとに発火するため、
+    全再生成だと1フレームごとに全シームの走査とJSONの全書き出しが走っていた。
+
+    ここでは保存済みのオート合印の color だけを差し替える。
+    手動で置いた合印の色は個別に持てるよう、auto のものだけを対象にする。
+    """
     try:
-        if str(getattr(scene, "tsunfold_notch_mode", "AUTO")) != "AUTO":
-            return
-
-        source = _pattern_seam_source(context)
+        source = _pattern_notch_source_for_update(context)
         if source is None:
-            source = _pattern_source_object_from_context(context)
-
-        if source is None or source.type != 'MESH':
+            _pattern_invalidate_layout_cache()
             return
 
-        _pattern_refresh_auto_notches(
-            context,
-            source,
-        )
-    except Exception:
-        # Property update callbacks must never break Blender UI interaction.
-        pass
+        color = _pattern_color_value(context.scene.tsunfold_notch_color)
+        items = _pattern_get_annotations(source)
 
+        changed = False
+        for item in items:
+            if item.get("type") == "notch_edge" and bool(item.get("auto", False)):
+                if item.get("color") != color:
+                    item["color"] = color
+                    changed = True
+
+        if changed:
+            _pattern_set_annotations(source, items)
+    except Exception:
+        traceback.print_exc()
+
+    _pattern_invalidate_layout_cache()
+
+
+def _pattern_notch_appearance_updated(self, context):
+    """合印の長さ・太さの変更。
+
+    どちらもアノテーションには保存されておらず、描画時にシーンから
+    読み直している（_pattern_flat_colored_segments など）。
+    よって作り直しは不要で、キャッシュを捨てて描き直すだけでよい。
+    """
     _pattern_invalidate_layout_cache()
 
 
@@ -11702,7 +11751,7 @@ def register():
             ("4", "4", "1/4・1/2・3/4に配置"),
         ],
         default="3",
-        update=_pattern_notch_setting_updated,
+        update=_pattern_notch_divisions_updated,
     )
 
     bpy.types.Scene.tsunfold_show_direction_arrow = BoolProperty(
@@ -11813,7 +11862,7 @@ def register():
         min=0.0,
         max=1.0,
         default=(0.0, 0.0, 0.0),
-        update=_pattern_notch_setting_updated,
+        update=_pattern_notch_color_updated,
     )
 
     bpy.types.Scene.tsunfold_number_color = FloatVectorProperty(
@@ -11852,7 +11901,7 @@ def register():
         min=1.0,
         max=30.0,
         precision=1,
-        update=_pattern_notch_setting_updated,
+        update=_pattern_notch_appearance_updated,
     )
 
     bpy.types.Scene.tsunfold_notch_thickness_mm = FloatProperty(
@@ -11862,7 +11911,7 @@ def register():
         min=0.1,
         soft_max=3.0,
         precision=2,
-        update=_pattern_notch_setting_updated,
+        update=_pattern_notch_appearance_updated,
     )
 
     bpy.types.Scene.tsunfold_number_size_mm = FloatProperty(
