@@ -1,0 +1,14 @@
+schema_version = "1.0.0"
+
+id = "modeling_helper_printable"
+version = "2.4.13"
+name = "造形ヘルパー"
+tagline = "Blender造形向けの寸法表示・三面図・実寸PNG出力ツール"
+maintainer = "YOUR_HANDLE"
+type = "add-on"
+
+blender_version_min = "5.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]

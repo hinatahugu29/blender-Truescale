@@ -1,0 +1,14 @@
+schema_version = "0.10.1"
+
+id = "unfold_helper"
+version = "1.5.6"
+name = "型紙ヘルパー カスタムシーン"
+tagline = "シーム付き3Dモデルから実寸型紙を作成"
+maintainer = "OpenAI / Project Contributors"
+type = "add-on"
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
