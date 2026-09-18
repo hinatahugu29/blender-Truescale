@@ -11172,14 +11172,14 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 text="作成 / 更新",
             )
             row.operator(
-                "truescale_unfold.clear_notches",
+                "truescale_unfold.remove_auto_notches",
                 text="合印削除",
                 icon='X',
             )
 
         if scene.tsunfold_notch_mode != "NONE":
             notch_box.operator(
-                "truescale_unfold.start_notch",
+                "truescale_unfold.place_notch",
                 text="手動で合印を追加",
             )
 
@@ -11293,7 +11293,7 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
 
             if scene.tsunfold_arrow_mode in {"AUTO", "CUSTOM"}:
                 arrow_box.operator(
-                    "truescale_unfold.start_arrow",
+                    "truescale_unfold.place_arrow",
                     text="手動で矢印を追加",
                 )
 
@@ -11308,7 +11308,7 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
         # -------------------------
         # Common destructive action only.
         marking.operator(
-            "truescale_unfold.clear_all_marks",
+            "truescale_unfold.clear_annotations",
             text="すべてのマーキングをクリア",
             icon='TRASH',
         )
@@ -11331,7 +11331,7 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             depress=scene.tsunfold_correspondence_mode,
         )
         corr_box.operator(
-            "truescale_unfold.clear_corresponding_island",
+            "truescale_unfold.clear_island_highlight",
             text="対応ハイライトをクリア",
         )
 
