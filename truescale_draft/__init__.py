@@ -5082,11 +5082,11 @@ class MHS_OT_restore_view(bpy.types.Operator):
 # =========================================================
 
 class VIEW3D_PT_modeling_helper_suite(bpy.types.Panel):
-    bl_label = "造形ヘルパー"
+    bl_label = "Truescale Draft"
     bl_idname = "VIEW3D_PT_modeling_helper_suite"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "造形ヘルパー"
+    bl_category = "Truescale"
 
     def draw(self, context):
         layout = self.layout

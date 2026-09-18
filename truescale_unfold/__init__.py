@@ -11040,11 +11040,11 @@ def _pattern_draw_digits_rgb(buffer, width, height, x, y, text, scale=2):
 # ------------------------------------------------------------
 
 class UNFOLDHELPER_PT_main(bpy.types.Panel):
-    bl_label = "型紙ヘルパー カスタムシーン"
+    bl_label = "Truescale Unfold"
     bl_idname = "UNFOLDHELPER_PT_main"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "型紙ヘルパーCS"
+    bl_category = "Truescale"
 
     def draw(self, context):
         layout = self.layout

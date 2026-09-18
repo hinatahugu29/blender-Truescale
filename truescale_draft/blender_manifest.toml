@@ -1,0 +1,14 @@
+schema_version = "1.0.0"
+
+id = "truescale_draft"
+version = "0.1.0"
+name = "Truescale Draft"
+tagline = "Dimensions, orthographic views and real-size drawing sheets"
+maintainer = "hinata"
+type = "add-on"
+
+blender_version_min = "5.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
