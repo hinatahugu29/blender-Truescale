@@ -1,4 +1,6 @@
 import bpy
+
+from .. import debug as _debug
 import traceback
 import gpu
 from bpy.props import EnumProperty, StringProperty, FloatProperty, BoolProperty, FloatVectorProperty
@@ -734,7 +736,7 @@ def _pattern_sanitize_arrow_axis(scene):
         try:
             scene.tsunfold_arrow_up_axis = "Z"
         except Exception:
-            pass
+            _debug.swallowed("unfold._pattern_sanitize_arrow_axis")
         return "Z"
 
     return axis
@@ -1041,7 +1043,7 @@ def _pattern_print_preview_source_visibility(context, preview_on):
                     )
                 )
             except Exception:
-                pass
+                _debug.swallowed("unfold._pattern_print_preview_source_visibility")
 
         scene["tsunfold_preview_source_name"] = ""
         scene["tsunfold_preview_source_hide_get"] = False
@@ -1074,7 +1076,7 @@ def _spacing_updated(self, context):
         try:
             bpy.ops.object.mode_set(mode='EDIT')
         except RuntimeError:
-            pass
+            _debug.swallowed("unfold._spacing_updated")
 
     _tag_redraw()
 
@@ -1089,7 +1091,7 @@ def _show_generated_from_top(context, obj):
         bpy.ops.view3d.view_axis(type='TOP', align_active=False)
         bpy.ops.view3d.view_selected(use_all_regions=False)
     except RuntimeError:
-        pass
+        _debug.swallowed("unfold._show_generated_from_top")
 
 
 
@@ -1683,17 +1685,17 @@ def _pattern_sync_live_seams(source_obj):
                 destructive=False,
             )
         except Exception:
-            pass
+            _debug.swallowed("unfold._pattern_sync_live_seams")
 
     try:
         source_obj.update_from_editmode()
     except Exception:
-        pass
+        _debug.swallowed("unfold._pattern_sync_live_seams")
 
     try:
         source_obj.data.update()
     except Exception:
-        pass
+        _debug.swallowed("unfold._pattern_sync_live_seams")
 
 
 def _pattern_seam_trails(source_obj):
@@ -2022,13 +2024,13 @@ class TSUNFOLD_OT_refresh_auto_notches(bpy.types.Operator):
             if context.active_object and context.active_object.mode != 'OBJECT':
                 bpy.ops.object.mode_set(mode='OBJECT')
         except Exception:
-            pass
+            _debug.swallowed("unfold.TSUNFOLD_OT_refresh_auto_notches.execute")
 
         for obj in context.selected_objects:
             try:
                 obj.select_set(False)
             except Exception:
-                pass
+                _debug.swallowed("unfold.TSUNFOLD_OT_refresh_auto_notches.execute")
 
         source.hide_set(False)
         source.select_set(True)
@@ -2126,7 +2128,7 @@ def _focus_selected_unfold(context, top_view=False):
     try:
         rv3d.lock_rotation = False
     except Exception:
-        pass
+        _debug.swallowed("unfold._focus_selected_unfold")
 
     try:
         with context.temp_override(area=area, region=region, space_data=space):
@@ -2134,7 +2136,7 @@ def _focus_selected_unfold(context, top_view=False):
                 bpy.ops.view3d.view_axis(type='TOP', align_active=False)
             bpy.ops.view3d.view_selected(use_all_regions=False)
     except Exception:
-        pass
+        _debug.swallowed("unfold._focus_selected_unfold")
 
 
 class TSUNFOLD_OT_clear_seam(bpy.types.Operator):
@@ -2352,7 +2354,7 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
             try:
                 mesh.uv_layers.remove(existing_temp)
             except Exception:
-                pass
+                _debug.swallowed("unfold.TSUNFOLD_OT_unfold_real_mesh.execute")
 
         temp_uv = mesh.uv_layers.new(
             name=temp_uv_name,
@@ -2374,7 +2376,7 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
             bpy.ops.uv.select_all(action='SELECT')
             bpy.ops.uv.reset()
         except Exception:
-            pass
+            _debug.swallowed("unfold.TSUNFOLD_OT_unfold_real_mesh.execute")
 
         try:
             bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.001)
@@ -2408,7 +2410,7 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
             try:
                 mesh.uv_layers.remove(temp_layer)
             except Exception:
-                pass
+                _debug.swallowed("unfold.TSUNFOLD_OT_unfold_real_mesh.execute")
 
         if previous_uv_name:
             previous_layer = mesh.uv_layers.get(previous_uv_name)
@@ -2490,7 +2492,7 @@ class TSUNFOLD_OT_load_seamed_object(bpy.types.Operator):
             if obj.mode != 'OBJECT':
                 bpy.ops.object.mode_set(mode='OBJECT')
         except Exception:
-            pass
+            _debug.swallowed("unfold.TSUNFOLD_OT_load_seamed_object.execute")
 
         seam_count = sum(
             1 for edge in obj.data.edges
@@ -2543,13 +2545,13 @@ class TSUNFOLD_OT_build_pattern(bpy.types.Operator):
             if context.active_object and context.active_object.mode != 'OBJECT':
                 bpy.ops.object.mode_set(mode='OBJECT')
         except Exception:
-            pass
+            _debug.swallowed("unfold.TSUNFOLD_OT_build_pattern.execute")
 
         for obj in context.selected_objects:
             try:
                 obj.select_set(False)
             except Exception:
-                pass
+                _debug.swallowed("unfold.TSUNFOLD_OT_build_pattern.execute")
 
         source.hide_set(False)
         source.hide_viewport = False
@@ -2783,7 +2785,7 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
             try:
                 bpy.ops.object.mode_set(mode='OBJECT')
             except RuntimeError:
-                pass
+                _debug.swallowed("unfold.TSUNFOLD_OT_layout_edit.invoke")
 
         for o in context.selected_objects:
             o.select_set(False)
@@ -2888,7 +2890,7 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
                         self._last_selected = selected_now
 
             except Exception:
-                pass
+                _debug.swallowed("unfold.TSUNFOLD_OT_layout_edit.modal")
 
         if (
             event.type in {'LEFTMOUSE', 'RET', 'NUMPAD_ENTER', 'G', 'R', 'S'}
@@ -2914,7 +2916,7 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
                     destructive=False,
                 )
             except Exception:
-                pass
+                _debug.swallowed("unfold.TSUNFOLD_OT_layout_edit._finish")
 
         _tag_redraw()
 
@@ -2922,7 +2924,7 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
             try:
                 context.window_manager.event_timer_remove(self._timer)
             except Exception:
-                pass
+                _debug.swallowed("unfold.TSUNFOLD_OT_layout_edit._finish")
             self._timer = None
 
 
@@ -2959,7 +2961,7 @@ class TSUNFOLD_OT_layout_confirm(bpy.types.Operator):
                 try:
                     obj.update_from_editmode()
                 except Exception:
-                    pass
+                    _debug.swallowed("unfold.TSUNFOLD_OT_layout_confirm.execute")
 
                 bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -2977,7 +2979,7 @@ class TSUNFOLD_OT_layout_confirm(bpy.types.Operator):
         try:
             _show_generated_from_top(context, obj)
         except Exception:
-            pass
+            _debug.swallowed("unfold.TSUNFOLD_OT_layout_confirm.execute")
 
         self.report({'INFO'}, "レイアウトを確定しました")
         return {'FINISHED'}
@@ -2995,7 +2997,7 @@ class TSUNFOLD_OT_delete_unfold(bpy.types.Operator):
             context.scene.tsunfold_pattern_preview = False
             context.scene["tsunfold_preview_prev_active"] = ""
         except Exception:
-            pass
+            _debug.swallowed("unfold.TSUNFOLD_OT_delete_unfold.execute")
 
         mesh_targets = [
             obj for obj in list(bpy.data.objects)
@@ -3110,7 +3112,7 @@ class TSUNFOLD_OT_toggle_pattern_preview(bpy.types.Operator):
                 try:
                     obj.select_set(False)
                 except Exception:
-                    pass
+                    _debug.swallowed("unfold.TSUNFOLD_OT_toggle_pattern_preview.execute")
 
             unfold.hide_set(False)
             unfold.hide_viewport = False
@@ -3146,7 +3148,7 @@ class TSUNFOLD_OT_toggle_pattern_preview(bpy.types.Operator):
                     try:
                         obj.select_set(False)
                     except Exception:
-                        pass
+                        _debug.swallowed("unfold.TSUNFOLD_OT_toggle_pattern_preview.execute")
 
                 # 元モデルの表示状態は専用トグルの設定を尊重する。
                 if not prev.hide_get():
@@ -3335,13 +3337,13 @@ def _pattern_text_outline_segments(context, text, world_pos, size_mm, angle=0.0)
             try:
                 bpy.data.objects.remove(obj, do_unlink=True)
             except Exception:
-                pass
+                _debug.swallowed("unfold._pattern_text_outline_segments")
 
         if curve is not None and curve.users == 0:
             try:
                 bpy.data.curves.remove(curve)
             except Exception:
-                pass
+                _debug.swallowed("unfold._pattern_text_outline_segments")
 
 
 class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
@@ -3833,13 +3835,13 @@ def _pattern_begin_marking_session(context, source_obj):
         if context.active_object and context.active_object.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
     except Exception:
-        pass
+        _debug.swallowed("unfold._pattern_begin_marking_session")
 
     for obj in context.selected_objects:
         try:
             obj.select_set(False)
         except Exception:
-            pass
+            _debug.swallowed("unfold._pattern_begin_marking_session")
 
     source_obj.hide_set(False)
     source_obj.hide_viewport = False
@@ -3881,13 +3883,13 @@ def _pattern_restore_work_state(context):
         if context.active_object and context.active_object.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
     except Exception:
-        pass
+        _debug.swallowed("unfold._pattern_restore_work_state")
 
     for obj in context.selected_objects:
         try:
             obj.select_set(False)
         except Exception:
-            pass
+            _debug.swallowed("unfold._pattern_restore_work_state")
 
     for name in selected_names:
         obj = bpy.data.objects.get(name)
@@ -3895,7 +3897,7 @@ def _pattern_restore_work_state(context):
             try:
                 obj.select_set(True)
             except Exception:
-                pass
+                _debug.swallowed("unfold._pattern_restore_work_state")
 
     active = bpy.data.objects.get(prev_active_name)
     if active is not None:
@@ -3908,22 +3910,22 @@ def _pattern_restore_work_state(context):
             try:
                 bpy.ops.object.mode_set(mode='EDIT')
             except Exception:
-                pass
+                _debug.swallowed("unfold._pattern_restore_work_state")
         elif prev_mode == 'SCULPT' and active.type == 'MESH':
             try:
                 bpy.ops.object.mode_set(mode='SCULPT')
             except Exception:
-                pass
+                _debug.swallowed("unfold._pattern_restore_work_state")
         elif prev_mode == 'VERTEX_PAINT' and active.type == 'MESH':
             try:
                 bpy.ops.object.mode_set(mode='VERTEX_PAINT')
             except Exception:
-                pass
+                _debug.swallowed("unfold._pattern_restore_work_state")
         elif prev_mode == 'WEIGHT_PAINT' and active.type == 'MESH':
             try:
                 bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
             except Exception:
-                pass
+                _debug.swallowed("unfold._pattern_restore_work_state")
 
     scene["tsunfold_marking_session_active"] = False
     scene["tsunfold_marking_finish_requested"] = False
@@ -4026,7 +4028,7 @@ def _pattern_set_annotations(source_obj, annotations):
     try:
         source_obj.data.update()
     except Exception:
-        pass
+        _debug.swallowed("unfold._pattern_set_annotations")
 
     _pattern_invalidate_layout_cache()
 
@@ -4189,12 +4191,12 @@ def _pattern_source_seam_segments(source_obj):
 
             return result
         except Exception:
-            pass
+            _debug.swallowed("unfold._pattern_source_seam_segments")
 
     try:
         source_obj.update_from_editmode()
     except Exception:
-        pass
+        _debug.swallowed("unfold._pattern_source_seam_segments")
 
     for edge in source_obj.data.edges:
         if not edge.use_seam:
@@ -7021,7 +7023,7 @@ def _draw_pattern_marks_3d():
             gpu.state.line_width_set(1.0)
             gpu.state.depth_test_set('NONE')
         except Exception:
-            pass
+            _debug.swallowed("unfold._draw_pattern_marks_3d")
 
 
 
@@ -7193,13 +7195,13 @@ def _pattern_draw_direction_arrow_overlay(context):
             batch.draw(shader)
 
     except Exception:
-        pass
+        _debug.swallowed("unfold._pattern_draw_direction_arrow_overlay")
     finally:
         try:
             gpu.state.line_width_set(1.0)
             gpu.state.blend_set('NONE')
         except Exception:
-            pass
+            _debug.swallowed("unfold._pattern_draw_direction_arrow_overlay")
 
 
 def _pattern_arrow_hud_text(scene):
@@ -7281,7 +7283,7 @@ def _pattern_draw_arrow_hud(context, font_id=0):
                 "元モデルの上方向を各型紙へ投影",
             )
     except Exception:
-        pass
+        _debug.swallowed("unfold._pattern_draw_arrow_hud")
 
 
 def _draw_pattern_text_2d():
@@ -7368,14 +7370,14 @@ def _draw_pattern_text_2d():
                 else:
                     blf.disable(font_id, blf.ROTATION)
             except Exception:
-                pass
+                _debug.swallowed("unfold._draw_pattern_text_2d.draw_label")
 
             blf.draw(font_id, str(text))
 
             try:
                 blf.disable(font_id, blf.ROTATION)
             except Exception:
-                pass
+                _debug.swallowed("unfold._draw_pattern_text_2d.draw_label")
 
         # ------------------------------------------------------
         # Source-model labels.
@@ -7580,7 +7582,7 @@ def _draw_pattern_text_2d():
         )
 
     except Exception:
-        pass
+        _debug.swallowed("unfold._draw_pattern_text_2d")
 
 
 
@@ -7627,7 +7629,7 @@ def _pattern_nearest_seam_edge(context, source_obj, local_hit):
     try:
         source_obj.update_from_editmode()
     except Exception:
-        pass
+        _debug.swallowed("unfold._pattern_nearest_seam_edge")
 
     world_hit = source_obj.matrix_world @ local_hit
     best = None
@@ -8372,7 +8374,7 @@ class TSUNFOLD_OT_confirm_flat_memo(bpy.types.Operator):
                 memo_index=memo_index,
             )
         except Exception:
-            pass
+            _debug.swallowed("unfold.TSUNFOLD_OT_confirm_flat_memo.execute")
 
         self.report({'INFO'}, f"メモ「{text}」を配置しました")
         return {'FINISHED'}
@@ -8682,7 +8684,7 @@ class TSUNFOLD_OT_pick_corresponding_island(bpy.types.Operator):
                             'INVOKE_DEFAULT'
                         )
                     except Exception:
-                        pass
+                        _debug.swallowed("unfold.TSUNFOLD_OT_pick_corresponding_island.modal")
                     return {'RUNNING_MODAL'}
 
         # BlenderのDOUBLE_CLICK通知に依存せず、
@@ -8763,7 +8765,7 @@ class TSUNFOLD_OT_pick_corresponding_island(bpy.types.Operator):
             if hit_obj.type == 'MESH' and hit_obj.mode == 'EDIT':
                 hit_obj.update_from_editmode()
         except Exception:
-            pass
+            _debug.swallowed("unfold.TSUNFOLD_OT_pick_corresponding_island.modal")
 
         if (
             hit_obj.type == 'MESH'
@@ -8892,7 +8894,7 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
         try:
             _pattern_set_active_tool(scene, "NONE")
         except Exception:
-            pass
+            _debug.swallowed("unfold.TSUNFOLD_OT_return_default.execute")
 
         _pattern_clear_live_preview()
         _pattern_clear_island_highlight()
@@ -8913,7 +8915,7 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
             if active is not None and active.mode != 'OBJECT':
                 bpy.ops.object.mode_set(mode='OBJECT')
         except Exception:
-            pass
+            _debug.swallowed("unfold.TSUNFOLD_OT_return_default.execute")
 
         if source is not None:
             # 1) All stored/manual/auto annotations.
@@ -8929,14 +8931,14 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
             try:
                 source.data.update()
             except Exception:
-                pass
+                _debug.swallowed("unfold.TSUNFOLD_OT_return_default.execute")
 
         # Hide/delete state is now clean; restore just the source selection.
         for obj in context.selected_objects:
             try:
                 obj.select_set(False)
             except Exception:
-                pass
+                _debug.swallowed("unfold.TSUNFOLD_OT_return_default.execute")
 
         if source is not None:
             source.hide_set(False)
@@ -9666,11 +9668,11 @@ def _tsunfold_reset_overlays_on_load(_dummy=None):
         try:
             scene.tsunfold_show_paper = False
         except Exception:
-            pass
+            _debug.swallowed("unfold._tsunfold_reset_overlays_on_load")
         try:
             scene.tsunfold_preview = False
         except Exception:
-            pass
+            _debug.swallowed("unfold._tsunfold_reset_overlays_on_load")
         try:
             scene["tsunfold_marking_session_active"] = False
             scene["tsunfold_marking_finish_requested"] = False
@@ -9695,7 +9697,7 @@ def _tsunfold_reset_overlays_on_load(_dummy=None):
             scene["tsunfold_preview_source_hide_get"] = False
             scene["tsunfold_preview_source_hide_viewport"] = False
         except Exception:
-            pass
+            _debug.swallowed("unfold._tsunfold_reset_overlays_on_load")
 
 
 
@@ -10145,7 +10147,7 @@ def unregister():
         try:
             bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
         except Exception:
-            pass
+            _debug.swallowed("unfold.unregister")
         _draw_handle = None
 
     if _pattern_draw_handle is not None:
@@ -10154,7 +10156,7 @@ def unregister():
                 _pattern_draw_handle, 'WINDOW'
             )
         except Exception:
-            pass
+            _debug.swallowed("unfold.unregister")
         _pattern_draw_handle = None
 
     if _pattern_text_handle is not None:
@@ -10163,7 +10165,7 @@ def unregister():
                 _pattern_text_handle, 'WINDOW'
             )
         except Exception:
-            pass
+            _debug.swallowed("unfold.unregister")
         _pattern_text_handle = None
 
     _unregister_scene_props()

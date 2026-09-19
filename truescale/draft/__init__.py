@@ -1,4 +1,6 @@
 import bpy
+
+from .. import debug as _debug
 import traceback
 import os
 import html
@@ -67,7 +69,7 @@ def get_addon_preferences(context=None):
         if addon is not None:
             return addon.preferences
     except Exception:
-        pass
+        _debug.swallowed("draft.get_addon_preferences")
     return None
 
 
@@ -97,7 +99,7 @@ def save_dark_view_state(space):
     try:
         theme_gradients = bpy.context.preferences.themes[0].view_3d.space.gradients
     except Exception:
-        pass
+        _debug.swallowed("draft.save_dark_view_state")
 
     overlay = space.overlay
     scene = getattr(bpy.context, "scene", None)
@@ -163,7 +165,7 @@ def restore_dark_place_view(space):
             if "theme_high_gradient" in state:
                 gradients.high_gradient = state["theme_high_gradient"]
         except Exception:
-            pass
+            _debug.swallowed("draft.restore_dark_place_view")
 
         if state.get("background_type") is not None and hasattr(shading, "background_type"):
             shading.background_type = state["background_type"]
@@ -456,7 +458,7 @@ def remove_bbox_draw_handler():
         try:
             bpy.types.SpaceView3D.draw_handler_remove(handler, 'WINDOW')
         except Exception:
-            pass
+            _debug.swallowed("draft.remove_bbox_draw_handler")
 
     namespace[BBOX_HANDLER_KEY] = None
 
@@ -545,13 +547,13 @@ def draw_view_label():
                             bpy.app.driver_namespace[ZOOM_SYNC_STATE_KEY] = sync_state
 
             except Exception:
-                pass
+                _debug.swallowed("draft.draw_view_label")
 
     # Normal 3-view zoom synchronization after the hard clamp.
     try:
         tsdraft_sync_ortho_zoom(context.area.spaces.active)
     except Exception:
-        pass
+        _debug.swallowed("draft.draw_view_label")
 
     labels = {
         "top": "上面",
@@ -594,7 +596,7 @@ def remove_view_label_handler():
         try:
             bpy.types.SpaceView3D.draw_handler_remove(handler, 'WINDOW')
         except Exception:
-            pass
+            _debug.swallowed("draft.remove_view_label_handler")
 
     namespace[VIEW_LABEL_HANDLER_KEY] = None
 
@@ -784,7 +786,7 @@ def tsdraft_remember_export_dir(path):
         try:
             folder = os.path.abspath(folder)
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_remember_export_dir")
 
         bpy.app.driver_namespace[LAST_EXPORT_DIR_KEY] = folder
 
@@ -830,7 +832,7 @@ def tsdraft_get_export_view_context(context):
                 if region is not None:
                     return window, screen, area, region
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_get_export_view_context")
 
     # If execute() runs in File Browser context, search every open window.
     try:
@@ -847,7 +849,7 @@ def tsdraft_get_export_view_context(context):
                 if region is not None:
                     return window, screen, area, region
     except Exception:
-        pass
+        _debug.swallowed("draft.tsdraft_get_export_view_context")
 
     return None
 
@@ -984,13 +986,13 @@ def tsdraft_frame_export_region(context, window, screen, area, region, rv3d, sou
             try:
                 obj.select_set(False)
             except Exception:
-                pass
+                _debug.swallowed("draft.tsdraft_frame_export_region")
 
         try:
             source_obj.select_set(True)
             view_layer.objects.active = source_obj
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_frame_export_region")
 
         override = {
             "window": window,
@@ -1005,7 +1007,7 @@ def tsdraft_frame_export_region(context, window, screen, area, region, rv3d, sou
             with context.temp_override(**override):
                 bpy.ops.view3d.view_selected(use_all_regions=False)
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_frame_export_region")
 
         try:
             corners_world = [
@@ -1017,7 +1019,7 @@ def tsdraft_frame_export_region(context, window, screen, area, region, rv3d, sou
                     sum(corners_world, Vector()) / len(corners_world)
                 )
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_frame_export_region")
 
         tsdraft_force_view_redraw(context, area)
         tsdraft_force_view_redraw(context, area)
@@ -1035,18 +1037,18 @@ def tsdraft_frame_export_region(context, window, screen, area, region, rv3d, sou
         try:
             source_obj.select_set(False)
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_frame_export_region")
 
         for obj in selected_before:
             try:
                 obj.select_set(True)
             except Exception:
-                pass
+                _debug.swallowed("draft.tsdraft_frame_export_region")
 
         try:
             view_layer.objects.active = active_before
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_frame_export_region")
 
 
 def tsdraft_export_bbox_fill_ratio(region, rv3d, bbox_obj, padding_ratio):
@@ -1122,7 +1124,7 @@ def tsdraft_fit_region_to_bbox(context, area, region, rv3d, bbox_obj, padding_ra
             area.tag_redraw()
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=2)
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_fit_region_to_bbox")
 
         projected = []
         for world_co in corners_world:
@@ -1172,7 +1174,7 @@ def tsdraft_fit_region_to_bbox(context, area, region, rv3d, bbox_obj, padding_ra
         area.tag_redraw()
         bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
     except Exception:
-        pass
+        _debug.swallowed("draft.tsdraft_fit_region_to_bbox")
 
     return changed
 
@@ -1280,7 +1282,7 @@ def tsdraft_enforce_quad_zoom_lock_once():
                 try:
                     area.tag_redraw()
                 except Exception:
-                    pass
+                    _debug.swallowed("draft.tsdraft_enforce_quad_zoom_lock_once")
 
 
 
@@ -1288,7 +1290,7 @@ def tsdraft_quad_zoom_lock_timer():
     try:
         tsdraft_enforce_quad_zoom_lock_once()
     except Exception:
-        pass
+        _debug.swallowed("draft.tsdraft_quad_zoom_lock_timer")
 
     # Keep watching while add-on is enabled.
     return 0.10
@@ -1300,7 +1302,7 @@ def tsdraft_force_view_redraw(context, area):
     try:
         area.tag_redraw()
     except Exception:
-        pass
+        _debug.swallowed("draft.tsdraft_force_view_redraw")
 
     try:
         bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=10)
@@ -1434,7 +1436,7 @@ def tsdraft_restore_export_display_state(space, scene, state):
     try:
         shading.type = state["shading_type"]
     except Exception:
-        pass
+        _debug.swallowed("draft.tsdraft_restore_export_display_state")
 
     if (
         state.get("background_type") is not None
@@ -1443,20 +1445,20 @@ def tsdraft_restore_export_display_state(space, scene, state):
         try:
             shading.background_type = state["background_type"]
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_restore_export_display_state")
 
     if hasattr(shading, "background_color"):
         try:
             shading.background_color = state["background_color"]
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_restore_export_display_state")
 
     for attr, value in state.get("overlay", {}).items():
         if value is not None and hasattr(overlay, attr):
             try:
                 setattr(overlay, attr, value)
             except Exception:
-                pass
+                _debug.swallowed("draft.tsdraft_restore_export_display_state")
 
     scene.tsdraft_drawing_mode = state.get("drawing_mode", False)
 
@@ -1525,7 +1527,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
                 (rv, tsdraft_capture_rv3d_state(rv))
             )
     except Exception:
-        pass
+        _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
 
     source_obj = tsdraft_resolve_source_object(context)
     bbox_obj = bpy.data.objects.get(BBOX_NAME)
@@ -1647,7 +1649,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
                     padding_ratio=fit_padding_ratio
                 )
             except Exception:
-                pass
+                _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
 
         # Printable styling.
         # 書き出し背景は白 / グリッド / 黒 / カスタムから選択。
@@ -2146,7 +2148,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
         try:
             scene.tsdraft_user_view_mode = original_user_view_mode
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
 
         # 撮影前のBOX＋寸法表示状態へ戻す。
         try:
@@ -2162,7 +2164,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
             scene.tsdraft_show_dimensions_side = original_dimension_state["side"]
             scene.tsdraft_show_dimensions_user = original_dimension_state["user"]
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
 
         # 撮影前のビュー方向・位置・倍率・背景・グリッド等へ完全復帰。
         try:
@@ -2180,19 +2182,19 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
                 original_display_state
             )
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
 
         try:
             if Path(temp_full).exists():
                 Path(temp_full).unlink()
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
 
         # 描画状態を更新
         try:
             area.tag_redraw()
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
 
         try:
             tsdraft_force_view_redraw(context, area)
@@ -2621,7 +2623,7 @@ def draw_size_labels():
                     blf.rotation(font_id, 0.0)
                     blf.disable(font_id, blf.ROTATION)
                 except Exception:
-                    pass
+                    _debug.swallowed("draft.draw_size_labels")
         else:
             blf.position(
                 font_id,
@@ -2642,7 +2644,7 @@ def tsdraft_remove_legacy_draw_handlers():
             try:
                 bpy.types.SpaceView3D.draw_handler_remove(handler, 'WINDOW')
             except Exception:
-                pass
+                _debug.swallowed("draft.tsdraft_remove_legacy_draw_handlers")
             namespace[key] = None
 
 
@@ -2657,7 +2659,7 @@ def ensure_draw_handler():
         try:
             bpy.types.SpaceView3D.draw_handler_remove(old_handler, 'WINDOW')
         except Exception:
-            pass
+            _debug.swallowed("draft.ensure_draw_handler")
 
     handler = bpy.types.SpaceView3D.draw_handler_add(
         draw_size_labels,
@@ -2679,7 +2681,7 @@ def remove_draw_handler():
                 'WINDOW'
             )
         except Exception:
-            pass
+            _debug.swallowed("draft.remove_draw_handler")
 
     namespace[HANDLER_KEY] = None
 
@@ -3177,7 +3179,7 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
                 force=True
             )
         except Exception:
-            pass
+            _debug.swallowed("draft.TSDRAFT_OT_make_size_bbox.execute")
 
         bpy.ops.object.select_all(action='DESELECT')
         bbox_obj.select_set(True)
@@ -3210,7 +3212,7 @@ class TSDRAFT_OT_delete_bbox(bpy.types.Operator):
             try:
                 bpy.ops.truescale_draft.restore_view()
             except Exception:
-                pass
+                _debug.swallowed("draft.TSDRAFT_OT_delete_bbox.execute")
 
         redraw_viewports()
         return {'FINISHED'}
@@ -3377,7 +3379,7 @@ def tsdraft_sheet_text_rgba(text, font_size_px, color_rgba):
         try:
             ib.free()
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_sheet_text_rgba")
 
 
 def tsdraft_sheet_alpha_blit(canvas, rgba, x0, y0):
@@ -3634,7 +3636,7 @@ def tsdraft_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
         try:
             bpy.data.images.remove(image)
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_add_dimension_labels_to_exact_png")
 
 def tsdraft_make_three_view_sheet_png(scene, filepath, exported):
     """Compose three exact-size PNGs into a clean, aligned, print-scale PNG sheet."""
@@ -3801,7 +3803,7 @@ def tsdraft_make_three_view_sheet_png(scene, filepath, exported):
             try:
                 bpy.data.images.remove(image)
             except Exception:
-                pass
+                _debug.swallowed("draft.tsdraft_make_three_view_sheet_png")
 
     return {
         'paper': paper,
@@ -3859,14 +3861,14 @@ def tsdraft_build_three_view_sheet(context, filepath):
             try:
                 Path(item['path']).unlink(missing_ok=True)
             except Exception:
-                pass
+                _debug.swallowed("draft.tsdraft_build_three_view_sheet")
         # Remove the whole temporary work tree.  ignore_errors=True is
         # intentional here: export success must not be turned into an error
         # merely because Windows releases a temporary image handle late.
         try:
             shutil.rmtree(temp_dir, ignore_errors=True)
         except Exception:
-            pass
+            _debug.swallowed("draft.tsdraft_build_three_view_sheet")
 
 
 class TSDRAFT_OT_preview_three_view_sheet(bpy.types.Operator):
@@ -4138,7 +4140,7 @@ class TSDRAFT_OT_dark_place(bpy.types.Operator):
                 try:
                     restore_view_state(space)
                 except Exception:
-                    pass
+                    _debug.swallowed("draft.TSDRAFT_OT_dark_place.execute")
                 scene.tsdraft_drawing_mode = False
 
             # ここで通常表示を暗所の復帰先として保存してから暗所化。
@@ -4156,7 +4158,7 @@ class TSDRAFT_OT_dark_place(bpy.types.Operator):
                 if hasattr(space.overlay, "show_axis_y"):
                     space.overlay.show_axis_y = False
             except Exception:
-                pass
+                _debug.swallowed("draft.TSDRAFT_OT_dark_place.execute")
         else:
             scene.tsdraft_dark_place = False
 
@@ -4523,12 +4525,12 @@ class TSDRAFT_OT_quad_view(bpy.types.Operator):
         try:
             tsdraft_fit_quad_for_drawing(context, override["area"])
         except Exception:
-            pass
+            _debug.swallowed("draft.TSDRAFT_OT_quad_view.execute")
 
         try:
             tsdraft_sync_ortho_zoom(space)
         except Exception:
-            pass
+            _debug.swallowed("draft.TSDRAFT_OT_quad_view.execute")
 
         redraw_viewports()
         return {'FINISHED'}
@@ -4966,7 +4968,7 @@ def tsdraft_reset_scene_settings_to_defaults(scene):
             try:
                 del scene[key]
             except Exception:
-                pass
+                _debug.swallowed("draft.tsdraft_reset_scene_settings_to_defaults")
 
 
 def tsdraft_reset_all_scenes_to_defaults():
@@ -4989,7 +4991,7 @@ def tsdraft_deferred_startup_reset():
             redraw_viewports()
             return None
     except Exception:
-        pass
+        _debug.swallowed("draft.tsdraft_deferred_startup_reset")
 
     # Blender is still in restricted-data phase. Try again shortly.
     return 0.25
@@ -5003,7 +5005,7 @@ def tsdraft_reset_defaults_on_load(_dummy):
         tsdraft_reset_all_scenes_to_defaults()
         redraw_viewports()
     except Exception:
-        pass
+        _debug.swallowed("draft.tsdraft_reset_defaults_on_load")
 
 
 def register():
@@ -5313,7 +5315,7 @@ def register():
                 first_interval=0.25
             )
     except Exception:
-        pass
+        _debug.swallowed("draft.register")
 
     try:
         if not bpy.app.timers.is_registered(tsdraft_quad_zoom_lock_timer):
@@ -5323,7 +5325,7 @@ def register():
                 persistent=True
             )
     except Exception:
-        pass
+        _debug.swallowed("draft.register")
 
 
 def _unregister_scene_props():
@@ -5350,13 +5352,13 @@ def unregister():
         if bpy.app.timers.is_registered(tsdraft_deferred_startup_reset):
             bpy.app.timers.unregister(tsdraft_deferred_startup_reset)
     except Exception:
-        pass
+        _debug.swallowed("draft.unregister")
 
     try:
         if bpy.app.timers.is_registered(tsdraft_quad_zoom_lock_timer):
             bpy.app.timers.unregister(tsdraft_quad_zoom_lock_timer)
     except Exception:
-        pass
+        _debug.swallowed("draft.unregister")
 
     remove_draw_handler()
     remove_bbox_draw_handler()
