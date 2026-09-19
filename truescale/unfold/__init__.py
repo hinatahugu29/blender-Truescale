@@ -6684,43 +6684,84 @@ def _pattern_island_signature(unfold_obj):
 
 
 
-def _pattern_point_in_island_2d(mesh, face_indices, point):
-    """2D point-in-island test using the flattened mesh polygons."""
-    x = float(point.x)
-    y = float(point.y)
+_pattern_flat_poly_cache = {"key": None, "polys": None}
+
+
+def _pattern_flat_polygons_2d(mesh):
+    """面ごとの2D座標を、素のPythonタプルで返す。
+
+    戻り値は面インデックス順の [(minx, miny, maxx, maxy, [(x, y), ...]), ...]。
+
+    内外判定は配置探索から数万回呼ばれる。毎回 mesh.polygons[i] や
+    mesh.vertices[vi].co を辿ると、そのたびにBlenderのRNAアクセスが
+    発生して支配的なコストになる。座標は探索中に変わらないので、
+    一度だけ素のタプルへ展開して使い回す。
+
+    バウンディングボックスも一緒に持つ。ほとんどの点はほとんどの面の
+    外側にあるので、多角形の走査に入る前に弾ける。
+    """
+    key = (
+        mesh.name,
+        len(mesh.vertices),
+        len(mesh.polygons),
+        int(_pattern_cache_epoch),
+    )
+    if _pattern_flat_poly_cache["key"] == key:
+        return _pattern_flat_poly_cache["polys"]
+
+    coords = [(float(v.co.x), float(v.co.y)) for v in mesh.vertices]
+
+    polys = []
+    for poly in mesh.polygons:
+        points = [coords[int(vi)] for vi in poly.vertices]
+        if len(points) < 3:
+            polys.append(None)
+            continue
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        polys.append((min(xs), min(ys), max(xs), max(ys), points))
+
+    _pattern_flat_poly_cache["key"] = key
+    _pattern_flat_poly_cache["polys"] = polys
+    return polys
+
+
+def _pattern_point_in_polys_2d(polys, face_indices, x, y):
+    """内外判定の本体。座標は素のfloatで受け取る。
+
+    探索ループから数万回呼ばれるので、呼び出し側で polys を一度だけ
+    取得して渡す。毎回 _pattern_flat_polygons_2d を引くと、
+    キャッシュのキーを組み立てるだけで無視できないコストになる。
+    """
+    count = len(polys)
 
     for face_index in face_indices:
-        if not (0 <= int(face_index) < len(mesh.polygons)):
+        index = int(face_index)
+        if not (0 <= index < count):
             continue
 
-        poly = mesh.polygons[int(face_index)]
-        verts = [
-            mesh.vertices[int(vi)].co
-            for vi in poly.vertices
-        ]
-        if len(verts) < 3:
+        entry = polys[index]
+        if entry is None:
+            continue
+
+        min_x, min_y, max_x, max_y, points = entry
+        # 面の外接矩形の外なら、多角形を走査するまでもない
+        if x < min_x or x > max_x or y < min_y or y > max_y:
             continue
 
         inside = False
-        j = len(verts) - 1
+        j = len(points) - 1
 
-        for i in range(len(verts)):
-            xi = float(verts[i].x)
-            yi = float(verts[i].y)
-            xj = float(verts[j].x)
-            yj = float(verts[j].y)
+        for i in range(len(points)):
+            xi, yi = points[i]
+            xj, yj = points[j]
 
-            crosses = (
-                (yi > y) != (yj > y)
-                and x < (
-                    (xj - xi) * (y - yi)
-                    / ((yj - yi) if abs(yj - yi) > 1.0e-12 else 1.0e-12)
-                    + xi
-                )
-            )
-
-            if crosses:
-                inside = not inside
+            if (yi > y) != (yj > y):
+                denominator = yj - yi
+                if abs(denominator) <= 1.0e-12:
+                    denominator = 1.0e-12
+                if x < (xj - xi) * (y - yi) / denominator + xi:
+                    inside = not inside
 
             j = i
 
@@ -6729,6 +6770,93 @@ def _pattern_point_in_island_2d(mesh, face_indices, point):
 
     return False
 
+
+def _pattern_point_in_island_2d(mesh, face_indices, point):
+    """2D point-in-island test using the flattened mesh polygons."""
+    return _pattern_point_in_polys_2d(
+        _pattern_flat_polygons_2d(mesh),
+        face_indices,
+        float(point.x),
+        float(point.y),
+    )
+
+
+def _pattern_boundary_as_floats(boundary):
+    """境界セグメントを素のfloatへ展開する。
+
+    (ax, ay, dx, dy, denom) の並び。denom は線分長の2乗で、
+    射影パラメータの計算に使う。毎回 Vector の属性を読み直すより速い。
+    """
+    result = []
+    for a, b in boundary:
+        ax = float(a.x)
+        ay = float(a.y)
+        dx = float(b.x) - ax
+        dy = float(b.y) - ay
+        result.append((ax, ay, dx, dy, dx * dx + dy * dy))
+    return result
+
+
+def _pattern_any_point_too_close(points_xy, boundary_flat, margin):
+    """境界からの距離が margin 未満の点が1つでもあるか。
+
+    以前は全セグメントとの距離の最小値を求めてから比較していたが、
+    1つでも近い点が見つかればそこで打ち切れる。
+    平方距離で比較して平方根の計算も省く。
+    """
+    if margin <= 0.0 or not boundary_flat:
+        return False
+
+    margin_sq = margin * margin
+
+    for px, py in points_xy:
+        for ax, ay, dx, dy, denom in boundary_flat:
+            if denom <= 1.0e-20:
+                ox = px - ax
+                oy = py - ay
+            else:
+                t = ((px - ax) * dx + (py - ay) * dy) / denom
+                if t < 0.0:
+                    t = 0.0
+                elif t > 1.0:
+                    t = 1.0
+                ox = px - (ax + dx * t)
+                oy = py - (ay + dy * t)
+
+            if ox * ox + oy * oy < margin_sq:
+                return True
+
+    return False
+
+
+def _pattern_min_clearance(px, py, boundary_flat):
+    """点から境界までの最短距離。
+
+    候補の良さを測るので最小値そのものが必要。打ち切れない代わりに、
+    平方距離で回して最後に一度だけ平方根を取る。
+    """
+    if not boundary_flat:
+        return 0.0
+
+    best = None
+    for ax, ay, dx, dy, denom in boundary_flat:
+        if denom <= 1.0e-20:
+            ox = px - ax
+            oy = py - ay
+        else:
+            t = ((px - ax) * dx + (py - ay) * dy) / denom
+            if t < 0.0:
+                t = 0.0
+            elif t > 1.0:
+                t = 1.0
+            ox = px - (ax + dx * t)
+            oy = py - (ay + dy * t)
+
+        distance_sq = ox * ox + oy * oy
+        if best is None or distance_sq < best:
+            best = distance_sq
+
+    return math.sqrt(best) if best is not None else 0.0
 
 
 def _pattern_point_segment_distance_2d(point, a, b):
@@ -6820,14 +6948,21 @@ def _pattern_id_footprint_inside(
         -y_axis * half_h,
     )
 
-    return all(
-        _pattern_point_in_island_2d(
-            mesh,
+    # polys はここで一度だけ取得する。
+    # 9点それぞれで引き直すと、キャッシュのキー組み立てが積み重なる。
+    polys = _pattern_flat_polygons_2d(mesh)
+
+    for offset in offsets:
+        point = center + offset
+        if not _pattern_point_in_polys_2d(
+            polys,
             face_indices,
-            center + offset,
-        )
-        for offset in offsets
-    )
+            float(point.x),
+            float(point.y),
+        ):
+            return False
+
+    return True
 
 
 def _pattern_island_id_safe_position(
@@ -6871,6 +7006,9 @@ def _pattern_island_id_safe_position(
         mesh,
         face_indices,
     )
+    # 候補ごとに Vector の属性を読み直すと高くつくので、
+    # 先に素のfloatへ展開しておく。
+    boundary_flat = _pattern_boundary_as_floats(boundary)
 
     center = record["center_local"].copy()
 
@@ -6947,17 +7085,11 @@ def _pattern_island_id_safe_position(
         ):
             continue
 
-        if boundary:
-            clearance = min(
-                _pattern_point_segment_distance_2d(
-                    candidate,
-                    a,
-                    b,
-                )
-                for a, b in boundary
-            )
-        else:
-            clearance = 0.0
+        clearance = _pattern_min_clearance(
+            float(candidate.x),
+            float(candidate.y),
+            boundary_flat,
+        )
 
         # Prefer clear open area first. For similarly safe candidates, give a
         # smaller bonus to lateral separation from the center arrow line.
@@ -6996,17 +7128,11 @@ def _pattern_island_id_safe_position(
         ):
             continue
 
-        if boundary:
-            clearance = min(
-                _pattern_point_segment_distance_2d(
-                    candidate,
-                    a,
-                    b,
-                )
-                for a, b in boundary
-            )
-        else:
-            clearance = 0.0
+        clearance = _pattern_min_clearance(
+            float(candidate.x),
+            float(candidate.y),
+            boundary_flat,
+        )
 
         fallback.append((clearance, candidate.copy()))
 
@@ -7932,26 +8058,30 @@ def _pattern_arrow_fits_island(
             t = i / steps
             sample_points.append(a.lerp(b, t))
 
-    if not all(
-        _pattern_point_in_island_2d(mesh, face_indices, p)
-        for p in sample_points
-    ):
-        return False
+    # polys はここで一度だけ取得して使い回す
+    polys = _pattern_flat_polygons_2d(mesh)
+    points_xy = [(float(p.x), float(p.y)) for p in sample_points]
+
+    for px, py in points_xy:
+        if not _pattern_point_in_polys_2d(polys, face_indices, px, py):
+            return False
 
     # Require a little boundary clearance so the line is not visually clipped.
     # Boundary may be precomputed by the caller; rebuilding it for every
     # candidate is extremely expensive on dense pattern pieces.
     if boundary is None:
         boundary = _pattern_island_boundary_segments(mesh, face_indices)
+        # 候補ごとに Vector の属性を読み直すと高くつくので、
+        # 先に素のfloatへ展開しておく。
+        boundary_flat = _pattern_boundary_as_floats(boundary)
 
     if boundary and safety_margin > 0.0:
-        for p in sample_points:
-            clearance = min(
-                _pattern_point_segment_distance_2d(p, a, b)
-                for a, b in boundary
-            )
-            if clearance < safety_margin:
-                return False
+        if _pattern_any_point_too_close(
+            points_xy,
+            _pattern_boundary_as_floats(boundary),
+            safety_margin,
+        ):
+            return False
 
     return True
 
@@ -7992,6 +8122,9 @@ def _pattern_safe_arrow_placement(
 
     old_center = record["center_local"].copy()
     boundary = _pattern_island_boundary_segments(mesh, face_indices)
+    # 候補ごとに Vector の属性を読み直すと高くつくので、
+    # 先に素のfloatへ展開しておく。
+    boundary_flat = _pattern_boundary_as_floats(boundary)
 
     # Visual margin around the line. Keep it small so narrow strips still work.
     safety_margin = _mm_to_bu(
@@ -8084,17 +8217,11 @@ def _pattern_safe_arrow_placement(
         ):
             continue
 
-        if boundary:
-            clearance = min(
-                _pattern_point_segment_distance_2d(
-                    candidate,
-                    a,
-                    b,
-                )
-                for a, b in boundary
-            )
-        else:
-            clearance = 0.0
+        clearance = _pattern_min_clearance(
+            float(candidate.x),
+            float(candidate.y),
+            boundary_flat,
+        )
 
         # Prefer roomy places, then places close to the old visual center.
         diag = max(math.hypot(width, height), 1.0e-12)
@@ -8135,17 +8262,11 @@ def _pattern_safe_arrow_placement(
             ):
                 continue
 
-            if boundary:
-                clearance = min(
-                    _pattern_point_segment_distance_2d(
-                        candidate,
-                        a,
-                        b,
-                    )
-                    for a, b in boundary
-                )
-            else:
-                clearance = 0.0
+            clearance = _pattern_min_clearance(
+                float(candidate.x),
+                float(candidate.y),
+                boundary_flat,
+            )
 
             # Favor the longest fitting arrow first; clearance breaks ties.
             score = length * 1000.0 + clearance
@@ -8168,17 +8289,11 @@ def _pattern_safe_arrow_placement(
         ):
             continue
 
-        if boundary:
-            clearance = min(
-                _pattern_point_segment_distance_2d(
-                    candidate,
-                    a,
-                    b,
-                )
-                for a, b in boundary
-            )
-        else:
-            clearance = 0.0
+        clearance = _pattern_min_clearance(
+            float(candidate.x),
+            float(candidate.y),
+            boundary_flat,
+        )
 
         fallback.append((clearance, candidate.copy()))
 
@@ -12286,7 +12401,7 @@ def register():
     bpy.types.Scene.tsunfold_show_direction_arrow = BoolProperty(
         name="水色の方向ガイド",
         default=False,
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
 
@@ -12302,7 +12417,7 @@ def register():
     bpy.types.Scene.tsunfold_auto_island_ids = BoolProperty(
         name="自動型紙ID",
         default=True,
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_island_id_style = EnumProperty(
@@ -12511,7 +12626,7 @@ def register():
         name="軽量ビュー",
         description="元モデル側の補助マーキング描画を減らして3Dビュー操作を軽くします",
         default=True,
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_preview = BoolProperty(
