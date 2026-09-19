@@ -581,6 +581,73 @@ def test_manual_scale_changes_pattern_size():
 
 
 @test
+def test_calibrated_scale_is_exact():
+    """較正した辺の長さが、指定したミリ数どおりになる。"""
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    scene = bpy.context.scene
+    scene.unit_settings.scale_length = 1.0
+
+    obj = make_seamed_cube(size=2.0)     # 1辺 2 BU
+    unfold = build_pattern_for(obj)
+
+    # 1辺 2 BU を 300 mm とみなす -> 1 BU = 150 mm
+    scene.tsunfold_scale_mode = "MANUAL"
+    scene.tsunfold_manual_mm_per_bu = 300.0 / 2.0
+
+    mesh = unfold.data
+    poly = mesh.polygons[0]
+    loops = list(poly.loop_indices)
+    a = mesh.vertices[mesh.loops[loops[0]].vertex_index].co
+    b = mesh.vertices[mesh.loops[loops[1]].vertex_index].co
+    edge_mm = U._bu_to_mm(scene, (b - a).length)
+
+    close(edge_mm, 300.0, 0.5, "較正した辺の実寸")
+
+
+@test
+def test_warning_when_island_spacing_dominates():
+    """島の間隔が型紙に対して大きすぎると警告する。
+
+    間隔は絶対値のミリ指定なので、基準を小さく取ると相対的に
+    効きすぎて島が散らばる。実際にこれで「型紙が遠くに飛んだ」
+    という症状が出た。
+    """
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    scene = bpy.context.scene
+    scene.unit_settings.scale_length = 1.0
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    # 1 BU = 0.1 mm。型紙全体が 1 mm 以下になるのに間隔は 10 mm のまま
+    scene.tsunfold_scale_mode = "MANUAL"
+    scene.tsunfold_manual_mm_per_bu = 0.1
+    scene.tsunfold_spacing_mm = 10.0
+
+    warnings = U._pattern_scale_warnings(bpy.context, unfold)
+    check(
+        any("間隔" in line for line in warnings),
+        f"間隔が大きすぎる警告が出ない: {warnings}",
+    )
+
+    # 間隔を型紙に見合う値にすれば消えること
+    scene.tsunfold_spacing_mm = 0.05
+    warnings = U._pattern_scale_warnings(bpy.context, unfold)
+    check(
+        not any("間隔" in line for line in warnings),
+        f"間隔を直しても警告が残る: {warnings}",
+    )
+
+
+@test
 def test_notch_status_text():
     """合印の状態表示が状況に応じて変わる。"""
     reset_scene()

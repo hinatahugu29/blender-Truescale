@@ -927,6 +927,18 @@ def _pattern_scale_warnings(context, unfold_obj):
             f"合印 {notch_mm:.1f} mm は型紙に対して小さすぎます"
         )
 
+    # 島の間隔が型紙より大きいと、島が散らばって全体が巨大に見える。
+    # 間隔は絶対値のミリ指定なので、基準を小さくすると相対的に効きすぎる。
+    spacing_mm = float(getattr(context.scene, "tsunfold_spacing_mm", 10.0))
+    islands = len(_get_face_islands(unfold_obj.data))
+    if islands > 1 and spacing_mm > 0.0:
+        # 間隔の総和が型紙の長辺の半分を超えたら、間隔が支配的
+        total_gap = spacing_mm * (islands - 1)
+        if total_gap > longest * 0.5:
+            lines.append(
+                f"島の間隔 {spacing_mm:g} mm が型紙に対して大きすぎます"
+            )
+
     # 原因が Unit Scale にありそうな場合だけ添える
     if lines:
         scale, mm_per_bu = _scene_unit_summary(context.scene)
@@ -4162,9 +4174,39 @@ class TSUNFOLD_OT_calibrate_scale(bpy.types.Operator):
         layout.label(text=f"選択した辺の長さ: {self._length_bu:.6g} BU")
         layout.prop(self, "target_mm")
 
-        if self._length_bu > 0.0:
-            mm_per_bu = self.target_mm / self._length_bu
-            layout.label(text=f"→ 1 BU = {mm_per_bu:.6g} mm", icon='DRIVER')
+        if self._length_bu <= 0.0:
+            return
+
+        mm_per_bu = self.target_mm / self._length_bu
+        layout.label(text=f"→ 1 BU = {mm_per_bu:.6g} mm", icon='DRIVER')
+
+        # 桁を間違えたまま確定しないよう、結果の見当を先に出す。
+        # 初期値が数千ミリになることがあり、桁の誤りに気づきにくい。
+        current = _scene_bu_to_mm(context.scene)
+        if current > 0.0:
+            ratio = mm_per_bu / current
+            if ratio >= 2.0 or ratio <= 0.5:
+                layout.label(
+                    text=f"現在の基準の {ratio:.4g} 倍になります",
+                    icon='ERROR' if (ratio >= 100.0 or ratio <= 0.01) else 'INFO',
+                )
+
+        # 型紙ができていれば、その全体寸法がどうなるかを見せる
+        source = _pattern_seam_source(context)
+        unfold = _pattern_unfold_for_source(source) if source else None
+        if unfold is not None:
+            mesh = unfold.data
+            if mesh.vertices:
+                xs = [v.co.x for v in mesh.vertices]
+                ys = [v.co.y for v in mesh.vertices]
+                width = (max(xs) - min(xs)) * mm_per_bu
+                height = (max(ys) - min(ys)) * mm_per_bu
+                layout.label(
+                    text=f"型紙全体: 約 {width:.1f} × {height:.1f} mm"
+                )
+
+        spacing_mm = float(getattr(context.scene, "tsunfold_spacing_mm", 10.0))
+        layout.label(text=f"島の間隔 {spacing_mm:g} mm も同じ基準で扱われます")
 
     def execute(self, context):
         if self._length_bu <= 1e-9:
