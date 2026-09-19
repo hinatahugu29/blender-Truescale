@@ -427,6 +427,50 @@ def test_sliders_do_not_invalidate_cache():
 
 
 @test
+def test_workflow_status_progresses():
+    """パネル先頭の案内が、段階に応じて次の一手を示す。"""
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    # 何も無い状態
+    _, current, next_step = U._pattern_workflow_status(bpy.context)
+    check("未読み込み" in current, f"未読み込みを示さない: {current}")
+    check(next_step is not None, "次の一手が示されない")
+
+    # シーム無しのMeshを読み込んだ状態
+    plain = make_seamed_cube(name="NoSeam", size=2.0)
+    for edge in plain.data.edges:
+        edge.use_seam = False
+    bpy.context.scene["tsunfold_seam_source"] = plain.name
+
+    _, current, next_step = U._pattern_workflow_status(bpy.context)
+    check("シーム 0 本" in current, f"シーム0本を示さない: {current}")
+    check(
+        next_step and "シーム" in next_step,
+        f"シームを入れる案内が出ない: {next_step}",
+    )
+
+    # シームを入れた状態（型紙はまだ無い）
+    for edge in plain.data.edges:
+        edge.use_seam = True
+    _, current, next_step = U._pattern_workflow_status(bpy.context)
+    check(
+        next_step and "型紙を作成" in next_step,
+        f"型紙作成の案内が出ない: {next_step}",
+    )
+
+    # 型紙まで作った状態
+    reset_scene()
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+    _, current, next_step = U._pattern_workflow_status(bpy.context)
+    check("型紙" in current, f"型紙ができたことを示さない: {current}")
+    check(next_step is None, f"完了後も次の一手が出ている: {next_step}")
+
+
+@test
 def test_notch_status_text():
     """合印の状態表示が状況に応じて変わる。"""
     reset_scene()

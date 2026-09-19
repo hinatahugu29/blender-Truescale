@@ -792,6 +792,61 @@ def _pattern_notch_color_updated(self, context):
     _pattern_invalidate_layout_cache()
 
 
+def _pattern_workflow_status(context):
+    """いま何ができていて、次に何をすればよいかを返す。
+
+    (アイコン, 現在地, 次の一手) の3つ組。次の一手が無ければ None。
+
+    初回に触ったとき「どこで何が起きているのか分からない」という
+    状態になりやすいため、パネルの先頭に出して道案内にする。
+    """
+    scene = context.scene
+
+    loaded_name = scene.get("tsunfold_seam_source", "")
+    source = bpy.data.objects.get(loaded_name) if loaded_name else None
+
+    if source is None or source.type != 'MESH':
+        active = context.active_object
+        if active is not None and active.type == 'MESH':
+            return (
+                'INFO',
+                f"未読み込み（選択中: {active.name}）",
+                "「モデルの読み込み」を押してください",
+            )
+        return (
+            'INFO',
+            "未読み込み",
+            "シームを設定したMeshを選んでください",
+        )
+
+    seam_count = sum(1 for edge in source.data.edges if edge.use_seam)
+
+    if seam_count == 0:
+        return (
+            'ERROR',
+            f"{source.name} を読み込み済み / シーム 0 本",
+            "編集モードで辺を選び「シームを入れる」を押してください",
+        )
+
+    unfold = _pattern_unfold_for_source(source)
+    if unfold is None:
+        return (
+            'INFO',
+            f"{source.name} / シーム {seam_count} 本",
+            "「型紙を作成 / 更新」を押してください",
+        )
+
+    islands = len(_get_face_islands(unfold.data))
+    size = _object_xy_size_mm(context, unfold)
+    size_text = f" / {size[0]:.0f}×{size[1]:.0f} mm" if size else ""
+
+    return (
+        'CHECKMARK',
+        f"型紙 {islands} 枚{size_text}",
+        None,
+    )
+
+
 def _pattern_notch_status_text(context):
     """パネルに出す合印の現状。
 
@@ -11241,6 +11296,13 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                     icon='INFO',
                 )
 
+        # いまどの段階にいて、次に何を押せばよいかを先頭に出す。
+        icon, current, next_step = _pattern_workflow_status(context)
+        status_box = layout.box()
+        status_box.label(text=current, icon=icon)
+        if next_step:
+            status_box.label(text=next_step, icon='FORWARD')
+
         source_box = layout.box()
         source_box.label(text="1. モデルと型紙")
 
@@ -11295,6 +11357,14 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 "tsunfold_lightweight_view",
                 text="軽量ビュー",
             )
+
+            # ONのあいだ元モデル側のマーキングが一切描かれない。
+            # 既定でONなので、何も表示されない理由が分からなくなりやすい。
+            if scene.tsunfold_lightweight_view:
+                source_box.label(
+                    text="元モデル側の合印表示はOFF",
+                    icon='HIDE_ON',
+                )
 
         build_row = source_box.row()
         build_row.enabled = (
