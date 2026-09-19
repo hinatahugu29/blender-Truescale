@@ -8625,14 +8625,11 @@ def _pattern_compute_flat_colored_segments(context, source_obj, unfold_obj):
                     (b, back - side * head * 0.45, color, thickness)
                 )
 
-    # この関数自体がローカル空間を返すので、矢印もローカル版を使う。
-    segments.extend(
-        _pattern_auto_arrow_segments_local(
-            context,
-            source_obj,
-            unfold_obj,
-        )
-    )
+    # 矢印はここで混ぜない。
+    # 混ぜてしまうと、この関数の結果をキャッシュするキーに矢印の設定
+    # （長さ・ヘッド・太さ・色）も入れなければならなくなり、
+    # 追加のたびにキーへ足し忘れて「変えても反映されない」が起きる。
+    # 矢印は矢印自身のキャッシュを持っているので、呼び出し側で足す。
 
     return segments
 
@@ -8654,6 +8651,9 @@ def _pattern_flat_colored_segments(context, source_obj, unfold_obj):
         annotations_raw,
         str(getattr(scene, "tsunfold_arrow_mode", "AUTO")),
         round(float(getattr(scene, "tsunfold_notch_length_mm", 6.0)), 4),
+        # 合印の太さは計算結果のタプルに焼き込まれる。
+        # キーに入れないと、値を変えても古い太さのまま描かれ続ける。
+        round(float(getattr(scene, "tsunfold_notch_thickness_mm", 0.6)), 4),
         # オート合印の色はアノテーションに保存しないので、
         # キーに入れないと色を変えても古い結果が使われてしまう。
         tuple(
@@ -8674,8 +8674,15 @@ def _pattern_flat_colored_segments(context, source_obj, unfold_obj):
             ),
         )
 
+    # 矢印はここで足す。矢印は矢印自身のキャッシュを持っており、
+    # そちらは矢印の設定をキーに含んでいる。
+    local = list(cached)
+    local.extend(
+        _pattern_auto_arrow_segments_local(context, source_obj, unfold_obj)
+    )
+
     # キャッシュはローカル空間。両端の座標だけワールドへ移す。
-    return _pattern_transform_rows(cached, unfold_obj.matrix_world, (0, 1))
+    return _pattern_transform_rows(local, unfold_obj.matrix_world, (0, 1))
 
 
 def _pattern_source_text_items(source_obj):

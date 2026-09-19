@@ -703,6 +703,71 @@ def test_notch_color_does_not_touch_annotations():
 
 
 @test
+def test_every_marking_setting_updates_immediately():
+    """マーキングの各設定を変えたら、描画結果がすぐ変わる。
+
+    「再描画するだけでよい」と判断した設定が、実はキャッシュへ
+    焼き込まれていてキーに入っていない、という取りこぼしを防ぐ。
+    実際に合印の太さでこれが起きた（値を変えても更新ボタンを
+    押すまで反映されなかった）。
+    """
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    scene = bpy.context.scene
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    def snapshot():
+        """描画に渡される値をまとめて文字列化する。"""
+        segments = U._pattern_flat_colored_segments(bpy.context, obj, unfold)
+        texts = U._pattern_auto_flat_oriented_text_items(
+            bpy.context, obj, unfold
+        )
+        return repr([
+            [
+                (round(row[0].x, 5), round(row[0].y, 5),
+                 round(row[1].x, 5), round(row[1].y, 5),
+                 tuple(round(c, 5) for c in row[2]), round(row[3], 5))
+                for row in segments
+            ],
+            [
+                (row[0], round(row[2], 5), tuple(round(c, 5) for c in row[3]))
+                for row in texts
+            ],
+        ])
+
+    # (プロパティ名, 変更後の値)
+    cases = [
+        ("tsunfold_notch_length_mm", 12.0),
+        ("tsunfold_notch_thickness_mm", 2.5),
+        ("tsunfold_notch_color", (0.1, 0.8, 0.3)),
+        ("tsunfold_auto_arrow_length_mm", 40.0),
+        ("tsunfold_arrow_head_mm", 14.0),
+        ("tsunfold_arrow_thickness_mm", 2.0),
+        ("tsunfold_arrow_color", (0.9, 0.1, 0.7)),
+        ("tsunfold_island_id_size_mm", 16.0),
+        ("tsunfold_island_id_color", (0.2, 0.2, 0.9)),
+    ]
+
+    stale = []
+    for name, value in cases:
+        before = snapshot()
+        setattr(scene, name, value)
+        after = snapshot()
+        if before == after:
+            stale.append(name)
+
+    check(
+        not stale,
+        "変更しても描画結果が変わらない設定がある"
+        f"（キャッシュキーに入っていない疑い）: {stale}",
+    )
+
+
+@test
 def test_notch_status_text():
     """合印の状態表示が状況に応じて変わる。"""
     reset_scene()
