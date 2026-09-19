@@ -15,17 +15,28 @@
 
 import traceback
 
-from . import unfold
-from . import draft
+# bpy を使うサブモジュールは register() のときに読み込む。
+#
+# ここで即座に import すると、Blender非依存のモジュール
+# （export.png など）を取り出すだけでも bpy が必要になり、
+# Blenderを起動せずに単体でテストできなくなる。
+_MODULES = ()
 
-# 登録順。解除はこの逆順で行う。
-_MODULES = (unfold, draft)
+
+def _load_modules():
+    """登録対象のサブモジュールを読み込む。登録順に返す。"""
+    global _MODULES
+    if not _MODULES:
+        from . import unfold
+        from . import draft
+        _MODULES = (unfold, draft)
+    return _MODULES
 
 
 def register():
     registered = []
     try:
-        for module in _MODULES:
+        for module in _load_modules():
             module.register()
             registered.append(module)
     except Exception:
@@ -40,7 +51,7 @@ def register():
 
 
 def unregister():
-    for module in reversed(_MODULES):
+    for module in reversed(_load_modules()):
         try:
             module.unregister()
         except Exception:

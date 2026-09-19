@@ -1,6 +1,9 @@
 import bpy
 
 from .. import debug as _debug
+from ..core import paper as _paper
+from ..core import units as _units
+from ..export import png as _png
 import traceback
 import gpu
 from bpy.props import EnumProperty, StringProperty, FloatProperty, BoolProperty, FloatVectorProperty
@@ -22,18 +25,10 @@ import json
 import time
 import blf
 
-PAPER_SIZES_MM = {
-    "A5": (148.0, 210.0),
-    "A4": (210.0, 297.0),
-    "A3": (297.0, 420.0),
-    "A2": (420.0, 594.0),
-    "A1": (594.0, 841.0),
-    "A0": (841.0, 1189.0),
-    "B5": (182.0, 257.0),
-    "B4": (257.0, 364.0),
-}
-
-PRINT_DPI = 300
+# 用紙サイズと印刷解像度の定義は共通モジュールが持つ。
+# 既存の参照をそのまま動かすために別名を置いている。
+PAPER_SIZES_MM = _paper.SIZES_MM
+PRINT_DPI = _png.PRINT_DPI
 UNFOLD_SUFFIX = "_展開図"
 _draw_handle = None
 _pattern_draw_handle = None
@@ -123,58 +118,33 @@ def _pattern_transform_rows(rows, matrix, point_indices):
 
 def _scene_unit_scale_raw(scene):
     """シーンが持っている Unit Scale をそのまま返す。"""
-    try:
-        scale = float(scene.unit_settings.scale_length)
-    except Exception:
-        scale = 1.0
-
-    return scale if scale > 0.0 else 1.0
+    return _units.scene_unit_scale_raw(scene)
 
 
 def _scene_scale_to_meters(scene):
-    """1 Blender Unit が何メートルに相当するかを返す。
+    """1 Blender Unit が何メートルに相当するか。
 
-    寸法計算はすべてここを通る。単位換算の唯一の入口。
-
-    既定ではシーンの Unit Scale をそのまま使う（従来の挙動）。
-    ただしシーンの設定が制作意図と食い違っている場合、Blender側を
-    直すと他の作業や物理演算にも波及してしまう。そのため
-    「このアドオンの中だけで基準を決める」モードを用意している。
-
-    アドオン指定モードでは、シーンの Unit Scale を一切見ずに
-    tsunfold_manual_mm_per_bu（1 BU が何ミリか）だけを使う。
-    シーンの設定は読むだけで、書き換えない。
+    実装は truescale.core.units にある。
+    基準の決め方（シーンに従う / アドオンで指定）もそちらを参照。
     """
-    mode = str(getattr(scene, "tsunfold_scale_mode", "SCENE"))
-
-    if mode == "MANUAL":
-        try:
-            mm_per_bu = float(getattr(scene, "tsunfold_manual_mm_per_bu", 1000.0))
-        except Exception:
-            mm_per_bu = 1000.0
-        if mm_per_bu > 0.0:
-            return mm_per_bu / 1000.0
-
-    return _scene_unit_scale_raw(scene)
+    return _units.scene_scale_to_meters(scene)
 
 
 def _scene_bu_to_mm(scene):
-    """Return how many physical millimeters one Blender Unit represents."""
-    return _scene_scale_to_meters(scene) * 1000.0
+    """1 Blender Unit が何ミリに相当するか。"""
+    return _units.scene_mm_per_bu(scene)
 
 
 def _scene_unit_summary(scene):
-    scale = _scene_scale_to_meters(scene)
-    mm_per_bu = _scene_bu_to_mm(scene)
-    return scale, mm_per_bu
+    return _units.scene_unit_summary(scene)
 
 
 def _mm_to_bu(scene, mm):
-    return (float(mm) / 1000.0) / _scene_scale_to_meters(scene)
+    return _units.scene_mm_to_bu(scene, mm)
 
 
 def _bu_to_mm(scene, bu):
-    return float(bu) * _scene_scale_to_meters(scene) * 1000.0
+    return _units.scene_bu_to_mm(scene, bu)
 
 
 def _world_edge_length(obj, v1, v2):
@@ -452,43 +422,13 @@ def _object_xy_size_mm(context, obj):
 # ------------------------------------------------------------
 
 def _paper_display_name(scene):
-    key = str(getattr(scene, "tsunfold_paper_size", "A4"))
-    if key == "CUSTOM":
-        w, h = _paper_dimensions_mm(scene)
-        return f"カスタム {w:.0f}×{h:.0f} mm"
-    return key
-
+    """パネル表示用の用紙名。"""
+    return _paper.scene_display_name(scene)
 
 
 def _paper_dimensions_mm(scene):
-    paper_key = str(getattr(scene, "tsunfold_paper_size", "A4"))
-
-    if paper_key == "CUSTOM":
-        width = max(
-            1.0,
-            float(getattr(scene, "tsunfold_custom_paper_width_mm", 600.0)),
-        )
-        height = max(
-            1.0,
-            float(getattr(scene, "tsunfold_custom_paper_height_mm", 900.0)),
-        )
-        # Custom width/height are literal. No automatic portrait/landscape swap.
-        return width, height
-
-    base_w, base_h = PAPER_SIZES_MM[paper_key]
-    portrait = (min(base_w, base_h), max(base_w, base_h))
-    landscape = (portrait[1], portrait[0])
-
-    orientation = scene.tsunfold_orientation
-    if orientation == "LANDSCAPE":
-        return landscape
-    if orientation == "PORTRAIT":
-        return portrait
-
-    # AUTO defaults to portrait for the visible guide.
-    # Export can still choose the fitting orientation later if desired.
-    return portrait
-
+    """シーンの設定から用紙寸法（幅, 高さ）をミリで返す。"""
+    return _paper.scene_dimensions_mm(scene)
 
 
 def _smooth_curve_segments_world_xy(obj, samples_per_segment=32):
@@ -1359,93 +1299,15 @@ def _export_paper_dimensions(scene, shape_w_mm, shape_h_mm):
     return min((portrait, landscape), key=overflow)
 
 
-def _png_chunk(chunk_type, data):
-    crc = binascii.crc32(chunk_type)
-    crc = binascii.crc32(data, crc) & 0xffffffff
-    return struct.pack(">I", len(data)) + chunk_type + data + struct.pack(">I", crc)
-
-
-def _draw_line_rgb(
-    buf,
-    width,
-    height,
-    x0,
-    y0,
-    x1,
-    y1,
-    thickness=2,
-    color=(0.0, 0.0, 0.0),
-):
-    x0 = int(round(x0))
-    y0 = int(round(y0))
-    x1 = int(round(x1))
-    y1 = int(round(y1))
-
-    rgb = bytes(
-        max(0, min(255, int(round(float(c) * 255.0))))
-        for c in color[:3]
-    )
-
-    dx = abs(x1 - x0)
-    sx = 1 if x0 < x1 else -1
-    dy = -abs(y1 - y0)
-    sy = 1 if y0 < y1 else -1
-    err = dx + dy
-    radius = max(0, thickness // 2)
-
-    while True:
-        for oy in range(-radius, radius + 1):
-            yy = y0 + oy
-            if yy < 0 or yy >= height:
-                continue
-
-            for ox in range(-radius, radius + 1):
-                xx = x0 + ox
-                if xx < 0 or xx >= width:
-                    continue
-
-                pos = (yy * width + xx) * 3
-                buf[pos:pos+3] = rgb
-
-        if x0 == x1 and y0 == y1:
-            break
-
-        e2 = 2 * err
-
-        if e2 >= dy:
-            err += dy
-            x0 += sx
-
-        if e2 <= dx:
-            err += dx
-            y0 += sy
+def _draw_line_rgb(buf, width, height, x0, y0, x1, y1, thickness=1,
+                   color=(0.0, 0.0, 0.0)):
+    """ピクセルバッファへ直線を引く。実装は truescale.export.png。"""
+    _png.draw_line(buf, width, height, x0, y0, x1, y1, thickness, color)
 
 
 def _write_png_rgb(filepath, width, height, rgb_buffer, dpi):
-    signature = b"\x89PNG\r\n\x1a\n"
-    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    pixels_per_meter = int(round(dpi / 0.0254))
-    phys = struct.pack(">IIB", pixels_per_meter, pixels_per_meter, 1)
-
-    stride = width * 3
-    raw = bytearray()
-
-    for y in range(height):
-        raw.append(0)
-        start = y * stride
-        raw.extend(rgb_buffer[start:start + stride])
-
-    compressed = zlib.compress(bytes(raw), 6)
-
-    png = (
-        signature
-        + _png_chunk(b"IHDR", ihdr)
-        + _png_chunk(b"pHYs", phys)
-        + _png_chunk(b"IDAT", compressed)
-        + _png_chunk(b"IEND", b"")
-    )
-
-    filepath.write_bytes(png)
+    """RGBバッファを PNG として書き出す。実装は truescale.export.png。"""
+    _png.write_rgb(filepath, width, height, rgb_buffer, dpi)
 
 
 
