@@ -680,22 +680,6 @@ def tsdraft_resolve_source_object(context):
     return None
 
 
-def tsdraft_project_world_to_view_mm(co, view_key, unit_scale):
-    """Project a world-space coordinate to orthographic drawing coordinates in mm."""
-    mm = unit_scale * 1000.0
-
-    if view_key == "top":
-        return co.x * mm, co.y * mm, co.z * mm
-    elif view_key == "front":
-        # Blender Front: X horizontal, Z vertical, depth along Y.
-        return co.x * mm, co.z * mm, co.y * mm
-    elif view_key == "side":
-        # Blender Right: screen-right corresponds approximately to -Y.
-        return -co.y * mm, co.z * mm, co.x * mm
-
-    return co.x * mm, co.z * mm, co.y * mm
-
-
 def tsdraft_svg_view_label(view_key):
     return {
         "top": "上面",
@@ -726,60 +710,6 @@ def tsdraft_dimension_axis_enabled(scene, view_key, axis_name):
         f"tsdraft_show_dimension_{view_key}_{axis_name.lower()}",
         True
     ))
-
-
-def tsdraft_svg_page_for_bbox(width_mm, height_mm, margin_mm=10.0):
-    """
-    Pick A4 portrait/landscape without scaling.
-    Returns (page_w, page_h, orientation) or None.
-    """
-    candidates = [
-        (210.0, 297.0, "PORTRAIT"),
-        (297.0, 210.0, "LANDSCAPE"),
-    ]
-
-    fits = []
-    for pw, ph, orientation in candidates:
-        if width_mm <= (pw - 2.0 * margin_mm) and height_mm <= (ph - 2.0 * margin_mm):
-            waste = (pw - 2.0 * margin_mm - width_mm) + (ph - 2.0 * margin_mm - height_mm)
-            fits.append((waste, pw, ph, orientation))
-
-    if not fits:
-        return None
-
-    fits.sort(key=lambda x: x[0])
-    _, pw, ph, orientation = fits[0]
-    return pw, ph, orientation
-
-
-def tsdraft_svg_color_rgba(color):
-    r = max(0, min(255, round(color[0] * 255)))
-    g = max(0, min(255, round(color[1] * 255)))
-    b = max(0, min(255, round(color[2] * 255)))
-    a = max(0.0, min(1.0, float(color[3])))
-    return f"rgb({r},{g},{b})", a
-
-
-
-def tsdraft_patch_jpeg_dpi(filepath, dpi):
-    """Patch JFIF density so Illustrator/other apps know the physical size."""
-    path = Path(filepath)
-    data = bytearray(path.read_bytes())
-
-    jfif = data.find(b"JFIF\x00")
-    if jfif == -1:
-        return False
-
-    dpi_i = int(max(1, min(65535, round(dpi))))
-
-    # JFIF payload: identifier(5), version(2), units(1), Xdensity(2), Ydensity(2)
-    data[jfif + 7] = 1  # dots per inch
-    data[jfif + 8:jfif + 10] = struct.pack(">H", dpi_i)
-    data[jfif + 10:jfif + 12] = struct.pack(">H", dpi_i)
-
-    path.write_bytes(data)
-    return True
-
 
 
 def tsdraft_patch_png_dpi(filepath, dpi):
@@ -826,51 +756,6 @@ def tsdraft_patch_png_dpi(filepath, dpi):
 
     path.write_bytes(out)
     return inserted
-
-
-def tsdraft_project_world_to_print_space(co, view_key):
-    """Rotate world coordinates into a common XY print plane."""
-    if view_key == "top":
-        return (co.x, co.y, co.z)
-    elif view_key == "front":
-        return (co.x, co.z, co.y)
-    elif view_key == "side":
-        return (-co.y, co.z, co.x)
-    return (co.x, co.z, co.y)
-
-
-def tsdraft_make_line_quad(name, a, b, width_bu, z, collection, color):
-    """Create a thin rectangle between 2D points a,b."""
-    ax, ay = a
-    bx, by = b
-    dx = bx - ax
-    dy = by - ay
-    length = math.hypot(dx, dy)
-    if length <= 1e-12:
-        return None
-
-    nx = -dy / length * (width_bu * 0.5)
-    ny = dx / length * (width_bu * 0.5)
-
-    verts = [
-        (ax + nx, ay + ny, z),
-        (ax - nx, ay - ny, z),
-        (bx - nx, by - ny, z),
-        (bx + nx, by + ny, z),
-    ]
-    faces = [(0, 1, 2, 3)]
-
-    mesh = bpy.data.meshes.new(name + "_mesh")
-    mesh.from_pydata(verts, [], faces)
-    mesh.update()
-
-    obj = bpy.data.objects.new(name, mesh)
-    collection.objects.link(obj)
-    obj.color = color
-    return obj
-
-
-
 
 
 def tsdraft_get_last_export_dir():
@@ -1004,18 +889,6 @@ def tsdraft_find_view_region(area, wanted_key):
     return None, None
 
 
-def tsdraft_make_view3d_override(window, screen, area, region):
-    space = area.spaces.active
-    return {
-        "window": window,
-        "screen": screen,
-        "area": area,
-        "region": region,
-        "space_data": space,
-        "region_data": space.region_3d,
-    }
-
-
 def tsdraft_sync_ortho_zoom(space):
     """
     Keep Top / Front / Side view_distance synchronized in Quad View.
@@ -1087,92 +960,6 @@ def tsdraft_sync_ortho_zoom(space):
         }
     else:
         ns[ZOOM_SYNC_STATE_KEY] = current
-
-
-
-def tsdraft_clamp_quad_zoom_to_bbox(area, padding_ratio=0.80):
-    """
-    Prevent Top / Front / Side Quad View panes from zooming in so far
-    that the Bounding Box no longer fits inside the pane.
-    Zooming out remains unrestricted. User view is untouched.
-    """
-    bbox_obj = bpy.data.objects.get(BBOX_NAME)
-    if bbox_obj is None or area is None or area.type != 'VIEW_3D':
-        return
-
-    space = area.spaces.active
-
-    try:
-        if not space.region_quadviews:
-            return
-    except Exception:
-        return
-
-    try:
-        corners_world = [
-            bbox_obj.matrix_world @ Vector(corner)
-            for corner in bbox_obj.bound_box
-        ]
-    except Exception:
-        return
-
-    ortho_items = []
-    for key in ("top", "front", "side"):
-        region, rv3d = tsdraft_find_view_region(area, key)
-        if region is not None and rv3d is not None:
-            ortho_items.append((key, region, rv3d))
-
-    if not ortho_items:
-        return
-
-    # All three ortho panes are intended to share one zoom.
-    current_distance = max(float(rv.view_distance) for _, _, rv in ortho_items)
-    needed_factor = 1.0
-
-    for _key, region, rv3d in ortho_items:
-        projected = []
-        for world_co in corners_world:
-            p = view3d_utils.location_3d_to_region_2d(
-                region,
-                rv3d,
-                world_co
-            )
-            if p is not None:
-                projected.append(p)
-
-        if len(projected) < 4:
-            continue
-
-        xs = [p.x for p in projected]
-        ys = [p.y for p in projected]
-
-        bbox_w = max(xs) - min(xs)
-        bbox_h = max(ys) - min(ys)
-
-        # Keep roughly 10% margin on each side by default.
-        usable_w = max(1.0, float(region.width) * padding_ratio)
-        usable_h = max(1.0, float(region.height) * padding_ratio)
-
-        factor = max(
-            bbox_w / usable_w,
-            bbox_h / usable_h,
-            1.0
-        )
-        needed_factor = max(needed_factor, factor)
-
-    if needed_factor <= 1.0005:
-        return
-
-    safe_distance = current_distance * needed_factor
-
-    for _key, _region, rv3d in ortho_items:
-        rv3d.view_distance = safe_distance
-
-    bpy.app.driver_namespace[ZOOM_SYNC_STATE_KEY] = {
-        key: safe_distance
-        for key, _region, _rv in ortho_items
-    }
-
 
 
 
@@ -2417,196 +2204,6 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
 
 
 
-def tsdraft_svg_export(context, filepath, view_key):
-    scene = context.scene
-    namespace = bpy.app.driver_namespace
-
-    source_obj = tsdraft_resolve_source_object(context)
-    bbox_obj = bpy.data.objects.get(BBOX_NAME)
-
-    if source_obj is None:
-        raise RuntimeError(
-            "元オブジェクトが特定できんかったンゴ。"
-            "書き出したい元メッシュを選択して、もう一回押してクレメンス"
-        )
-    if bbox_obj is None:
-        raise RuntimeError("Bounding Boxが見つからんかったンゴ。先にBOX＋寸法を作成してクレメンス")
-
-    unit_scale = scene.unit_settings.scale_length
-    if unit_scale == 0:
-        unit_scale = 1.0
-
-    # -----------------------------------------------------
-    # Bounding Box is the authoritative physical-size basis.
-    # -----------------------------------------------------
-    bbox_world = [bbox_obj.matrix_world @ v.co for v in bbox_obj.data.vertices]
-    if len(bbox_world) < 8:
-        raise RuntimeError("Bounding Boxの頂点が足りんかったンゴ")
-
-    bbox_proj = [tsdraft_project_world_to_view_mm(v, view_key, unit_scale) for v in bbox_world]
-    bbox_u = [p[0] for p in bbox_proj]
-    bbox_v = [p[1] for p in bbox_proj]
-
-    min_u, max_u = min(bbox_u), max(bbox_u)
-    min_v, max_v = min(bbox_v), max(bbox_v)
-    width_mm = max_u - min_u
-    height_mm = max_v - min_v
-
-    page = tsdraft_svg_page_for_bbox(width_mm, height_mm, margin_mm=10.0)
-    if page is None:
-        raise RuntimeError(
-            f"{tsdraft_svg_view_label(view_key)}は実寸 {width_mm:.1f}×{height_mm:.1f} mm でA4に入らんンゴ"
-        )
-
-    page_w, page_h, orientation = page
-
-    center_u = (min_u + max_u) * 0.5
-    center_v = (min_v + max_v) * 0.5
-
-    def svg_xy(u, v):
-        # SVG Y grows downward, drawing coordinates grow upward.
-        x = page_w * 0.5 + (u - center_u)
-        y = page_h * 0.5 - (v - center_v)
-        return x, y
-
-    # -----------------------------------------------------
-    # Evaluated source mesh -> orthographic vector polygons.
-    # -----------------------------------------------------
-    depsgraph = context.evaluated_depsgraph_get()
-    obj_eval = source_obj.evaluated_get(depsgraph)
-    mesh_eval = obj_eval.to_mesh()
-
-    face_records = []
-
-    try:
-        mw = obj_eval.matrix_world
-
-        for poly in mesh_eval.polygons:
-            pts = []
-            depths = []
-
-            for idx in poly.vertices:
-                world = mw @ mesh_eval.vertices[idx].co
-                u, v, depth = tsdraft_project_world_to_view_mm(world, view_key, unit_scale)
-                x, y = svg_xy(u, v)
-                pts.append((x, y))
-                depths.append(depth)
-
-            if len(pts) >= 3:
-                face_records.append((sum(depths) / len(depths), pts))
-    finally:
-        obj_eval.to_mesh_clear()
-
-    # Painter's algorithm approximation: back-to-front.
-    face_records.sort(key=lambda item: item[0])
-
-    # -----------------------------------------------------
-    # Current visual settings.
-    # -----------------------------------------------------
-    frame_rgb, frame_alpha = tsdraft_svg_color_rgba(scene.tsdraft_frame_color)
-    text_rgb, text_alpha = tsdraft_svg_color_rgba(scene.tsdraft_font_color)
-
-    frame_width_mm = max(0.1, scene.tsdraft_frame_width * SVG_PX_TO_MM)
-    font_size_mm = max(1.5, scene.tsdraft_font_size * SVG_PX_TO_MM)
-
-    model_fill = "rgb(205,205,205)"
-    model_stroke = "rgb(120,120,120)"
-    model_stroke_width = 0.15
-
-    # -----------------------------------------------------
-    # SVG build.
-    # width/height in mm are the key to exact physical size.
-    # -----------------------------------------------------
-    svg = []
-    svg.append('<?xml version="1.0" encoding="UTF-8" standalone="no"?>')
-    svg.append(
-        f'<svg xmlns="http://www.w3.org/2000/svg" '
-        f'width="{page_w}mm" height="{page_h}mm" '
-        f'viewBox="0 0 {page_w} {page_h}">'
-    )
-    svg.append(f'  <!-- A4 {orientation}; 1 SVG unit = 1 mm; scale = 1:1 -->')
-    svg.append(
-        f'  <!-- Bounding Box basis: {width_mm:.4f} mm x {height_mm:.4f} mm -->'
-    )
-    svg.append('  <rect x="0" y="0" width="100%" height="100%" fill="white"/>')
-
-    # Model
-    svg.append('  <g id="model">')
-    for _, pts in face_records:
-        points = " ".join(f"{x:.4f},{y:.4f}" for x, y in pts)
-        svg.append(
-            f'    <polygon points="{points}" fill="{model_fill}" '
-            f'stroke="{model_stroke}" stroke-width="{model_stroke_width}"/>'
-        )
-    svg.append('  </g>')
-
-    # Bounding rectangle, always exported because it is the scale reference.
-    x1, y_top = svg_xy(min_u, max_v)
-    x2, y_bottom = svg_xy(max_u, min_v)
-    rect_x = min(x1, x2)
-    rect_y = min(y_top, y_bottom)
-    rect_w = abs(x2 - x1)
-    rect_h = abs(y_bottom - y_top)
-
-    svg.append('  <g id="bounding-box">')
-    svg.append(
-        f'    <rect x="{rect_x:.4f}" y="{rect_y:.4f}" '
-        f'width="{rect_w:.4f}" height="{rect_h:.4f}" '
-        f'fill="none" stroke="{frame_rgb}" stroke-opacity="{frame_alpha:.4f}" '
-        f'stroke-width="{frame_width_mm:.4f}"/>'
-    )
-    svg.append('  </g>')
-
-    # Dimensions: use the same 3D midpoint data and current per-view offsets.
-    dimension_data = namespace.get(DATA_KEY, [])
-    visible_axes = tsdraft_svg_dimension_axes(view_key)
-
-    svg.append('  <g id="dimensions">')
-
-    for item in dimension_data:
-        axis = item.get("axis", "X")
-        if axis not in visible_axes:
-            continue
-
-        loc = item.get("location")
-        if loc is None:
-            continue
-
-        u, v, _ = tsdraft_project_world_to_view_mm(loc, view_key, unit_scale)
-        tx, ty = svg_xy(u, v)
-
-        axis_lower = axis.lower()
-        off_x_px = getattr(scene, f"tsdraft_{view_key}_{axis_lower}_offset_x", 0)
-        off_y_px = getattr(scene, f"tsdraft_{view_key}_{axis_lower}_offset_y", 0)
-
-        tx += off_x_px * SVG_PX_TO_MM
-        ty -= off_y_px * SVG_PX_TO_MM
-
-        label = html.escape(get_dimension_text(scene, item))
-
-        # Short dimension marker line under/through the label's associated midpoint.
-        # The BBox itself remains the authoritative dimension line.
-        svg.append(
-            f'    <text x="{tx:.4f}" y="{ty:.4f}" '
-            f'font-family="sans-serif" font-size="{font_size_mm:.4f}mm" '
-            f'fill="{text_rgb}" fill-opacity="{text_alpha:.4f}" '
-            f'text-anchor="middle" dominant-baseline="middle">{label}</text>'
-        )
-
-    svg.append('  </g>')
-    svg.append('</svg>')
-
-    Path(filepath).write_text("\n".join(svg), encoding="utf-8")
-
-    return {
-        "width_mm": width_mm,
-        "height_mm": height_mm,
-        "page_w": page_w,
-        "page_h": page_h,
-        "orientation": orientation,
-    }
-
-
 def dimension_length_mm(item):
     """Return stored dimension length in millimeters, including older data."""
     if "length_mm" in item:
@@ -3622,28 +3219,6 @@ class TSDRAFT_OT_delete_bbox(bpy.types.Operator):
 
 
 
-def tsdraft_sheet_paper_mm(scene):
-    sizes = {
-        'A4': (210.0, 297.0),
-        'A3': (297.0, 420.0),
-        'A2': (420.0, 594.0),
-        'A1': (594.0, 841.0),
-        'A0': (841.0, 1189.0),
-    }
-    paper = getattr(scene, 'tsdraft_sheet_paper_size', 'A4')
-    if paper == 'CUSTOM':
-        w = max(10.0, float(getattr(scene, 'tsdraft_sheet_custom_width_mm', 210.0)))
-        h = max(10.0, float(getattr(scene, 'tsdraft_sheet_custom_height_mm', 297.0)))
-    else:
-        w, h = sizes.get(paper, (210.0, 297.0))
-    orientation = getattr(scene, 'tsdraft_sheet_orientation', 'AUTO')
-    if orientation == 'LANDSCAPE':
-        return max(w, h), min(w, h)
-    if orientation == 'PORTRAIT':
-        return min(w, h), max(w, h)
-    return w, h
-
-
 def tsdraft_sheet_scale_denominator(scene):
     scale_key = getattr(scene, 'tsdraft_sheet_scale', '1_1')
     fixed = {
@@ -3655,11 +3230,6 @@ def tsdraft_sheet_scale_denominator(scene):
     if scale_key == 'CUSTOM':
         return max(1.0, float(getattr(scene, 'tsdraft_sheet_custom_scale', 1.0)))
     return fixed.get(scale_key, 1.0)
-
-
-def tsdraft_svg_data_uri_from_png(filepath):
-    data = Path(filepath).read_bytes()
-    return 'data:image/png;base64,' + base64.b64encode(data).decode('ascii')
 
 
 def tsdraft_sheet_layout_aligned(view_data, page_w, page_h, margin=12.0, gutter=10.0, footer=12.0):
@@ -4603,34 +4173,6 @@ class TSDRAFT_OT_reset_label_offsets(bpy.types.Operator):
 
     def execute(self, context):
         for prop in (
-            "tsdraft_label_offset_x", "tsdraft_label_offset_y",
-            "tsdraft_x_offset_x", "tsdraft_x_offset_y",
-            "tsdraft_y_offset_x", "tsdraft_y_offset_y",
-            "tsdraft_z_offset_x", "tsdraft_z_offset_y",
-            "tsdraft_front_x_offset_x",
-            "tsdraft_front_x_offset_y",
-            "tsdraft_front_y_offset_x",
-            "tsdraft_front_y_offset_y",
-            "tsdraft_front_z_offset_x",
-            "tsdraft_front_z_offset_y",
-            "tsdraft_top_x_offset_x",
-            "tsdraft_top_x_offset_y",
-            "tsdraft_top_y_offset_x",
-            "tsdraft_top_y_offset_y",
-            "tsdraft_top_z_offset_x",
-            "tsdraft_top_z_offset_y",
-            "tsdraft_side_x_offset_x",
-            "tsdraft_side_x_offset_y",
-            "tsdraft_side_y_offset_x",
-            "tsdraft_side_y_offset_y",
-            "tsdraft_side_z_offset_x",
-            "tsdraft_side_z_offset_y",
-            "tsdraft_user_x_offset_x",
-            "tsdraft_user_x_offset_y",
-            "tsdraft_user_y_offset_x",
-            "tsdraft_user_y_offset_y",
-            "tsdraft_user_z_offset_x",
-            "tsdraft_user_z_offset_y"
         ):
             setattr(context.scene, prop, 0)
         for view in ("front", "top", "side", "user"):
@@ -5490,8 +5032,6 @@ def register():
         update=redraw_viewports
     )
 
-    bpy.types.Scene.tsdraft_label_offset_x = bpy.props.IntProperty(name="全体 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_label_offset_y = bpy.props.IntProperty(name="全体 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
     bpy.types.Scene.tsdraft_front_x_offset_x_mm = bpy.props.FloatProperty(name="前面 X 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
     bpy.types.Scene.tsdraft_front_x_offset_y_mm = bpy.props.FloatProperty(name="前面 X 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
     bpy.types.Scene.tsdraft_front_y_offset_x_mm = bpy.props.FloatProperty(name="前面 Y 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
@@ -5517,37 +5057,7 @@ def register():
     bpy.types.Scene.tsdraft_user_z_offset_x_mm = bpy.props.FloatProperty(name="任意 Z 左右(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
     bpy.types.Scene.tsdraft_user_z_offset_y_mm = bpy.props.FloatProperty(name="任意 Z 上下(mm)", default=0.0, min=-1000.0, max=1000.0, precision=2, update=redraw_viewports)
 
-    bpy.types.Scene.tsdraft_front_x_offset_x = bpy.props.IntProperty(name="前面 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_front_x_offset_y = bpy.props.IntProperty(name="前面 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_front_y_offset_x = bpy.props.IntProperty(name="前面 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_front_y_offset_y = bpy.props.IntProperty(name="前面 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_front_z_offset_x = bpy.props.IntProperty(name="前面 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_front_z_offset_y = bpy.props.IntProperty(name="前面 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_top_x_offset_x = bpy.props.IntProperty(name="上面 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_top_x_offset_y = bpy.props.IntProperty(name="上面 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_top_y_offset_x = bpy.props.IntProperty(name="上面 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_top_y_offset_y = bpy.props.IntProperty(name="上面 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_top_z_offset_x = bpy.props.IntProperty(name="上面 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_top_z_offset_y = bpy.props.IntProperty(name="上面 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_side_x_offset_x = bpy.props.IntProperty(name="側面 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_side_x_offset_y = bpy.props.IntProperty(name="側面 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_side_y_offset_x = bpy.props.IntProperty(name="側面 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_side_y_offset_y = bpy.props.IntProperty(name="側面 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_side_z_offset_x = bpy.props.IntProperty(name="側面 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_side_z_offset_y = bpy.props.IntProperty(name="側面 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_user_x_offset_x = bpy.props.IntProperty(name="任意 X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_user_x_offset_y = bpy.props.IntProperty(name="任意 X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_user_y_offset_x = bpy.props.IntProperty(name="任意 Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_user_y_offset_y = bpy.props.IntProperty(name="任意 Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_user_z_offset_x = bpy.props.IntProperty(name="任意 Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_user_z_offset_y = bpy.props.IntProperty(name="任意 Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
 
-    bpy.types.Scene.tsdraft_x_offset_x = bpy.props.IntProperty(name="X 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_x_offset_y = bpy.props.IntProperty(name="X 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_y_offset_x = bpy.props.IntProperty(name="Y 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_y_offset_y = bpy.props.IntProperty(name="Y 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_z_offset_x = bpy.props.IntProperty(name="Z 横", default=0, min=-2000, max=2000, update=redraw_viewports)
-    bpy.types.Scene.tsdraft_z_offset_y = bpy.props.IntProperty(name="Z 縦", default=0, min=-2000, max=2000, update=redraw_viewports)
 
     bpy.types.Scene.tsdraft_show_bbox = bpy.props.BoolProperty(
         name="BOXを表示",
