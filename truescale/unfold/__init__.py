@@ -784,41 +784,6 @@ def _pattern_notch_divisions_updated(self, context):
     _pattern_invalidate_layout_cache()
 
 
-def _pattern_notch_color_updated(self, context):
-    """合印の色の変更。
-
-    以前はここでも合印を全て作り直していた。色はアノテーションに保存されて
-    いるので更新自体は必要だが、位置は変わらないのでシームを辿り直す必要は
-    ない。カラーピッカーはドラッグ中のマウス移動ごとに発火するため、
-    全再生成だと1フレームごとに全シームの走査とJSONの全書き出しが走っていた。
-
-    ここでは保存済みのオート合印の color だけを差し替える。
-    手動で置いた合印の色は個別に持てるよう、auto のものだけを対象にする。
-    """
-    try:
-        source = _pattern_notch_source_for_update(context)
-        if source is None:
-            _pattern_invalidate_layout_cache()
-            return
-
-        color = _pattern_color_value(context.scene.tsunfold_notch_color)
-        items = _pattern_get_annotations(source)
-
-        changed = False
-        for item in items:
-            if item.get("type") == "notch_edge" and bool(item.get("auto", False)):
-                if item.get("color") != color:
-                    item["color"] = color
-                    changed = True
-
-        if changed:
-            _pattern_set_annotations(source, items)
-    except Exception:
-        traceback.print_exc()
-
-    _pattern_invalidate_layout_cache()
-
-
 def _pattern_workflow_status(context):
     """いま何ができていて、次に何をすればよいかを返す。
 
@@ -3817,10 +3782,6 @@ def _pattern_refresh_auto_notches(context, source_obj):
         context.scene
     )
 
-    color = _pattern_color_value(
-        context.scene.tsunfold_notch_color
-    )
-
     count = 0
 
     for trail in _pattern_seam_trails(source_obj):
@@ -3830,11 +3791,13 @@ def _pattern_refresh_auto_notches(context, source_obj):
             trail,
             divisions,
         ):
+            # 色は保存しない。オート合印は常に現在のシーン設定に従う
+            # （_pattern_item_color を参照）。保存すると色を変えるたびに
+            # 全アノテーションの書き直しが必要になる。
             items.append({
                 "type": "notch_edge",
                 "edge": int(edge_index),
                 "t": float(fraction),
-                "color": color,
                 "auto": True,
             })
             count += 1
@@ -6449,7 +6412,25 @@ def _pattern_source_seam_segments(source_obj):
     return result
 
 
-def _pattern_item_color(item):
+def _pattern_item_color(item, scene=None):
+    """注記の色を返す。
+
+    オート合印は個別の色を持たず、常に現在のシーン設定に従う。
+    以前は生成時の色をアノテーションへ焼き込んでいたため、色を変える
+    たびに全アノテーションを書き直す必要があり、カラーピッカーの
+    ドラッグ中に毎フレーム JSON の全書き出しが走っていた。
+
+    手動で置いた合印は個別の色を持てるので、保存値をそのまま使う。
+    """
+    if (
+        scene is not None
+        and item.get("type") == "notch_edge"
+        and bool(item.get("auto", False))
+    ):
+        return _pattern_color_value(
+            getattr(scene, "tsunfold_notch_color", (0.0, 0.0, 0.0))
+        )
+
     value = item.get("color", [0.0, 0.0, 0.0])
     try:
         return (
@@ -8496,7 +8477,7 @@ def _pattern_source_colored_segments(context, source_obj):
 
     for item in _pattern_get_annotations(source_obj):
         kind = item.get("type")
-        color = _pattern_item_color(item)
+        color = _pattern_item_color(item, context.scene)
 
         if kind == "notch_edge":
             seg = _pattern_source_notch_segment(context, source_obj, item)
@@ -8567,7 +8548,7 @@ def _pattern_compute_flat_colored_segments(context, source_obj, unfold_obj):
 
     for item in _pattern_get_annotations(source_obj):
         kind = item.get("type")
-        color = _pattern_item_color(item)
+        color = _pattern_item_color(item, context.scene)
 
         if kind == "notch_edge":
             if context.scene.get("tsunfold_display_mode", "POLY") == "SMOOTH":
@@ -8673,6 +8654,12 @@ def _pattern_flat_colored_segments(context, source_obj, unfold_obj):
         annotations_raw,
         str(getattr(scene, "tsunfold_arrow_mode", "AUTO")),
         round(float(getattr(scene, "tsunfold_notch_length_mm", 6.0)), 4),
+        # オート合印の色はアノテーションに保存しないので、
+        # キーに入れないと色を変えても古い結果が使われてしまう。
+        tuple(
+            round(float(v), 4)
+            for v in getattr(scene, "tsunfold_notch_color", (0.0, 0.0, 0.0))
+        ),
         str(scene.get("tsunfold_display_mode", "POLY")),
     )
 
@@ -9011,21 +8998,11 @@ def _draw_pattern_marks_3d():
                     'LINES',
                     {"pos": seam_verts},
                 )
-                gpu.state.line_width_set(
-                            max(
-                                1.0,
-                                min(
-                                    12.0,
-                                    float(
-                                        getattr(
-                                            context.scene,
-                                            "tsunfold_notch_thickness_mm",
-                                            0.6,
-                                        )
-                                    ) * 4.0,
-                                ),
-                            )
-                        )
+                # シームの赤線はビューポート確認用の目印であって、
+                # 印刷される合印とは別物。以前は線の太さを
+                # 「合印の太さ」から取っていたため、合印の設定を変えると
+                # シーム線まで太くなり、両者が同じものに見えてしまっていた。
+                gpu.state.line_width_set(2.0)
                 shader.bind()
                 shader.uniform_float(
                     "color",
@@ -12330,7 +12307,7 @@ def register():
         min=0.0,
         max=1.0,
         default=(0.0, 0.0, 0.0),
-        update=_pattern_notch_color_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_number_color = FloatVectorProperty(

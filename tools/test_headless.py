@@ -648,6 +648,61 @@ def test_warning_when_island_spacing_dominates():
 
 
 @test
+def test_notch_color_follows_scene_setting():
+    """合印の色を変えると、描かれる色も追従する。
+
+    オート合印は色をアノテーションへ保存せず、常にシーン設定を見る。
+    保存していた頃は、色を変えるたびに全アノテーションの
+    書き直しとキャッシュ全破棄が走っていた。
+    """
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    scene = bpy.context.scene
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    def notch_colors():
+        rows = U._pattern_flat_colored_segments(bpy.context, obj, unfold)
+        return {tuple(round(c, 4) for c in row[2]) for row in rows}
+
+    scene.tsunfold_notch_color = (1.0, 0.0, 0.0)
+    reds = notch_colors()
+    check((1.0, 0.0, 0.0) in reds, f"赤が反映されない: {reds}")
+
+    scene.tsunfold_notch_color = (0.0, 0.0, 1.0)
+    blues = notch_colors()
+    check((0.0, 0.0, 1.0) in blues, f"青が反映されない: {blues}")
+    check(
+        (1.0, 0.0, 0.0) not in blues,
+        f"古い赤が残っている: {blues}",
+    )
+
+
+@test
+def test_notch_color_does_not_touch_annotations():
+    """合印の色を変えてもアノテーションを書き直さない。"""
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    before = obj.get(U._PATTERN_ANNOTATION_PROP, "")
+    bpy.context.scene.tsunfold_notch_color = (0.2, 0.4, 0.6)
+    after = obj.get(U._PATTERN_ANNOTATION_PROP, "")
+
+    check(
+        before == after,
+        "色の変更でアノテーションが書き換えられている",
+    )
+
+
+@test
 def test_notch_status_text():
     """合印の状態表示が状況に応じて変わる。"""
     reset_scene()
