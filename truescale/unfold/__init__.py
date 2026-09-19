@@ -78,9 +78,19 @@ _PATTERN_DRAW_CACHE_LIMIT = 64
 
 
 def _pattern_draw_cache_store(key, value):
+    """描画キャッシュへ保存する。上限を超えたら古いものから捨てる。
+
+    全消しにすると、スライダーを動かして片方のキャッシュが埋まったときに
+    無関係なキャッシュ（島の解析結果など）まで巻き添えで消える。
+    dict は挿入順を保つので、先頭から落とせば古い順になる。
+    """
     global _pattern_draw_cache
-    if len(_pattern_draw_cache) >= _PATTERN_DRAW_CACHE_LIMIT:
-        _pattern_draw_cache = {}
+
+    overflow = len(_pattern_draw_cache) - _PATTERN_DRAW_CACHE_LIMIT + 1
+    if overflow > 0:
+        for old_key in list(_pattern_draw_cache)[:overflow]:
+            _pattern_draw_cache.pop(old_key, None)
+
     _pattern_draw_cache[key] = value
     return value
 
@@ -782,14 +792,55 @@ def _pattern_notch_color_updated(self, context):
     _pattern_invalidate_layout_cache()
 
 
-def _pattern_notch_appearance_updated(self, context):
-    """合印の長さ・太さの変更。
+def _pattern_notch_status_text(context):
+    """パネルに出す合印の現状。
 
-    どちらもアノテーションには保存されておらず、描画時にシーンから
-    読み直している（_pattern_flat_colored_segments など）。
-    よって作り直しは不要で、キャッシュを捨てて描き直すだけでよい。
+    設定を変えても見た目の変化が分かりにくく、効いているのか
+    判断できないという声があったため、件数を出して手応えを返す。
     """
-    _pattern_invalidate_layout_cache()
+    source = _pattern_seam_source(context)
+    if source is None:
+        source = _pattern_source_object_from_context(context)
+
+    if source is None or source.type != 'MESH':
+        return "元モデルが未読み込み"
+
+    if _pattern_unfold_for_source(source) is None:
+        return "型紙が未作成"
+
+    auto = manual = 0
+    for item in _pattern_get_annotations(source):
+        if item.get("type") != "notch_edge":
+            continue
+        if bool(item.get("auto", False)):
+            auto += 1
+        else:
+            manual += 1
+
+    if auto == 0 and manual == 0:
+        return "合印なし（「作成 / 更新」を押してください）"
+
+    text = f"合印 {auto + manual} 個"
+    if manual:
+        text += f"（オート {auto} / 手動 {manual}）"
+    return text
+
+
+def _pattern_redraw_only_updated(self, context):
+    """再描画するだけでよい設定の更新。
+
+    以下のどちらかに当てはまる設定は、キャッシュを捨てる必要がない。
+
+      1. すでに描画キャッシュのキーに含まれている設定
+         （値を変えれば別のキーになるので、古い結果は自然に使われない）
+      2. キャッシュを通さず、描画のたびにシーンから読み直している設定
+
+    _pattern_invalidate_layout_cache() は epoch を進めて全キャッシュを
+    破棄するため、スライダーをドラッグすると1フレームごとに
+    島の解析・ID配置探索・矢印配置探索がまとめて作り直されていた。
+    数値を少し変えるだけで重くなっていた原因。
+    """
+    _tag_redraw()
 
 
 
@@ -11311,6 +11362,10 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 icon='X',
             )
 
+            # 今いくつ合印があるのかを出す。
+            # これが無いと、設定を変えても効いているのか分からなかった。
+            notch_box.label(text=_pattern_notch_status_text(context))
+
         if scene.tsunfold_notch_mode != "NONE":
             notch_box.operator(
                 "truescale_unfold.place_notch",
@@ -11841,7 +11896,7 @@ def register():
             ("NUMBER", "1 / 2 / 3", "アイランドを数字で表示"),
         ],
         default="ALPHA",
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_island_id_size_mm = FloatProperty(
@@ -11850,7 +11905,7 @@ def register():
         min=3.0,
         max=30.0,
         precision=1,
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_island_id_color = FloatVectorProperty(
@@ -11860,7 +11915,7 @@ def register():
         min=0.0,
         max=1.0,
         default=(0.0, 0.0, 0.0),
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_arrow_mode = EnumProperty(
@@ -11871,7 +11926,7 @@ def register():
             ("CUSTOM", "カスタム", "手動で矢印を配置"),
         ],
         default="AUTO",
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_arrow_up_axis = EnumProperty(
@@ -11883,7 +11938,7 @@ def register():
             ("X", "X+", "BlenderグローバルX+"),
         ],
         default="Z",
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     
@@ -11894,7 +11949,7 @@ def register():
         min=5.0,
         max=100.0,
         precision=1,
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_active_tool = StringProperty(
@@ -11950,7 +12005,7 @@ def register():
         min=0.0,
         max=1.0,
         default=(0.0, 0.0, 0.0),
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_notch_length_mm = FloatProperty(
@@ -11959,7 +12014,7 @@ def register():
         min=1.0,
         max=30.0,
         precision=1,
-        update=_pattern_notch_appearance_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_notch_thickness_mm = FloatProperty(
@@ -11969,7 +12024,7 @@ def register():
         min=0.1,
         soft_max=3.0,
         precision=2,
-        update=_pattern_notch_appearance_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_number_size_mm = FloatProperty(
@@ -12009,7 +12064,7 @@ def register():
         min=2.0,
         max=30.0,
         precision=1,
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_arrow_thickness_mm = FloatProperty(
@@ -12018,7 +12073,7 @@ def register():
         min=0.2,
         max=5.0,
         precision=1,
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_next_number = bpy.props.IntProperty(

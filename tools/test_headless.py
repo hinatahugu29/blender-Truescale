@@ -392,6 +392,59 @@ def test_notch_color_does_not_rebuild():
         U._pattern_refresh_auto_notches = original
 
 
+@test
+def test_sliders_do_not_invalidate_cache():
+    """数値スライダーを動かしてもキャッシュが飛ばない。
+
+    これらの設定はキャッシュキーに含まれるか、描画時に読み直される。
+    epoch を進めて全キャッシュを捨てる必要がない。
+    以前は全部捨てていたため、スライダーのドラッグ中に島の解析や
+    配置探索が毎フレーム作り直されていた。
+    """
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    scene = bpy.context.scene
+    sliders = (
+        ("tsunfold_notch_length_mm", 7.5),
+        ("tsunfold_notch_thickness_mm", 1.2),
+        ("tsunfold_auto_arrow_length_mm", 30.0),
+        ("tsunfold_arrow_head_mm", 9.0),
+        ("tsunfold_arrow_thickness_mm", 1.1),
+        ("tsunfold_island_id_size_mm", 10.0),
+    )
+
+    for name, value in sliders:
+        before = U._pattern_cache_epoch
+        setattr(scene, name, value)
+        after = U._pattern_cache_epoch
+        check(
+            before == after,
+            f"{name} の変更でキャッシュ epoch が進んだ: {before} -> {after}",
+        )
+
+
+@test
+def test_notch_status_text():
+    """合印の状態表示が状況に応じて変わる。"""
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    # 元モデルすら無い状態
+    text = U._pattern_notch_status_text(bpy.context)
+    check("未読み込み" in text, f"未読み込みの表示が出ない: {text}")
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    text = U._pattern_notch_status_text(bpy.context)
+    check("合印" in text, f"合印の件数が出ない: {text}")
+
+
 # ============================================================
 # 実行
 # ============================================================
