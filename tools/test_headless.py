@@ -520,6 +520,67 @@ def test_no_scale_warning_at_sane_scale():
 
 
 @test
+def test_manual_scale_overrides_scene():
+    """アドオン指定モードではシーンの Unit Scale を使わない。"""
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    scene = bpy.context.scene
+    scene.unit_settings.scale_length = 1.0   # 1 BU = 1000 mm
+
+    # シーンに従うモード
+    scene.tsunfold_scale_mode = "SCENE"
+    close(U._bu_to_mm(scene, 1.0), 1000.0, 1e-6, "シーン基準での 1 BU")
+
+    # アドオン指定モード
+    scene.tsunfold_scale_mode = "MANUAL"
+    scene.tsunfold_manual_mm_per_bu = 1.0
+    close(U._bu_to_mm(scene, 1.0), 1.0, 1e-6, "アドオン基準での 1 BU")
+    close(U._mm_to_bu(scene, 25.0), 25.0, 1e-6, "アドオン基準での逆変換")
+
+    # シーン側の設定は書き換えていないこと
+    close(
+        scene.unit_settings.scale_length, 1.0, 1e-9,
+        "シーンの Unit Scale を書き換えてしまっている",
+    )
+
+    # 戻せること
+    scene.tsunfold_scale_mode = "SCENE"
+    close(U._bu_to_mm(scene, 1.0), 1000.0, 1e-6, "シーン基準へ戻らない")
+
+
+@test
+def test_manual_scale_changes_pattern_size():
+    """基準を変えると型紙の実寸表示が追従する。"""
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    scene = bpy.context.scene
+    scene.unit_settings.scale_length = 1.0
+
+    obj = make_seamed_cube(size=2.0)     # 1辺 2 BU
+    unfold = build_pattern_for(obj)
+
+    scene.tsunfold_scale_mode = "SCENE"
+    scene_size = U._object_xy_size_mm(bpy.context, unfold)
+
+    scene.tsunfold_scale_mode = "MANUAL"
+    scene.tsunfold_manual_mm_per_bu = 10.0   # 1 BU = 10 mm
+    manual_size = U._object_xy_size_mm(bpy.context, unfold)
+
+    # 1000 mm/BU から 10 mm/BU へ変えたので 1/100 になるはず
+    close(
+        manual_size[0], scene_size[0] / 100.0,
+        max(1e-6, scene_size[0] / 100.0 * 1e-6),
+        "基準変更が型紙の実寸に反映されない",
+    )
+
+
+@test
 def test_notch_status_text():
     """合印の状態表示が状況に応じて変わる。"""
     reset_scene()

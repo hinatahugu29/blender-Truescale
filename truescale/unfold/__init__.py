@@ -119,14 +119,41 @@ def _pattern_transform_rows(rows, matrix, point_indices):
 # Unit / geometry helpers
 # ------------------------------------------------------------
 
-def _scene_scale_to_meters(scene):
-    """Custom Scene mode: the current Scene Unit Scale is authoritative."""
+def _scene_unit_scale_raw(scene):
+    """シーンが持っている Unit Scale をそのまま返す。"""
     try:
         scale = float(scene.unit_settings.scale_length)
     except Exception:
         scale = 1.0
 
     return scale if scale > 0.0 else 1.0
+
+
+def _scene_scale_to_meters(scene):
+    """1 Blender Unit が何メートルに相当するかを返す。
+
+    寸法計算はすべてここを通る。単位換算の唯一の入口。
+
+    既定ではシーンの Unit Scale をそのまま使う（従来の挙動）。
+    ただしシーンの設定が制作意図と食い違っている場合、Blender側を
+    直すと他の作業や物理演算にも波及してしまう。そのため
+    「このアドオンの中だけで基準を決める」モードを用意している。
+
+    アドオン指定モードでは、シーンの Unit Scale を一切見ずに
+    tsunfold_manual_mm_per_bu（1 BU が何ミリか）だけを使う。
+    シーンの設定は読むだけで、書き換えない。
+    """
+    mode = str(getattr(scene, "tsunfold_scale_mode", "SCENE"))
+
+    if mode == "MANUAL":
+        try:
+            mm_per_bu = float(getattr(scene, "tsunfold_manual_mm_per_bu", 1000.0))
+        except Exception:
+            mm_per_bu = 1000.0
+        if mm_per_bu > 0.0:
+            return mm_per_bu / 1000.0
+
+    return _scene_unit_scale_raw(scene)
 
 
 def _scene_bu_to_mm(scene):
@@ -4066,6 +4093,102 @@ class TSUNFOLD_OT_clear_seam(bpy.types.Operator):
 
         return {'FINISHED'}
 
+
+
+class TSUNFOLD_OT_calibrate_scale(bpy.types.Operator):
+    bl_idname = "truescale_unfold.calibrate_scale"
+    bl_label = "選択した辺を基準に実寸を決める"
+    bl_description = (
+        "編集モードで選んだ辺の合計長さを、実際の寸法として指定します。"
+        "そこから 1 BU が何ミリかを逆算します"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    target_mm: FloatProperty(
+        name="実際の寸法 (mm)",
+        description="選んだ辺が実物で何ミリあるか",
+        default=100.0,
+        min=0.001,
+        soft_max=5000.0,
+        precision=2,
+    )
+
+    _length_bu = 0.0
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return (
+            obj is not None
+            and obj.type == 'MESH'
+            and obj.mode == 'EDIT'
+        )
+
+    @staticmethod
+    def _selected_length_bu(obj):
+        """選択されている辺の合計長さ（Blender Unit、ワールド基準）。
+
+        連続した辺を選べば、首周りのような曲線も測れる。
+        """
+        import bmesh
+
+        bm = bmesh.from_edit_mesh(obj.data)
+        matrix = obj.matrix_world
+
+        total = 0.0
+        for edge in bm.edges:
+            if not edge.select:
+                continue
+            a = matrix @ edge.verts[0].co
+            b = matrix @ edge.verts[1].co
+            total += (b - a).length
+        return total
+
+    def invoke(self, context, event):
+        obj = context.active_object
+        self._length_bu = self._selected_length_bu(obj)
+
+        if self._length_bu <= 1e-9:
+            self.report({'WARNING'}, "辺が選択されていません")
+            return {'CANCELLED'}
+
+        # いまの基準での寸法を初期値にしておくと、
+        # 「少しだけ直したい」場合に扱いやすい。
+        self.target_mm = max(0.001, _bu_to_mm(context.scene, self._length_bu))
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text=f"選択した辺の長さ: {self._length_bu:.6g} BU")
+        layout.prop(self, "target_mm")
+
+        if self._length_bu > 0.0:
+            mm_per_bu = self.target_mm / self._length_bu
+            layout.label(text=f"→ 1 BU = {mm_per_bu:.6g} mm", icon='DRIVER')
+
+    def execute(self, context):
+        if self._length_bu <= 1e-9:
+            # ダイアログを経ずに呼ばれた場合に備えて測り直す
+            obj = context.active_object
+            if obj is None or obj.mode != 'EDIT':
+                self.report({'ERROR'}, "編集モードで辺を選んでください")
+                return {'CANCELLED'}
+            self._length_bu = self._selected_length_bu(obj)
+
+        if self._length_bu <= 1e-9:
+            self.report({'ERROR'}, "辺が選択されていません")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        scene.tsunfold_manual_mm_per_bu = self.target_mm / self._length_bu
+        scene.tsunfold_scale_mode = "MANUAL"
+
+        _pattern_invalidate_layout_cache()
+        self.report(
+            {'INFO'},
+            f"1 BU = {scene.tsunfold_manual_mm_per_bu:.6g} mm に設定しました",
+        )
+        return {'FINISHED'}
 
 
 class TSUNFOLD_OT_mark_seam(bpy.types.Operator):
@@ -11334,11 +11457,29 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
         # 1. Load seamed model + build pattern
         # ------------------------------------------------------
         unit_box = layout.box()
-        unit_box.label(text="カスタムシーン実寸基準")
+        unit_box.label(text="実寸の基準")
+        unit_box.prop(scene, "tsunfold_scale_mode", text="")
+
         scene_scale, mm_per_bu = _scene_unit_summary(scene)
-        unit_box.label(
-            text=f"Unit Scale: {scene_scale:g} / 1 BU = {mm_per_bu:g} mm"
-        )
+
+        if scene.tsunfold_scale_mode == "MANUAL":
+            unit_box.prop(scene, "tsunfold_manual_mm_per_bu", text="1 BU =")
+            # シーン側の値も併記する。どちらが使われているかを明確にするため。
+            unit_box.label(
+                text=f"シーンの Unit Scale {_scene_unit_scale_raw(scene):g} は未使用",
+                icon='INFO',
+            )
+        else:
+            unit_box.label(
+                text=f"Unit Scale {scene_scale:g} / 1 BU = {mm_per_bu:g} mm"
+            )
+
+        if context.mode == 'EDIT_MESH':
+            unit_box.operator(
+                "truescale_unfold.calibrate_scale",
+                text="選択した辺を基準に決める",
+                icon='DRIVER_DISTANCE',
+            )
 
         active_source = _pattern_seam_source(context)
         if active_source is not None:
@@ -11817,6 +11958,7 @@ classes = (
     TSUNFOLD_OT_place_arrow,
     TSUNFOLD_OT_delete_last_annotation,
     TSUNFOLD_OT_clear_annotations,
+    TSUNFOLD_OT_calibrate_scale,
     TSUNFOLD_OT_mark_seam,
     TSUNFOLD_OT_clear_seam,
     TSUNFOLD_OT_unfold_real_mesh,
@@ -11880,6 +12022,39 @@ def register():
 
     for cls in classes:
         bpy.utils.register_class(cls)
+
+    bpy.types.Scene.tsunfold_scale_mode = EnumProperty(
+        name="実寸の基準",
+        description="1 Blender Unit を何ミリとして扱うかの決め方",
+        items=[
+            (
+                "SCENE",
+                "シーンに従う",
+                "Scene の Unit Scale をそのまま使う",
+            ),
+            (
+                "MANUAL",
+                "このアドオンで指定",
+                "シーンの Unit Scale を使わず、下の値で換算する",
+            ),
+        ],
+        default="SCENE",
+        update=_pattern_setting_updated,
+    )
+
+    bpy.types.Scene.tsunfold_manual_mm_per_bu = FloatProperty(
+        name="1 BU の長さ (mm)",
+        description=(
+            "「このアドオンで指定」のときに使う換算値。"
+            "シーンの Unit Scale は変更しません"
+        ),
+        default=1000.0,
+        min=0.000001,
+        soft_min=0.01,
+        soft_max=10000.0,
+        precision=4,
+        update=_pattern_setting_updated,
+    )
 
     # シーム化の対称オプション。
     # _apply_selected_edges_seam_strict_symmetry と
