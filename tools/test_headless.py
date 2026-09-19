@@ -767,6 +767,115 @@ def test_every_marking_setting_updates_immediately():
     )
 
 
+def add_manual_notch(source, edge_index=0, t=0.5):
+    """手動で置いた合印を1つ足す。"""
+    from truescale import unfold as U
+
+    items = U._pattern_get_annotations(source)
+    items.append({
+        "type": "notch_edge",
+        "edge": int(edge_index),
+        "t": float(t),
+        "color": [1.0, 0.0, 0.0],
+        "auto": False,
+    })
+    U._pattern_set_annotations(source, items)
+
+
+def count_notches(source):
+    from truescale import unfold as U
+
+    auto = manual = 0
+    for item in U._pattern_get_annotations(source):
+        if item.get("type") != "notch_edge":
+            continue
+        if bool(item.get("auto", False)):
+            auto += 1
+        else:
+            manual += 1
+    return auto, manual
+
+
+@test
+def test_remove_all_notches_removes_manual_too():
+    """「合印削除」はオートと手動の両方を消す。
+
+    以前はオートだけを消すオペレータに繋がっており、
+    手動で置いた合印が残っていた。
+    """
+    reset_scene()
+    import truescale
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    # 手動合印を2つ足す
+    seam_edges = [e.index for e in obj.data.edges if e.use_seam][:2]
+    for index in seam_edges:
+        add_manual_notch(obj, index)
+
+    auto, manual = count_notches(obj)
+    check(auto > 0, "オート合印が無い")
+    check(manual == 2, f"手動合印が2個でない: {manual}")
+
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.truescale_unfold.remove_all_notches()
+
+    auto, manual = count_notches(obj)
+    check(auto == 0, f"オート合印が残っている: {auto}")
+    check(manual == 0, f"手動合印が残っている: {manual}")
+
+
+@test
+def test_remove_auto_notches_keeps_manual():
+    """「オートだけ削除」は手動の合印を残す。"""
+    reset_scene()
+    import truescale
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    seam_edges = [e.index for e in obj.data.edges if e.use_seam][:3]
+    for index in seam_edges:
+        add_manual_notch(obj, index)
+
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.truescale_unfold.remove_auto_notches()
+
+    auto, manual = count_notches(obj)
+    check(auto == 0, f"オート合印が残っている: {auto}")
+    check(manual == 3, f"手動合印が消えている: {manual}")
+
+
+@test
+def test_remove_all_notches_keeps_other_marks():
+    """合印を消しても他のマーキングは残る。"""
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    # 合印以外の注記を1つ足しておく
+    items = U._pattern_get_annotations(obj)
+    items.append({"type": "text", "value": "テスト", "color": [0, 0, 0]})
+    U._pattern_set_annotations(obj, items)
+
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.truescale_unfold.remove_all_notches()
+
+    kinds = [
+        item.get("type")
+        for item in U._pattern_get_annotations(obj)
+    ]
+    check("notch_edge" not in kinds, f"合印が残っている: {kinds}")
+    check("text" in kinds, f"他のマーキングまで消えている: {kinds}")
+
+
 @test
 def test_notch_status_text():
     """合印の状態表示が状況に応じて変わる。"""

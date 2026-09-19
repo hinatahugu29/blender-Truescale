@@ -915,6 +915,22 @@ def _pattern_scale_warnings(context, unfold_obj):
     return lines
 
 
+def _pattern_manual_notch_count(context):
+    """手動で置かれた合印の数。"""
+    source = _pattern_seam_source(context)
+    if source is None:
+        source = _pattern_source_object_from_context(context)
+
+    if source is None or source.type != 'MESH':
+        return 0
+
+    return sum(
+        1
+        for item in _pattern_get_annotations(source)
+        if item.get("type") == "notch_edge" and not bool(item.get("auto", False))
+    )
+
+
 def _pattern_notch_status_text(context):
     """パネルに出す合印の現状。
 
@@ -3941,7 +3957,10 @@ class TSUNFOLD_OT_refresh_auto_notches(bpy.types.Operator):
 
 class TSUNFOLD_OT_remove_auto_notches(bpy.types.Operator):
     bl_idname = "truescale_unfold.remove_auto_notches"
-    bl_label = "オート合印を削除"
+    bl_label = "オート合印だけ削除"
+    bl_description = (
+        "自動生成した合印だけを削除します。手動で置いた合印は残します"
+    )
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -3951,6 +3970,51 @@ class TSUNFOLD_OT_remove_auto_notches(bpy.types.Operator):
 
         count = _pattern_remove_auto_notches(source)
         self.report({'INFO'}, f"オート合印を {count} 個削除しました")
+        return {'FINISHED'}
+
+
+class TSUNFOLD_OT_remove_all_notches(bpy.types.Operator):
+    bl_idname = "truescale_unfold.remove_all_notches"
+    bl_label = "合印を削除"
+    bl_description = (
+        "オートと手動の両方の合印を削除します。"
+        "型紙IDや矢印など他のマーキングは残します"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return _pattern_source_object_from_context(context) is not None
+
+    def execute(self, context):
+        source = _pattern_source_object_from_context(context)
+        if source is None:
+            return {'CANCELLED'}
+
+        items = _pattern_get_annotations(source)
+        auto = manual = 0
+        remaining = []
+
+        for item in items:
+            if item.get("type") == "notch_edge":
+                if bool(item.get("auto", False)):
+                    auto += 1
+                else:
+                    manual += 1
+                continue
+            remaining.append(item)
+
+        if auto == 0 and manual == 0:
+            self.report({'INFO'}, "削除する合印がありません")
+            return {'CANCELLED'}
+
+        _pattern_set_annotations(source, remaining)
+
+        detail = f"（オート {auto} / 手動 {manual}）" if manual else ""
+        self.report(
+            {'INFO'},
+            f"合印を {auto + manual} 個削除しました{detail}",
+        )
         return {'FINISHED'}
 
 
@@ -11661,8 +11725,11 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 "truescale_unfold.refresh_auto_notches",
                 text="作成 / 更新",
             )
+            # ラベルどおり、オートと手動の両方を消す。
+            # 以前はオートだけを消すオペレータに繋がっており、
+            # 手動で置いた合印が残って戸惑う原因になっていた。
             row.operator(
-                "truescale_unfold.remove_auto_notches",
+                "truescale_unfold.remove_all_notches",
                 text="合印削除",
                 icon='X',
             )
@@ -11670,6 +11737,15 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             # 今いくつ合印があるのかを出す。
             # これが無いと、設定を変えても効いているのか分からなかった。
             notch_box.label(text=_pattern_notch_status_text(context))
+
+            # 手動で置いた合印があるときだけ、残す選択肢も出す。
+            # 常に2つ並べると、違いが分からず選べない。
+            if _pattern_manual_notch_count(context) > 0:
+                notch_box.operator(
+                    "truescale_unfold.remove_auto_notches",
+                    text="オートだけ削除（手動は残す）",
+                    icon='X',
+                )
 
         if scene.tsunfold_notch_mode != "NONE":
             notch_box.operator(
@@ -11973,6 +12049,7 @@ classes = (
     TSUNFOLD_OT_pick_corresponding_island,
     TSUNFOLD_OT_build_pattern,
     TSUNFOLD_OT_remove_auto_notches,
+    TSUNFOLD_OT_remove_all_notches,
     TSUNFOLD_OT_refresh_auto_notches,
     TSUNFOLD_OT_reset_number,
     TSUNFOLD_OT_delete_last_type,
