@@ -847,6 +847,70 @@ def _pattern_workflow_status(context):
     )
 
 
+def _pattern_scale_warnings(context, unfold_obj):
+    """型紙が用紙に対して極端に大きい／小さい場合の注意を返す。
+
+    Unit Scale が 1 のままだと 1 BU = 1000 mm 換算になり、Blenderの
+    デフォルト円柱（半径1 BU）が直径2メートルの物体として扱われる。
+    その状態では
+      - 用紙ガイドが画面上でほぼ点にしかならない
+      - 自動レイアウトが必ず失敗する
+      - 300dpi PNG がピクセル数の上限を超える
+      - 実寸で正しいはずの合印が小さすぎて見えない
+    が同時に起きるが、どれも「なぜそうなるか」が画面に出ていなかった。
+    """
+    size = _object_xy_size_mm(context, unfold_obj)
+    if not size:
+        return []
+
+    width_mm, height_mm = size
+    longest = max(width_mm, height_mm)
+    if longest <= 0.0:
+        return []
+
+    paper_w, paper_h = _paper_dimensions_mm(context.scene)
+    paper_longest = max(paper_w, paper_h)
+
+    lines = []
+
+    # 用紙に対して大きすぎる
+    if longest > paper_longest:
+        ratio = longest / paper_longest
+        lines.append(
+            f"用紙 {_paper_display_name(context.scene)} の約 {ratio:.1f} 倍です"
+        )
+
+        fits = [
+            name for name, (pw, ph) in sorted(
+                PAPER_SIZES_MM.items(),
+                key=lambda kv: kv[1][0] * kv[1][1],
+            )
+            if width_mm <= max(pw, ph) and height_mm <= min(pw, ph)
+            or width_mm <= min(pw, ph) and height_mm <= max(pw, ph)
+        ]
+        if fits:
+            lines.append(f"{fits[0]} なら収まります")
+        else:
+            lines.append("A0でも収まりません。分割が必要です")
+
+    # 合印が小さすぎて見えない
+    notch_mm = float(getattr(context.scene, "tsunfold_notch_length_mm", 6.0))
+    if notch_mm > 0.0 and longest / notch_mm > 300.0:
+        lines.append(
+            f"合印 {notch_mm:.1f} mm は型紙に対して小さすぎます"
+        )
+
+    # 原因が Unit Scale にありそうな場合だけ添える
+    if lines:
+        scale, mm_per_bu = _scene_unit_summary(context.scene)
+        if mm_per_bu >= 100.0:
+            lines.append(
+                f"Unit Scale {scale:g}（1 BU = {mm_per_bu:g} mm）を確認してください"
+            )
+
+    return lines
+
+
 def _pattern_notch_status_text(context):
     """パネルに出す合印の現状。
 
@@ -11302,6 +11366,10 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
         status_box.label(text=current, icon=icon)
         if next_step:
             status_box.label(text=next_step, icon='FORWARD')
+
+        if unfold_obj is not None:
+            for warning in _pattern_scale_warnings(context, unfold_obj):
+                status_box.label(text=warning, icon='ERROR')
 
         source_box = layout.box()
         source_box.label(text="1. モデルと型紙")

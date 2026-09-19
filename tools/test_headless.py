@@ -471,6 +471,55 @@ def test_workflow_status_progresses():
 
 
 @test
+def test_scale_warning_for_oversized_pattern():
+    """用紙より極端に大きい型紙には警告が出る。
+
+    Unit Scale が 1 のままだと 1 BU = 1000 mm 換算になり、
+    デフォルトの立方体でも2メートルの型紙になる。
+    この状態では用紙に収まらず、合印も小さすぎて見えない。
+    """
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    scene = bpy.context.scene
+    scene.unit_settings.scale_length = 1.0   # 1 BU = 1000 mm
+
+    obj = make_seamed_cube(size=2.0)         # 2 BU = 2000 mm の立方体
+    unfold = build_pattern_for(obj)
+
+    warnings = U._pattern_scale_warnings(bpy.context, unfold)
+    check(warnings, "大きすぎる型紙に警告が出ない")
+
+    joined = " / ".join(warnings)
+    check("倍" in joined, f"用紙比の警告が無い: {joined}")
+    check("Unit Scale" in joined, f"Unit Scale の案内が無い: {joined}")
+    check(
+        any("合印" in line for line in warnings),
+        f"合印が小さすぎる警告が無い: {joined}",
+    )
+
+
+@test
+def test_no_scale_warning_at_sane_scale():
+    """用紙に収まる型紙では警告を出さない。"""
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    truescale.register()
+
+    scene = bpy.context.scene
+    scene.unit_settings.scale_length = 0.001   # 1 BU = 1 mm
+
+    obj = make_seamed_cube(size=40.0)          # 40 BU = 40 mm の立方体
+    unfold = build_pattern_for(obj)
+
+    warnings = U._pattern_scale_warnings(bpy.context, unfold)
+    check(not warnings, f"妥当な寸法なのに警告が出ている: {warnings}")
+
+
+@test
 def test_notch_status_text():
     """合印の状態表示が状況に応じて変わる。"""
     reset_scene()
