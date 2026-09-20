@@ -915,6 +915,92 @@ def test_notch_status_text():
 
 
 # ============================================================
+# marking.placement
+#   mathutils が要るので Blender の中でしか動かせない
+# ============================================================
+
+@test
+def test_alpha_label_sequence():
+    """型紙IDのアルファベットが桁上がりする。
+
+    A〜Z のあとは AA になる。26進数ではなく Excel の列名と同じ数え方。
+    """
+    from truescale.marking import placement as _placement
+
+    check(_placement.alpha_label(0) == "A", "0 が A でない")
+    check(_placement.alpha_label(25) == "Z", "25 が Z でない")
+    check(_placement.alpha_label(26) == "AA", "26 が AA でない")
+    check(_placement.alpha_label(27) == "AB", "27 が AB でない")
+    check(_placement.alpha_label(51) == "AZ", "51 が AZ でない")
+    check(_placement.alpha_label(52) == "BA", "52 が BA でない")
+
+
+@test
+def test_alpha_label_is_unique():
+    """先頭200件に重複が無い。"""
+    from truescale.marking import placement as _placement
+
+    labels = [_placement.alpha_label(i) for i in range(200)]
+    check(len(set(labels)) == 200, "重複したIDがある")
+
+
+@test
+def test_arrow_geometry_is_centered():
+    """矢印は指定した中心をまたぎ、長さも指定どおり。"""
+    from truescale.marking import placement as _placement
+
+    center = Vector((5.0, 3.0, 0.0))
+    direction = Vector((0.0, 1.0, 0.0))
+
+    start, end, head_a, head_b = _placement.arrow_geometry_local(
+        center, direction, length=10.0, head=2.0
+    )
+
+    close((end - start).length, 10.0, 1e-9, "軸の長さ")
+    midpoint = (start + end) * 0.5
+    close((midpoint - center).length, 0.0, 1e-9, "中心がずれている")
+
+    # 矢尻は先端側にあり、左右対称
+    check((head_a - end).length < (head_a - start).length, "矢尻が先端側でない")
+    close(
+        (head_a - end).length, (head_b - end).length, 1e-9,
+        "矢尻が左右対称でない",
+    )
+
+
+@test
+def test_arrow_geometry_handles_zero_direction():
+    """方向がゼロでも破綻しない。"""
+    from truescale.marking import placement as _placement
+
+    start, end, _, _ = _placement.arrow_geometry_local(
+        Vector((0.0, 0.0, 0.0)), Vector((0.0, 0.0, 0.0)), 4.0, 1.0
+    )
+    close((end - start).length, 4.0, 1e-9, "長さが保たれていない")
+
+
+@test
+def test_arrow_head_never_exceeds_shaft():
+    """矢尻が軸より長くならない。
+
+    短い矢印でヘッド長を大きくすると、矢尻が根元を突き抜けてしまう。
+    """
+    from truescale.marking import placement as _placement
+
+    for length in (0.5, 1.0, 5.0):
+        start, end, head_a, head_b = _placement.arrow_geometry_local(
+            Vector((0.0, 0.0, 0.0)), Vector((1.0, 0.0, 0.0)),
+            length=length, head=100.0,
+        )
+        shaft = (end - start).length
+        for point in (head_a, head_b):
+            check(
+                (point - end).length <= shaft + 1e-9,
+                f"長さ {length} で矢尻が軸を超えた",
+            )
+
+
+# ============================================================
 # 実行
 # ============================================================
 
