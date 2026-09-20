@@ -116,14 +116,13 @@ def _tsunfold_reset_overlays_on_load(_dummy=None):
         except Exception:
             _debug.swallowed("unfold._tsunfold_reset_overlays_on_load")
         try:
-            scene[_session.MARKING_SESSION_ACTIVE] = False
-            scene[_session.MARKING_FINISH_REQUESTED] = False
-            scene[_session.MARKING_PREV_ACTIVE] = ""
-            scene[_session.MARKING_PREV_SELECTED_JSON] = "[]"
-            scene[_session.MARKING_PREV_MODE] = "OBJECT"
-            scene[_session.SEAM_SOURCE] = ""
-            scene[_session.SEAM_PREVIEW_READY] = False
-            scene[_session.MODAL_RUNNING] = False
+            # 作業状態のキーは session が一覧を持っている。ここで
+            # 書き写すと、足したキーが片方にだけ入って食い違う。
+            # 実際、手動レイアウト中かどうかのキーが漏れていて、
+            # その状態で保存すると開き直しても解除されなかった。
+            # 解除されないと注記が一切描かれない。
+            _session.reset_on_load(scene)
+
             scene.tsunfold_active_tool = "NONE"
             scene.tsunfold_correspondence_mode = False
             scene.tsunfold_auto_island_ids = True
@@ -135,6 +134,10 @@ def _tsunfold_reset_overlays_on_load(_dummy=None):
             scene.tsunfold_notch_mode = "AUTO"
             scene.tsunfold_auto_notch_divisions = "3"
             scene.tsunfold_pattern_preview = False
+
+            # 退避は session の初期化対象に入れていない（解除時の
+            # 戻し先が消えるため）。ファイルを開いた直後は前回の
+            # 退避が意味を持たないので、ここで空にする。
             scene[_session.PREVIEW_SOURCE_NAME] = ""
             scene[_session.PREVIEW_SOURCE_HIDE_GET] = False
             scene[_session.PREVIEW_SOURCE_HIDE_VIEWPORT] = False

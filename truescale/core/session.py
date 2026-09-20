@@ -66,6 +66,10 @@ RESET_ON_LOAD = {
     MANUAL_LAYOUT_ACTIVE: False,
 }
 
+# 印刷プレビューの退避（PREVIEW_SOURCE_*）はここに入れない。
+# 「プレビューを始める前、元モデルは見えていたか」が入っており、
+# 消すとプレビューを解除したときに戻す先が分からなくなる。
+
 
 def get(scene, key, default=None):
     """値を読む。未設定なら default。"""

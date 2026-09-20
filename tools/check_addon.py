@@ -11,6 +11,7 @@ Blenderを起動せずに、以下のズレを検出する。
   6. register されているがどこからも参照されていない Scene プロパティ
   7. どこからも呼ばれていないモジュール直下の関数
   8. 未定義のまま読まれている名前（実行時に NameError になる）
+  9. ローカル変数が同名の関数を隠している（UnboundLocalError）
 
 使い方:
     python tools/check_addon.py truescale/unfold/__init__.py
@@ -114,12 +115,16 @@ class AddonAnalyzer(ast.NodeVisitor):
     def visit_Assign(self, node):
         for target in node.targets:
             # classes = (...)
-            if (isinstance(target, ast.Name)
-                    and target.id == "classes"
-                    and isinstance(node.value, (ast.Tuple, ast.List))):
-                for elt in node.value.elts:
-                    if isinstance(elt, ast.Name):
-                        self.registered_classes.append(elt.id)
+            #
+            # 分割後は classes = ops.classes + (Panel,) のように
+            # 足し算で組み立てる。タプルだけを見ていると、足された
+            # 側のクラスが「登録されていない」と誤って出る。
+            if isinstance(target, ast.Name) and target.id == "classes":
+                for sub in ast.walk(node.value):
+                    if isinstance(sub, (ast.Tuple, ast.List)):
+                        for elt in sub.elts:
+                            if isinstance(elt, ast.Name):
+                                self.registered_classes.append(elt.id)
 
             # モジュール直下の NAME = "文字列"
             if (isinstance(target, ast.Name)
@@ -292,6 +297,59 @@ def undefined_names(path):
     )
 
 
+def shadowed_functions(path):
+    """モジュール直下の関数を、ローカル変数が隠している箇所を返す。
+
+    分割で関数名を短くしたとき、呼び出し側に同じ名前のローカル変数が
+    あると、Python はその関数の中の名前を全てローカル扱いにする。
+    代入の右辺で読んだ時点で UnboundLocalError になる。
+
+        def variants(scene): ...
+
+        def apply(context):
+            variants = variants(context.scene)   # ここで落ちる
+
+    呼び出しがある場合だけ報告する。同名のローカル変数があるだけなら
+    動くので、そこまで挙げると多すぎて読まれなくなる。
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError:
+        return []
+
+    module_functions = {
+        n.name for n in tree.body if isinstance(n, ast.FunctionDef)
+    }
+    found = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+
+        assigned = {
+            sub.id
+            for sub in ast.walk(node)
+            if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store)
+        }
+        for name in sorted((assigned & module_functions) - {node.name}):
+            call = next(
+                (
+                    sub
+                    for sub in ast.walk(node)
+                    if isinstance(sub, ast.Call)
+                    and isinstance(sub.func, ast.Name)
+                    and sub.func.id == name
+                ),
+                None,
+            )
+            if call is not None:
+                found.append(
+                    f"{name}  (行 {call.lineno} / {node.name} のローカル変数が隠している)"
+                )
+
+    return found
+
+
 def collect_references(paths):
     """複数ファイルから、名前とプロパティの参照だけを集める。
 
@@ -306,6 +364,8 @@ def collect_references(paths):
     patterns = set()
     names = set()
     operators = set()
+    defined = set()
+    registered = set()
 
     for path in paths:
         try:
@@ -319,8 +379,14 @@ def collect_references(paths):
         names.update(analyzer.name_loads)
         operators.update(analyzer.referenced_operators)
         operators.update(analyzer.called_operators)
+        defined.update(
+            info["bl_idname"]
+            for info in analyzer.classes.values()
+            if info["bl_idname"] and "Operator" in info["bases"]
+        )
+        registered.update(analyzer.registered_classes)
 
-    return props, patterns, names, operators
+    return props, patterns, names, operators, defined, registered
 
 
 def analyze(path: Path, extra=None):
@@ -331,7 +397,7 @@ def analyze(path: Path, extra=None):
 
     # 他のファイルからの参照も合わせる
     if extra is not None:
-        extra_props, extra_patterns, extra_names, extra_ops = extra
+        extra_props, extra_patterns, extra_names, extra_ops, _, _ = extra
         for name in extra_props:
             analyzer.referenced_props.setdefault(name, [])
         analyzer.dynamic_prop_patterns.update(extra_patterns)
@@ -359,19 +425,31 @@ def analyze(path: Path, extra=None):
     def is_addon_prop(name):
         return any(name.startswith(p + "_") for p in prefixes)
 
+    # 登録は別のファイルで行うことがある（パネルと登録本体のように）。
+    registered_anywhere = set(analyzer.registered_classes)
+    if extra is not None:
+        registered_anywhere |= extra[5]
+
     problems = []
 
     # 1. 参照されているが実装されていないオペレータ
+    #
+    # 実装は隣のファイルにあることがある（パネルと ops/ のように）。
+    # 参照と同じく、実装もパッケージ全体から集めて判定する。
+    implemented = set(defined_operators)
+    if extra is not None:
+        implemented |= extra[4]
+
     missing = {
         idname: lines
         for idname, lines in analyzer.referenced_operators.items()
-        if idname not in defined_operators
+        if idname not in implemented
     }
     # bpy.ops 経由の呼び出しも対象にする（Blender標準のものは除く）
-    known_namespaces = {idname.split(".")[0] for idname in defined_operators}
+    known_namespaces = {idname.split(".")[0] for idname in implemented}
     for idname, lines in analyzer.called_operators.items():
         namespace = idname.split(".")[0]
-        if namespace in known_namespaces and idname not in defined_operators:
+        if namespace in known_namespaces and idname not in implemented:
             missing.setdefault(idname, []).extend(lines)
 
     if missing:
@@ -397,7 +475,7 @@ def analyze(path: Path, extra=None):
     unregistered = sorted(
         f"{name}  ({', '.join(info['bases'])})"
         for name, info in registrable.items()
-        if name not in analyzer.registered_classes
+        if name not in registered_anywhere
     )
     if unregistered:
         problems.append(("classes に登録されていないクラス", unregistered))
@@ -455,6 +533,13 @@ def analyze(path: Path, extra=None):
             ("どこからも呼ばれていないモジュール直下の関数", dead_functions)
         )
 
+    shadowed = shadowed_functions(path)
+    if shadowed:
+        problems.append(
+            ("ローカル変数が同名の関数を隠している（UnboundLocalError）",
+             shadowed)
+        )
+
     missing_names = undefined_names(path)
     if missing_names:
         problems.append(
@@ -504,6 +589,8 @@ def main(argv):
     stray = []
     for p in others:
         for item in undefined_names(p):
+            stray.append(f"{p}: {item}")
+        for item in shadowed_functions(p):
             stray.append(f"{p}: {item}")
     if stray:
         print("=" * 72)

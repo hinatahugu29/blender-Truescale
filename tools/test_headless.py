@@ -1057,6 +1057,152 @@ def test_arrow_head_never_exceeds_shaft():
 
 
 # ============================================================
+# ファイルを開いたときの初期化
+# ============================================================
+
+@test
+def test_load_resets_work_state():
+    """開いたときに、作業中だった状態が全部解除される。
+
+    手動レイアウト中のフラグが解除されずに残ると、開き直しても
+    注記が一切描かれない。レイアウト編集中は描画を止める作りの
+    ためで、「マーキングが出ない」という形でしか現れない。
+
+    初期化の一覧は session が持っているのに、ハンドラ側が同じ
+    内容を書き写していて、このキーだけ漏れていた。
+    """
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    from truescale.core import session as SES
+    truescale.register()
+
+    scene = bpy.context.scene
+    for key, value in SES.RESET_ON_LOAD.items():
+        # わざと「作業中」の値を入れる
+        scene[key] = "dirty" if isinstance(value, str) else True
+
+    U._tsunfold_reset_overlays_on_load()
+
+    for key, value in SES.RESET_ON_LOAD.items():
+        check(
+            scene.get(key) == value,
+            f"開いたときに解除されていない: {key} = {scene.get(key)!r}",
+        )
+
+
+# ============================================================
+# シーム
+# ============================================================
+
+@test
+def test_mark_and_clear_seam():
+    """選択した辺にシームを入れ、また外せる。
+
+    型紙作りの最初の操作。ここが通らないと先へ進めないのに、
+    テストが無かった。分割で関数名を短くしたとき、呼び出し側の
+    ローカル変数と衝突して UnboundLocalError で落ちていた。
+    """
+    reset_scene()
+    import truescale
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    for edge in obj.data.edges:
+        edge.use_seam = False
+    obj.data.update()
+
+    # 辺を2本だけ選ぶ
+    for edge in obj.data.edges:
+        edge.select = False
+    picked = [0, 1]
+    for index in picked:
+        obj.data.edges[index].select = True
+
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    result = bpy.ops.truescale_unfold.mark_seam()
+    check(result == {'FINISHED'}, f"シームを入れられない: {result}")
+
+    marked = [e.index for e in obj.data.edges if e.use_seam]
+    check(
+        set(picked) <= set(marked),
+        f"選んだ辺にシームが入っていない: {marked}",
+    )
+
+    for edge in obj.data.edges:
+        edge.select = edge.index in picked
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    result = bpy.ops.truescale_unfold.clear_seam()
+    check(result == {'FINISHED'}, f"シームを外せない: {result}")
+
+    # 編集モードのままだと、メッシュへ書き戻される前の値を読む。
+    if obj.mode == 'EDIT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+    check(
+        not any(e.use_seam for e in obj.data.edges if e.index in picked),
+        "外したはずの辺にシームが残っている",
+    )
+
+
+@test
+def test_mark_seam_with_symmetry():
+    """左右対称がONなら、反対側の辺にも入る。
+
+    対称の組み合わせを返す関数が、呼び出し側のローカル変数に
+    隠されて落ちていた箇所。
+    """
+    reset_scene()
+    import truescale
+    from truescale.marking import symmetry as SYM
+    truescale.register()
+
+    scene = bpy.context.scene
+    scene.tsunfold_seam_symmetry_x = True
+
+    variants = SYM.mirror_variants(scene)
+    check(
+        (True, False, False) in variants,
+        f"X対称が組み合わせに含まれない: {variants}",
+    )
+
+    obj = make_seamed_cube(size=2.0)
+    for edge in obj.data.edges:
+        edge.use_seam = False
+        edge.select = False
+    obj.data.update()
+
+    # X方向に振れている辺を1本選ぶ（鏡映先が別の辺になるもの）
+    picked = None
+    for edge in obj.data.edges:
+        a = obj.data.vertices[edge.vertices[0]].co
+        b = obj.data.vertices[edge.vertices[1]].co
+        if abs(a.x - b.x) < 1e-6 and abs(a.x) > 1e-6:
+            picked = edge.index
+            break
+    check(picked is not None, "対称にできる辺が見つからない")
+
+    obj.data.edges[picked].select = True
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    result = bpy.ops.truescale_unfold.mark_seam()
+    check(result == {'FINISHED'}, f"対称ONでシームを入れられない: {result}")
+
+    marked = [e.index for e in obj.data.edges if e.use_seam]
+    check(picked in marked, "選んだ辺にシームが入っていない")
+    check(len(marked) >= 2, f"対称側にシームが入っていない: {marked}")
+
+
+# ============================================================
 # 注記の色
 # ============================================================
 

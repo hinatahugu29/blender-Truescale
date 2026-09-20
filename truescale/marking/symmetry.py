@@ -108,7 +108,12 @@ def find_mirrored_edge(
     return None
 
 
-def variants(scene):
+def mirror_variants(scene):
+    """どの軸で鏡映するかの組み合わせ。
+
+    設定でXとYが有効なら、X反転・Y反転・XY反転の3通りを返す
+    （無反転を含む4通りから、呼ぶ側が無反転を飛ばす）。
+    """
     use_x = bool(getattr(scene, "tsunfold_seam_symmetry_x", False))
     use_y = bool(getattr(scene, "tsunfold_seam_symmetry_y", False))
     use_z = bool(getattr(scene, "tsunfold_seam_symmetry_z", False))
@@ -166,7 +171,7 @@ def apply_to_selected_edges(context, clear=False):
         return 0
 
     targets = set(e.index for e in selected)
-    variants = variants(context.scene)
+    variants = mirror_variants(context.scene)
 
     for edge in selected:
         for mx, my, mz in variants:
