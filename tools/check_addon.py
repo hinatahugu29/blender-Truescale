@@ -15,6 +15,7 @@ Blenderを起動せずに、以下のズレを検出する。
  10. @persistent が付いていないハンドラ
  11. return などの後ろに置かれて実行されないコード
  12. くだけた言い回し（利用者が読む文章に混ざったもの）
+ 13. 用語の揺れ（縮率 → 縮尺 など）
 
 使い方:
     python tools/check_addon.py truescale/unfold/__init__.py
@@ -488,6 +489,33 @@ CASUAL_WORDS = (
 )
 
 
+# 図面で使う語に揃えるもの。くだけているのではなく、用語が違う。
+#
+#   縮率 … 設定の中身は 1:N の N なので、縮尺が正しい
+WRONG_TERMS = {
+    "縮率": "縮尺",
+}
+
+
+def wrong_terms(path):
+    """使うべきでない用語を含む行を返す。"""
+    try:
+        source = path.read_text(encoding="utf-8")
+    except Exception:
+        return []
+
+    found = []
+    for number, line in enumerate(source.split(chr(10)), 1):
+        for wrong, right in WRONG_TERMS.items():
+            if wrong in line:
+                found.append(
+                    f"行 {number}: 「{wrong}」は「{right}」へ  "
+                    f"{line.strip()[:50]}"
+                )
+                break
+    return found
+
+
 def casual_wording(path):
     """くだけた言い回しを含む文字列とコメントを返す。"""
     try:
@@ -699,6 +727,10 @@ def analyze(path: Path, extra=None):
             ("どこからも呼ばれていないモジュール直下の関数", dead_functions)
         )
 
+    terms = wrong_terms(path)
+    if terms:
+        problems.append(("用語の揺れ", terms))
+
     casual = casual_wording(path)
     if casual:
         problems.append(
@@ -780,6 +812,8 @@ def main(argv):
         for item in unreachable_code(p):
             stray.append(f"{p}: {item}")
         for item in casual_wording(p):
+            stray.append(f"{p}: {item}")
+        for item in wrong_terms(p):
             stray.append(f"{p}: {item}")
     if stray:
         print("=" * 72)

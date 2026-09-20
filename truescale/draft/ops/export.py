@@ -55,7 +55,7 @@ class TSDRAFT_OT_preview_three_view_sheet(bpy.types.Operator):
 class TSDRAFT_OT_export_three_view_sheet(bpy.types.Operator, ExportHelper):
     bl_idname = 'truescale_draft.export_three_view_sheet'
     bl_label = '三面図シートを書き出し'
-    bl_description = '上面・前面・側面を選択した用紙サイズと縮率で1枚のPNG図面にまとめます'
+    bl_description = '上面・前面・側面を選択した用紙サイズと縮尺で1枚のPNG図面にまとめます'
 
     filename_ext = '.png'
     filter_glob: bpy.props.StringProperty(default='*.png', options={'HIDDEN'})

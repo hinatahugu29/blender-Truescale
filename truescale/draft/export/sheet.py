@@ -523,7 +523,7 @@ def tsdraft_make_three_view_sheet_png(scene, filepath, exported):
         raise RuntimeError(
             f'{paper}・1:{denominator:g} では三面図が収まりませんでした'
             f'（必要目安 {need_w + 24.0:.1f}×{need_h + 24.0:.1f}mm）。'
-            '用紙を大きくするか縮率を下げてください'
+            '用紙を大きくするか、縮尺の N を大きくしてください（1:2 → 1:5 など）'
         )
 
     orient_name, page_w, page_h, positions = chosen

@@ -155,7 +155,7 @@ class TSDRAFT_PT_main(bpy.types.Panel):
             row = sheet.row(align=True)
             row.prop(context.scene, "tsdraft_sheet_custom_width_mm", text="幅(mm)")
             row.prop(context.scene, "tsdraft_sheet_custom_height_mm", text="高さ(mm)")
-        sheet.prop(context.scene, "tsdraft_sheet_scale", text="縮率")
+        sheet.prop(context.scene, "tsdraft_sheet_scale", text="縮尺")
         if context.scene.tsdraft_sheet_scale == 'CUSTOM':
             sheet.prop(context.scene, "tsdraft_sheet_custom_scale", text="1 :")
         row = sheet.row(align=True)

@@ -331,19 +331,19 @@ def register():
     )
 
     bpy.types.Scene.tsdraft_sheet_scale = bpy.props.EnumProperty(
-        name="縮率",
+        name="縮尺",
         items=(
             ('1_1', "1:1", "原寸"),
             ('1_2', "1:2", "50%"),
             ('1_5', "1:5", "20%"),
             ('1_10', "1:10", "10%"),
-            ('CUSTOM', "任意", "任意の縮率"),
+            ('CUSTOM', "任意", "任意の縮尺"),
         ),
         default='1_1'
     )
 
     bpy.types.Scene.tsdraft_sheet_custom_scale = bpy.props.FloatProperty(
-        name="任意縮率",
+        name="任意縮尺",
         description="1:N の N を指定します",
         default=2.0,
         min=1.0,
