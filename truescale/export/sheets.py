@@ -12,6 +12,12 @@
 
 多くしても読めない。貼るのに要るものだけにする。
 
+■ 目印は必ず刷れる場所へ置く
+
+余白はプリンタが刷れない縁なので、そこへ描いたものは出ない。
+以前は目盛りを端から 3.2mm の位置に描いていた（余白 8mm の指定と
+矛盾していた）。刷れる範囲の中に帯を確保し、そこへ置く。
+
 ■ 目盛りを必ず入れる理由
 
 印刷のとき「用紙に合わせる」を選ぶと数パーセント縮む。分割の
@@ -37,13 +43,31 @@ BLACK = (0.0, 0.0, 0.0)
 class Sheet:
     """1枚分の内容。座標はミリ、紙の左下が原点。"""
 
-    def __init__(self, paper_w, paper_h, label=""):
+    def __init__(self, paper_w, paper_h, label="", margin=None):
         self.paper_w = paper_w
         self.paper_h = paper_h
         self.label = label
         self.lines = []
+        # 刷れる範囲。None なら切らない。
+        self.printable = (
+            None
+            if margin is None
+            else (margin, margin, paper_w - margin, paper_h - margin)
+        )
 
     def add(self, x0, y0, x1, y1, color, width_mm):
+        """線を1本足す。刷れる範囲からはみ出す分は切る。
+
+        のりしろの分だけ広く描くので、そのままでは余白へ食い込む
+        ことがある。余白はプリンタが刷れない縁なので、そこへ
+        置いても出ない。切っておけば、画面で見たものと刷ったものが
+        食い違わない。
+        """
+        if self.printable is not None:
+            cut = _clip(x0, y0, x1, y1, self.printable)
+            if cut is None:
+                return
+            x0, y0, x1, y1 = cut
         self.lines.append((x0, y0, x1, y1, color, width_mm))
 
 
@@ -179,20 +203,22 @@ def _glyph(sheet, char, x, y, size):
         )
 
 
-def single(drawing, paper_w, paper_h, margin=8.0):
+def single(drawing, paper_w, paper_h, margin=8.0, footer=12.0):
     """1枚に収める。収まらないなら None。"""
     if drawing is None:
         return None
     if (drawing.width_mm > paper_w - margin * 2.0
-            or drawing.height_mm > paper_h - margin * 2.0):
+            or drawing.height_mm > paper_h - margin * 2.0 - footer):
         return None
 
-    sheet = Sheet(paper_w, paper_h)
+    sheet = Sheet(paper_w, paper_h, margin=margin)
+    origin_y = margin + footer
     for x0, y0, x1, y1, color, width in drawing.lines:
-        sheet.add(x0 + margin, y0 + margin, x1 + margin, y1 + margin,
-                  color, width)
+        sheet.add(x0 + margin, y0 + origin_y,
+                  x1 + margin, y1 + origin_y, color, width)
 
-    _ruler(sheet, margin, margin * 0.4)
+    # 目盛りは刷れる範囲の中。余白へ描くと切れて出ない。
+    _ruler(sheet, margin, margin + 2.0)
     return [sheet]
 
 
@@ -215,23 +241,24 @@ def tiled(drawing, plan_obj):
                 plan_obj.paper_w,
                 plan_obj.paper_h,
                 plan_obj.label(col, row),
+                margin=plan_obj.margin,
             )
 
             # 受け持ち範囲より、のりしろの分だけ広く描く。
             # 境目でぴたりと切ると、重ねたときに線が続いているか
             # 分からない。
             box = (x0 - bleed, y0 - bleed, x1 + bleed, y1 + bleed)
-            margin = plan_obj.margin
+            origin_x, origin_y = plan_obj.page_origin()
 
             for gx0, gy0, gx1, gy1, color, width in drawing.lines:
                 cut = _clip(gx0, gy0, gx1, gy1, box)
                 if cut is None:
                     continue
                 sheet.add(
-                    cut[0] - x0 + margin,
-                    cut[1] - y0 + margin,
-                    cut[2] - x0 + margin,
-                    cut[3] - y0 + margin,
+                    cut[0] - x0 + origin_x,
+                    cut[1] - y0 + origin_y,
+                    cut[2] - x0 + origin_x,
+                    cut[3] - y0 + origin_y,
                     color,
                     width,
                 )
@@ -243,38 +270,35 @@ def tiled(drawing, plan_obj):
 
 
 def _decorate(sheet, plan_obj, col, row):
-    """貼り合わせに要る目印を足す。"""
-    margin = plan_obj.margin
+    """貼り合わせに要る目印を足す。
+
+    どれも刷れる範囲の中に置く。余白へ描いたものは出ない。
+    """
+    left, bottom = plan_obj.page_origin()
     width = plan_obj.content_w
     height = plan_obj.content_h
+    right = left + width
+    top = bottom + height
 
     # 受け持ち範囲の枠。ここを隣の紙と合わせる。
-    sheet.add(margin, margin, margin + width, margin, GUIDE, 0.2)
-    sheet.add(margin + width, margin, margin + width, margin + height,
-              GUIDE, 0.2)
-    sheet.add(margin + width, margin + height, margin, margin + height,
-              GUIDE, 0.2)
-    sheet.add(margin, margin + height, margin, margin, GUIDE, 0.2)
+    sheet.add(left, bottom, right, bottom, GUIDE, 0.2)
+    sheet.add(right, bottom, right, top, GUIDE, 0.2)
+    sheet.add(right, top, left, top, GUIDE, 0.2)
+    sheet.add(left, top, left, bottom, GUIDE, 0.2)
 
-    for x, y in (
-        (margin, margin),
-        (margin + width, margin),
-        (margin, margin + height),
-        (margin + width, margin + height),
-    ):
+    for x, y in ((left, bottom), (right, bottom), (left, top), (right, top)):
         _cross(sheet, x, y)
 
     # タイル名は左上。紙をめくりながら探せる位置。
-    _text(sheet, sheet.label, margin + 2.0, margin + height - LABEL_MM - 2.0)
+    _text(sheet, sheet.label, left + 2.0, top - LABEL_MM - 2.0)
 
-    # 目盛りは下の余白。型紙の線と重ならないところ。
-    _ruler(sheet, margin, margin * 0.4)
-
-    # 何枚のうちの何枚目か。紙が散らばっても戻せる。
+    # 目盛りとタイルの総数は下の帯。型紙の線と重ならず、かつ
+    # 刷れる範囲に収まる。
+    _ruler(sheet, left, plan_obj.margin + 2.0)
     _text(
         sheet,
         f"{plan_obj.cols}X{plan_obj.rows}",
-        margin + width - LABEL_MM * 2.6,
-        margin * 0.4,
+        right - LABEL_MM * 2.6,
+        plan_obj.margin + 2.0,
         LABEL_MM * 0.7,
     )

@@ -25,6 +25,15 @@
 印で行う。だから、のりしろは「重ねしろ」であって「切りしろ」では
 ない。切らずに重ねて貼れる。
 
+■ 刷れる範囲の中に、型紙の場所と目印の場所を分けて持つ
+
+  余白   … プリンタが刷れない縁。ここには何も描けない
+  帯     … 目盛りとタイル名を置く場所。刷れる範囲の下側
+  受け持ち… 型紙そのものが載る場所
+
+目盛りを余白の中に描いてしまうと、刷ったときに切れて出ない。
+縮尺を確かめるためのものなので、それでは意味がない。
+
 ■ 刷るときの拡大縮小が最大の敵
 
 「用紙に合わせる」で刷ると数パーセント縮む。それだけで実寸が
@@ -42,7 +51,8 @@ class Plan:
     """
 
     def __init__(self, cols, rows, step_w, step_h, content_w, content_h,
-                 margin, overlap, paper_w, paper_h, shape_w, shape_h):
+                 margin, overlap, paper_w, paper_h, shape_w, shape_h,
+                 footer):
         self.cols = cols
         self.rows = rows
         self.step_w = step_w
@@ -55,6 +65,7 @@ class Plan:
         self.paper_h = paper_h
         self.shape_w = shape_w
         self.shape_h = shape_h
+        self.footer = footer
 
     @property
     def count(self):
@@ -69,6 +80,13 @@ class Plan:
         x0 = col * self.step_w
         y0 = row * self.step_h
         return (x0, y0, x0 + self.content_w, y0 + self.content_h)
+
+    def page_origin(self):
+        """紙の上で、受け持ち範囲の左下がどこに来るか。
+
+        下には目盛りとタイル名の帯があるので、その分だけ上へ。
+        """
+        return (self.margin, self.margin + self.footer)
 
     def label(self, col, row):
         """人が貼り合わせるときの呼び名。左上を 1-A とする。
@@ -85,11 +103,13 @@ class Plan:
         )
 
 
-def plan(shape_w, shape_h, paper_w, paper_h, margin=8.0, overlap=15.0):
+def plan(shape_w, shape_h, paper_w, paper_h, margin=8.0, overlap=15.0,
+         footer=12.0):
     """分割の計画を立てる。収まらない指定なら None。
 
     margin  … プリンタが刷れない余白。機種差を見込んで多めに取る
     overlap … 貼り合わせの重ねしろ。切らずに重ねて貼るための幅
+    footer  … 目盛りとタイル名を置く帯。刷れる範囲の中に確保する
 
     枚数は overlap にほとんど左右されない（1枚が受け持つ幅が
     減るぶん、境目が増えるだけ）。なので貼りやすさだけで決めてよい。
@@ -100,12 +120,13 @@ def plan(shape_w, shape_h, paper_w, paper_h, margin=8.0, overlap=15.0):
     paper_h = float(paper_h)
     margin = max(0.0, float(margin))
     overlap = max(0.0, float(overlap))
+    footer = max(0.0, float(footer))
 
     if shape_w <= 0.0 or shape_h <= 0.0:
         return None
 
     content_w = paper_w - margin * 2.0
-    content_h = paper_h - margin * 2.0
+    content_h = paper_h - margin * 2.0 - footer
 
     if content_w <= 0.0 or content_h <= 0.0:
         return None
@@ -132,6 +153,7 @@ def plan(shape_w, shape_h, paper_w, paper_h, margin=8.0, overlap=15.0):
         paper_h=paper_h,
         shape_w=shape_w,
         shape_h=shape_h,
+        footer=footer,
     )
 
 
@@ -190,8 +212,9 @@ def to_pixels(plan_obj, col, row, x_mm, y_mm, dpi):
     px_per_mm = float(dpi) / 25.4
     x0, y0, _, _ = plan_obj.window(col, row)
 
-    local_x = (float(x_mm) - x0) + plan_obj.margin
-    local_y = (float(y_mm) - y0) + plan_obj.margin
+    origin_x, origin_y = plan_obj.page_origin()
+    local_x = (float(x_mm) - x0) + origin_x
+    local_y = (float(y_mm) - y0) + origin_y
 
     _, height_px = pixel_size(plan_obj, dpi)
 
@@ -207,8 +230,9 @@ def from_pixels(plan_obj, col, row, px, py, dpi):
     x0, y0, _, _ = plan_obj.window(col, row)
     _, height_px = pixel_size(plan_obj, dpi)
 
-    local_x = float(px) / px_per_mm - plan_obj.margin
-    local_y = (height_px - float(py)) / px_per_mm - plan_obj.margin
+    origin_x, origin_y = plan_obj.page_origin()
+    local_x = float(px) / px_per_mm - origin_x
+    local_y = (height_px - float(py)) / px_per_mm - origin_y
 
     return (local_x + x0, local_y + y0)
 

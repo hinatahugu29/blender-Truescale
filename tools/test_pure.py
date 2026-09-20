@@ -538,6 +538,66 @@ def test_tiled_sheets_come_in_reading_order():
 
 
 @test
+def test_nothing_is_drawn_in_the_unprintable_margin():
+    """余白の中には何も描かない。
+
+    余白は「プリンタが刷れない縁」として決めたもの。そこへ描いた
+    ものは刷っても出ない。実際、縮尺を確かめるための目盛りを
+    端から 3.2mm（余白 8mm の指定の内側）に描いていたことがある。
+    出ないのでは意味がない。
+    """
+    drawing = _FakeDrawing(
+        [(0.0, 0.0, 600.0, 800.0, (0, 0, 0), 0.4),
+         (0.0, 800.0, 600.0, 0.0, (0, 0, 0), 0.4)],
+        600.0, 800.0,
+    )
+    plan = tiling.plan(600.0, 800.0, 210.0, 297.0)
+    margin = plan.margin
+
+    for sheet in sheets.tiled(drawing, plan):
+        for x0, y0, x1, y1, _, _ in sheet.lines:
+            for x, y in ((x0, y0), (x1, y1)):
+                check(
+                    margin - 1e-6 <= x <= sheet.paper_w - margin + 1e-6,
+                    f"{sheet.label}: 横が余白へ出ている x={x:.3f}",
+                )
+                check(
+                    margin - 1e-6 <= y <= sheet.paper_h - margin + 1e-6,
+                    f"{sheet.label}: 縦が余白へ出ている y={y:.3f}",
+                )
+
+
+@test
+def test_the_ruler_sits_inside_the_printable_area():
+    """目盛りが刷れる範囲の中にある。
+
+    上のテストと合わせて、目盛りが「ある」かつ「刷れる」ことを
+    まとめて保証する。
+    """
+    drawing = _FakeDrawing([(0.0, 0.0, 400.0, 500.0, (0, 0, 0), 0.4)],
+                           400.0, 500.0)
+    plan = tiling.plan(400.0, 500.0, 210.0, 297.0)
+
+    for sheet in sheets.tiled(drawing, plan):
+        ruler_y = [
+            y0
+            for x0, y0, x1, y1, _, _ in sheet.lines
+            if abs(y1 - y0) < 1e-9 and abs(abs(x1 - x0) - sheets.RULER_MM) < 1e-9
+        ]
+        check(ruler_y, f"{sheet.label} に目盛りが無い")
+        for y in ruler_y:
+            check(
+                y >= plan.margin - 1e-6,
+                f"{sheet.label}: 目盛りが余白の中にある y={y:.3f}",
+            )
+            # 型紙の載る範囲（受け持ち）より下にあること
+            check(
+                y < plan.page_origin()[1],
+                f"{sheet.label}: 目盛りが型紙の範囲に重なる y={y:.3f}",
+            )
+
+
+@test
 def test_every_sheet_carries_a_ruler():
     """どの紙にも実寸の目盛りが入る。
 
