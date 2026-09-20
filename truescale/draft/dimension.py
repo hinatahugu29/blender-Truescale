@@ -6,6 +6,15 @@
 手で書き換えたいことがある。上書きが入っていればそちらを出す。
 空文字は「消したい」ではなく「未入力」として扱い、実測値へ戻す。
 
+■ どの面図にどの軸を出すか
+
+正面図では奥行きが見えないので、その寸法を書いても読めない。
+面図ごとに意味のある2軸だけを対象にする。
+
+  上面図 … X と Y
+  正面図 … X と Z
+  側面図 … Y と Z
+
 ■ 単位
 
 mm で持ち、表示のときだけ cm / m へ直す。計算のたびに単位を
@@ -52,3 +61,35 @@ def get_axis_dimension_text(scene, axis, fallback=None):
             return get_dimension_text(scene, item)
 
     return fallback if fallback is not None else axis
+
+
+def tsdraft_svg_dimension_axes(view_key):
+    return {
+        "top": {"X", "Y"},
+        "front": {"X", "Z"},
+        "side": {"Y", "Z"},
+    }.get(view_key, set())
+
+
+def tsdraft_dimension_axis_enabled(scene, view_key, axis_name):
+    """Return whether a dimension axis should be shown for a drawing view."""
+    axis_name = str(axis_name).upper()
+    valid_axes = tsdraft_svg_dimension_axes(view_key)
+    if not valid_axes:
+        return True
+    if axis_name not in valid_axes:
+        return False
+    return bool(getattr(
+        scene,
+        f"tsdraft_show_dimension_{view_key}_{axis_name.lower()}",
+        True
+    ))
+
+
+def tsdraft_svg_view_label(view_key):
+    return {
+        "top": "上面",
+        "front": "前面",
+        "side": "側面",
+        "user": "任意",
+    }.get(view_key, view_key)

@@ -12,6 +12,7 @@ Blenderを起動せずに、以下のズレを検出する。
   7. どこからも呼ばれていないモジュール直下の関数
   8. 未定義のまま読まれている名前（実行時に NameError になる）
   9. ローカル変数が同名の関数を隠している（UnboundLocalError）
+ 10. @persistent が付いていないハンドラ
 
 使い方:
     python tools/check_addon.py truescale/unfold/__init__.py
@@ -350,6 +351,55 @@ def shadowed_functions(path):
     return found
 
 
+def handlers_without_persistent(path):
+    """bpy.app.handlers へ足している関数のうち、@persistent が無いもの。
+
+    関数を別ファイルへ移すとき、装飾子の行を含め忘れると移動先で
+    装飾子が外れる。構文としては通るので気付けない。@persistent が
+    無いハンドラは .blend を開いた時点で Blender が一覧から外すため、
+    「保存して開き直すと効かない」という形でしか現れない。
+
+    load_post だけは例外にしない。開いた直後の初期化そのものなので、
+    外れると最初の1回が走らない。
+    """
+    try:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+
+    decorated = set()
+    defined = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            defined.add(node.name)
+            for dec in node.decorator_list:
+                name = getattr(dec, "id", None) or getattr(dec, "attr", None)
+                if name == "persistent":
+                    decorated.add(node.name)
+
+    appended = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func_node = node.func
+        if not (isinstance(func_node, ast.Attribute)
+                and func_node.attr in ("append", "insert")):
+            continue
+        if "handlers" not in ast.dump(func_node.value):
+            continue
+        for arg in node.args:
+            name = getattr(arg, "id", None) or getattr(arg, "attr", None)
+            if name:
+                appended.setdefault(name, node.lineno)
+
+    return sorted(
+        f"{name}  (行 {lineno})"
+        for name, lineno in appended.items()
+        if name in defined and name not in decorated
+    )
+
+
 def collect_references(paths):
     """複数ファイルから、名前とプロパティの参照だけを集める。
 
@@ -531,6 +581,13 @@ def analyze(path: Path, extra=None):
     if dead_functions:
         problems.append(
             ("どこからも呼ばれていないモジュール直下の関数", dead_functions)
+        )
+
+    unsafe_handlers = handlers_without_persistent(path)
+    if unsafe_handlers:
+        problems.append(
+            ("@persistent が付いていないハンドラ（開き直すと効かない）",
+             unsafe_handlers)
         )
 
     shadowed = shadowed_functions(path)

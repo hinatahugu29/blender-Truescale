@@ -26,6 +26,7 @@ modal の動作中フラグなどは .blend に残る。残ったまま開くと
 """
 
 import bpy
+from bpy.app.handlers import persistent
 
 from .. import debug as _debug
 from .. import overlay as _overlay
@@ -99,6 +100,10 @@ classes = _ops.classes + (
 )
 
 
+# @persistent が要る。付けないと、Blender はファイルを読み込む
+# ときにこのハンドラを一覧から外す。初期化が事実上1回しか
+# 走らず、2つ目のファイルを開くと前の作業状態が残る。
+@persistent
 def _tsunfold_reset_overlays_on_load(_dummy=None):
     # Runs only after a .blend has loaded, when bpy.data is available.
     try:
