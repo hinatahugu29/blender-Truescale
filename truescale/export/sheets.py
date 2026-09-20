@@ -22,8 +22,14 @@
 
 印刷のとき「用紙に合わせる」を選ぶと数パーセント縮む。分割の
 計算がどれだけ正確でも、そこで全部台無しになる。しかも目では
-気付けない。定規を当てて 100mm でなければ設定が違う、と
+気付けない。定規を当てて長さが合わなければ設定が違う、と
 分かるようにしておく。
+
+長さは紙に入る中で一番大きい切りのよい値を選び、その数値を
+横に書く。書いていないと、何ミリのはずなのか分からず測りようが
+ない。紙からはみ出させてもいけない。はがきに 100mm の目盛りを
+描いて 84mm に切られていたことがあり、それを測ると「縮んでいる」
+と誤解する。無いより悪い。
 
 ■ 線は受け持ち範囲の外まで少し描く
 
@@ -120,13 +126,53 @@ def _cross(sheet, x, y):
     sheet.add(x, y - CROSS_MM, x, y + CROSS_MM, GUIDE, 0.25)
 
 
-def _ruler(sheet, x, y):
-    """実寸 100mm の目盛り。10mm ごとに刻み、50mm は長くする。"""
-    sheet.add(x, y, x + RULER_MM, y, BLACK, 0.3)
-    for i in range(11):
+# 目盛りに使う長さの候補。大きいものから試して、紙に入るものを選ぶ。
+RULER_CHOICES = (RULER_MM, 50.0, 30.0, 20.0, 10.0)
+
+# 長さを書く文字の大きさ
+RULER_LABEL_MM = 4.5
+
+
+def ruler_length(available_mm):
+    """その幅に収まる、一番大きい切りのよい目盛りの長さ。
+
+    数値を書く場所も要るので、その分を引いてから選ぶ。どれも
+    入らなければ None。
+    """
+    for length in RULER_CHOICES:
+        if length <= available_mm:
+            return length
+    return None
+
+
+def _ruler(sheet, x, y, available_mm):
+    """実寸の目盛り。10mm ごとに刻み、50mm ごとに長くする。
+
+    長さは紙に入るものを選び、数値を横に書く。書かないと何ミリの
+    はずなのか分からず、測っても意味がない。
+    """
+    length = ruler_length(available_mm)
+    if length is None:
+        return
+
+    sheet.add(x, y, x + length, y, BLACK, 0.3)
+
+    step = 10.0
+    count = int(round(length / step))
+    for i in range(count + 1):
         height = 4.0 if i % 5 == 0 else 2.0
-        at = x + i * 10.0
+        at = x + i * step
         sheet.add(at, y, at, y + height, BLACK, 0.3)
+
+    # 数値は線の上へ。横に置くと、その分だけ目盛りを短くすることに
+    # なる。目盛りは長いほど、縮みを見つけやすい。
+    _text(
+        sheet,
+        f"{int(length)}MM",
+        x + 1.0,
+        y + 5.0,
+        RULER_LABEL_MM,
+    )
 
 
 def _text(sheet, text, x, y, size=LABEL_MM):
@@ -218,7 +264,7 @@ def single(drawing, paper_w, paper_h, margin=8.0, footer=12.0):
                   x1 + margin, y1 + origin_y, color, width)
 
     # 目盛りは刷れる範囲の中。余白へ描くと切れて出ない。
-    _ruler(sheet, margin, margin + 2.0)
+    _ruler(sheet, margin, margin + 2.0, paper_w - margin * 2.0)
     return [sheet]
 
 
@@ -294,11 +340,14 @@ def _decorate(sheet, plan_obj, col, row):
 
     # 目盛りとタイルの総数は下の帯。型紙の線と重ならず、かつ
     # 刷れる範囲に収まる。
-    _ruler(sheet, left, plan_obj.margin + 2.0)
+    # タイルの総数を先に置き、残った幅で目盛りの長さを決める。
+    count_text = f"{plan_obj.cols}X{plan_obj.rows}"
+    count_width = LABEL_MM * 0.7 * 0.62 * (len(count_text) + 1)
     _text(
         sheet,
-        f"{plan_obj.cols}X{plan_obj.rows}",
-        right - LABEL_MM * 2.6,
+        count_text,
+        right - count_width,
         plan_obj.margin + 2.0,
         LABEL_MM * 0.7,
     )
+    _ruler(sheet, left, plan_obj.margin + 2.0, width - count_width - 4.0)

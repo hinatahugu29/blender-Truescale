@@ -597,6 +597,21 @@ def test_the_ruler_sits_inside_the_printable_area():
             )
 
 
+def _ruler_length(sheet):
+    """その紙に描かれた目盛りの実際の長さ。無ければ 0。
+
+    目盛りの軸は太さ 0.3 の水平線。枠（0.2）や型紙の線（0.4）と
+    区別する。
+    """
+    lengths = [
+        abs(x1 - x0)
+        for x0, y0, x1, y1, _, width in sheet.lines
+        if abs(width - 0.3) < 1e-9 and abs(y1 - y0) < 1e-9
+        and abs(x1 - x0) > 5.0
+    ]
+    return max(lengths) if lengths else 0.0
+
+
 @test
 def test_every_sheet_carries_a_ruler():
     """どの紙にも実寸の目盛りが入る。
@@ -608,15 +623,105 @@ def test_every_sheet_carries_a_ruler():
     plan = tiling.plan(400.0, 500.0, 210.0, 297.0)
 
     for sheet in sheets.tiled(drawing, plan):
-        horizontal = [
-            abs(x1 - x0)
-            for x0, y0, x1, y1, _, _ in sheet.lines
-            if abs(y1 - y0) < 1e-9
-        ]
         check(
-            any(abs(value - sheets.RULER_MM) < 1e-9 for value in horizontal),
+            abs(_ruler_length(sheet) - sheets.RULER_MM) < 1e-9,
             f"{sheet.label} に 100mm の目盛りが無い",
         )
+
+
+@test
+def test_the_ruler_is_never_cut_off():
+    """目盛りが紙からはみ出して切られることがない。
+
+    はがき（刷れる幅 84mm）に 100mm の目盛りを描いていたことが
+    ある。はみ出した分が切られて 84mm になり、定規を当てた人は
+    「印刷が縮んでいる」と読む。実際は縮んでいない。縮尺を
+    確かめるための目盛りが逆に誤解させるので、無いより悪い。
+    """
+    drawing = _FakeDrawing([(0.0, 0.0, 300.0, 400.0, (0, 0, 0), 0.4)],
+                           300.0, 400.0)
+
+    papers = {
+        "A4": (210.0, 297.0),
+        "A4横": (297.0, 210.0),
+        "A3": (297.0, 420.0),
+        "はがき": (100.0, 148.0),
+        "名刺": (55.0, 91.0),
+    }
+
+    for name, (pw, ph) in papers.items():
+        plan = tiling.plan(300.0, 400.0, pw, ph)
+        check(plan is not None, f"{name} で計画が立たない")
+
+        for sheet in sheets.tiled(drawing, plan):
+            length = _ruler_length(sheet)
+            if length == 0.0:
+                continue   # 入らない紙では描かない。それでよい
+
+            # 切りのよい値そのものであること（切られていない証拠）
+            check(
+                any(abs(length - choice) < 1e-9
+                    for choice in sheets.RULER_CHOICES),
+                f"{name}: 目盛りが半端な長さ {length:.2f}mm（切られた）",
+            )
+            check(
+                length <= pw - plan.margin * 2.0 + 1e-9,
+                f"{name}: 目盛りが刷れる幅を超えている {length:.2f}mm",
+            )
+
+
+@test
+def test_the_ruler_says_how_long_it_is():
+    """目盛りに長さが書いてある。
+
+    何ミリのはずなのかが紙に無いと、測っても判断できない。
+    紙によって長さが変わるので、なおさら書いていないと困る。
+    """
+    drawing = _FakeDrawing([(0.0, 0.0, 300.0, 400.0, (0, 0, 0), 0.4)],
+                           300.0, 400.0)
+
+    for pw, ph, expected in ((210.0, 297.0, 100), (100.0, 148.0, 50)):
+        plan = tiling.plan(300.0, 400.0, pw, ph)
+        sheet = sheets.tiled(drawing, plan)[0]
+
+        length = _ruler_length(sheet)
+        check(
+            abs(length - expected) < 1e-9,
+            f"{pw:.0f}mm 幅で目盛りが {length:.0f}mm（{expected} のはず）",
+        )
+
+        # 数値が線として描かれていること。桁数ぶんの字形が要る。
+        expected_text = f"{expected}MM"
+        strokes = sum(
+            len(sheets._STROKES.get(char, ()))
+            for char in expected_text
+        )
+        check(strokes > 0, f"{expected_text} の字形が無い")
+
+
+@test
+def test_the_footer_never_reaches_the_pattern():
+    """帯の目印が、型紙の載る範囲へ食い込まない。
+
+    食い込むと、型紙の線と重なって読めなくなる。
+    """
+    drawing = _FakeDrawing([], 300.0, 400.0)
+
+    for pw, ph in ((210.0, 297.0), (100.0, 148.0), (55.0, 91.0)):
+        plan = tiling.plan(300.0, 400.0, pw, ph)
+        top = plan.page_origin()[1]
+
+        for sheet in sheets.tiled(drawing, plan):
+            below = [
+                max(y0, y1)
+                for x0, y0, x1, y1, _, _ in sheet.lines
+                if max(y0, y1) < top - 1e-9
+            ]
+            if below:
+                check(
+                    max(below) < top,
+                    f"{pw:.0f}mm: 帯が型紙の範囲へ食い込む",
+                )
 
 
 @test
