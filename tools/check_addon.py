@@ -124,8 +124,11 @@ class AddonAnalyzer(ast.NodeVisitor):
                 for sub in ast.walk(node.value):
                     if isinstance(sub, (ast.Tuple, ast.List)):
                         for elt in sub.elts:
+                            # モジュール経由（prefs.Foo）でも並べられる
                             if isinstance(elt, ast.Name):
                                 self.registered_classes.append(elt.id)
+                            elif isinstance(elt, ast.Attribute):
+                                self.registered_classes.append(elt.attr)
 
             # モジュール直下の NAME = "文字列"
             if (isinstance(target, ast.Name)
