@@ -23,6 +23,8 @@
 「正面図」として書き出すと、寸法が合わない図面になる。
 """
 
+import contextlib
+
 import bpy
 import mathutils
 from mathutils import Vector
@@ -425,3 +427,100 @@ def tsdraft_restore_export_display_state(space, scene, state):
         "driver_view_state",
         None
     )
+
+
+# 書き出しの間だけ書き換える Scene の設定。
+# 名前を並べて持つのは、控えと戻しを1つの表から出すため。以前は
+# 控えるコードと戻すコードが 400 行離れていて、片方にだけ項目を
+# 足すと黙って戻らなくなった。
+EXPORT_SCENE_FLAGS = (
+    "tsdraft_user_view_mode",
+    "tsdraft_show_bbox",
+    "tsdraft_show_bbox_top",
+    "tsdraft_show_bbox_front",
+    "tsdraft_show_bbox_side",
+    "tsdraft_show_bbox_user",
+    "tsdraft_show_dimensions",
+    "tsdraft_show_dimensions_top",
+    "tsdraft_show_dimensions_front",
+    "tsdraft_show_dimensions_side",
+    "tsdraft_show_dimensions_user",
+)
+
+
+def _snapshot_flags(scene):
+    return {
+        name: bool(getattr(scene, name, True))
+        for name in EXPORT_SCENE_FLAGS
+    }
+
+
+def _restore_flags(scene, saved):
+    for name, value in saved.items():
+        try:
+            setattr(scene, name, value)
+        except Exception:
+            _debug.swallowed("draft.viewstate._restore_flags")
+
+
+@contextlib.contextmanager
+def export_view(space, scene, axis_view=True, suppress_text=False):
+    """書き出しの間だけ表示を作図向けにし、抜けるときに必ず戻す。
+
+    戻すものは4つ。
+
+      Scene の表示フラグ（BOX・寸法・任意ビューモード）
+      メインの視点（向き・位置・倍率）
+      四分割の各ペインの視点
+      背景・オーバーレイなどの見た目
+
+    以前はこれを1つの関数の中で、控えるコードと戻すコードが
+    400 行離れた場所に書いていた。戻す側は6つの try/except に
+    分かれていて、片方にだけ項目を足せば黙って戻らなくなる。
+    控えと戻しを同じ場所へ置けば、そうはならない。
+
+    axis_view が真なら、三面図として撮るために BOX と寸法を必ず
+    表示する。クイック非表示の最中でも、書き出しだけは出す。
+    出ていない図面を刷ってしまう事故のほうが重い。
+
+    suppress_text が真なら寸法の文字だけ消す。三面図シートでは
+    文字をシートの上で直接描くので、撮影画像へ焼くと二重になる。
+    """
+    saved_flags = _snapshot_flags(scene)
+    saved_display = tsdraft_capture_export_display_state(space, scene)
+    saved_main = tsdraft_capture_rv3d_state(getattr(space, "region_3d", None))
+
+    saved_quad = []
+    try:
+        for rv3d in list(space.region_quadviews):
+            saved_quad.append((rv3d, tsdraft_capture_rv3d_state(rv3d)))
+    except Exception:
+        _debug.swallowed("draft.viewstate.export_view")
+
+    if axis_view:
+        scene.tsdraft_user_view_mode = False
+
+        scene.tsdraft_show_bbox = True
+        scene.tsdraft_show_bbox_top = True
+        scene.tsdraft_show_bbox_front = True
+        scene.tsdraft_show_bbox_side = True
+
+        scene.tsdraft_show_dimensions = not suppress_text
+        scene.tsdraft_show_dimensions_top = True
+        scene.tsdraft_show_dimensions_front = True
+        scene.tsdraft_show_dimensions_side = True
+
+    try:
+        yield
+    finally:
+        _restore_flags(scene, saved_flags)
+
+        try:
+            tsdraft_restore_rv3d_state(
+                getattr(space, "region_3d", None), saved_main
+            )
+            for rv3d, state in saved_quad:
+                tsdraft_restore_rv3d_state(rv3d, state)
+            tsdraft_restore_export_display_state(space, scene, saved_display)
+        except Exception:
+            _debug.swallowed("draft.viewstate.export_view.restore")

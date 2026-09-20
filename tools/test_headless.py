@@ -2602,6 +2602,71 @@ def test_placed_bounds_account_for_rotation():
     check(turned.bounds() == (10.0, 20.0, 22.0, 60.0), f"縦書き: {turned.bounds()}")
 
 
+@test
+def test_export_restores_every_flag_it_changes():
+    """書き出しが書き換える設定は、全部控えの一覧に入っている。
+
+    以前は控えるコードと戻すコードが 400 行離れていた。片方にだけ
+    項目を足せば、書き出しただけで作業中の表示が変わったままに
+    なる。しかも気付きにくい。
+
+    export_view が書き換える名前を実際のコードから拾い、控えの
+    一覧と突き合わせる。人が並べ直す必要がなくなる。
+    """
+    reset_scene()
+    import ast
+    import inspect
+    import truescale
+    from truescale.draft import viewstate as V
+    truescale.register()
+
+    tree = ast.parse(inspect.getsource(V.export_view))
+
+    written = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if not isinstance(target, ast.Attribute):
+                continue
+            if getattr(target.value, "id", None) == "scene":
+                written.add(target.attr)
+
+    check(written, "書き換えている設定が1つも見つからない")
+
+    missing = written - set(V.EXPORT_SCENE_FLAGS)
+    check(
+        not missing,
+        f"控えずに書き換えている設定がある: {sorted(missing)}",
+    )
+
+
+@test
+def test_export_flag_snapshot_round_trips():
+    """控えた設定を戻すと、元どおりになる。"""
+    reset_scene()
+    import truescale
+    from truescale.draft import viewstate as V
+    truescale.register()
+
+    scene = bpy.context.scene
+
+    # 既定と違う状態にしておく。
+    for index, name in enumerate(V.EXPORT_SCENE_FLAGS):
+        setattr(scene, name, bool(index % 2))
+
+    before = V._snapshot_flags(scene)
+
+    # 書き出し中の状態を真似て、全部 True にする。
+    for name in V.EXPORT_SCENE_FLAGS:
+        setattr(scene, name, True)
+
+    V._restore_flags(scene, before)
+
+    after = V._snapshot_flags(scene)
+    check(after == before, f"戻っていない: {before} -> {after}")
+
+
 def main():
     print()
     print("=" * 72)
