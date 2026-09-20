@@ -64,11 +64,17 @@ def get_axis_dimension_text(scene, axis, fallback=None):
 
 
 def tsdraft_svg_dimension_axes(view_key):
+    """その面図が出す寸法の軸。横方向・縦方向の順。
+
+    順序を持たせているのは、書き出し側が「横の寸法」「縦の寸法」と
+    して使うため。集合で返していたので、順序に頼っている側が
+    たまたま動いているだけの状態だった。
+    """
     return {
-        "top": {"X", "Y"},
-        "front": {"X", "Z"},
-        "side": {"Y", "Z"},
-    }.get(view_key, set())
+        "top": ("X", "Y"),
+        "front": ("X", "Z"),
+        "side": ("Y", "Z"),
+    }.get(view_key, ())
 
 
 def tsdraft_dimension_axis_enabled(scene, view_key, axis_name):

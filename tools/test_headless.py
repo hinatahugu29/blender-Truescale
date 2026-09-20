@@ -2516,7 +2516,7 @@ def test_label_tables_cover_every_axis_each_view_shows():
     for name, table in (("三面図シート", L.SHEET_LAYOUT),
                         ("単体ビュー", L.SINGLE_LAYOUT)):
         for view_key in ("top", "front", "side"):
-            wanted = DM.tsdraft_svg_dimension_axes(view_key)
+            wanted = set(DM.tsdraft_svg_dimension_axes(view_key))
             got = set(table.get(view_key, {}))
             check(
                 got == wanted,
@@ -2542,14 +2542,14 @@ def test_depth_axis_is_hidden_in_each_view():
 
     # 正面図（-Y を向く）では Y が奥行き。
     front = Vector((0.0, 1.0, 0.0))
-    check(L._edge_on(obj, "Y", front), "正面図で Y を隠していない")
-    check(not L._edge_on(obj, "X", front), "正面図で X まで隠している")
-    check(not L._edge_on(obj, "Z", front), "正面図で Z まで隠している")
+    check(L.edge_on(obj, "Y", front), "正面図で Y を隠していない")
+    check(not L.edge_on(obj, "X", front), "正面図で X まで隠している")
+    check(not L.edge_on(obj, "Z", front), "正面図で Z まで隠している")
 
     # 上面図（-Z を向く）では Z が奥行き。
     top = Vector((0.0, 0.0, 1.0))
-    check(L._edge_on(obj, "Z", top), "上面図で Z を隠していない")
-    check(not L._edge_on(obj, "X", top), "上面図で X まで隠している")
+    check(L.edge_on(obj, "Z", top), "上面図で Z を隠していない")
+    check(not L.edge_on(obj, "X", top), "上面図で X まで隠している")
 
 
 @test
@@ -2665,6 +2665,97 @@ def test_export_flag_snapshot_round_trips():
 
     after = V._snapshot_flags(scene)
     check(after == before, f"戻っていない: {before} -> {after}")
+
+
+@test
+def test_axis_order_is_horizontal_then_vertical():
+    """面図ごとの軸が、横・縦の順で並んでいる。
+
+    まとめ書き出しが「1つめを横の寸法、2つめを縦の寸法」として
+    使う。以前は集合で返していたので、順序に頼っている側が
+    たまたま動いているだけだった。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft import dimension as DM
+    truescale.register()
+
+    check(DM.tsdraft_svg_dimension_axes("top") == ("X", "Y"), "上面図")
+    check(DM.tsdraft_svg_dimension_axes("front") == ("X", "Z"), "正面図")
+    check(DM.tsdraft_svg_dimension_axes("side") == ("Y", "Z"), "側面図")
+    check(DM.tsdraft_svg_dimension_axes("user") == (), "任意ビュー")
+
+
+@test
+def test_sheet_and_screen_place_dimensions_alike():
+    """図面シートと画面で、寸法を置く側が同じ。
+
+    以前は同じ表が3つあった。画面（overlay）、撮った画像の切り抜き
+    （capture）、図面シート（sheet）。1つ直し忘れれば、画面で
+    見た位置と刷った位置が変わる。
+    """
+    reset_scene()
+    import ast
+    import inspect
+    import truescale
+    from truescale.draft import labels as L
+    from truescale.draft.export import sheet as S
+    truescale.register()
+
+    # シートの描画が、置く側の表を自前で持っていないこと。
+    source = inspect.getsource(S)
+    tree = ast.parse(source)
+
+    hard_coded = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        values = {
+            v.value for v in node.values
+            if isinstance(v, ast.Constant) and isinstance(v.value, str)
+        }
+        if values & {"TOP", "BOTTOM", "LEFT", "RIGHT"}:
+            hard_coded.append(node.lineno)
+
+    check(
+        not hard_coded,
+        f"置く側の表が sheet.py にも書かれている: 行 {hard_coded}",
+    )
+
+    # 表そのものは labels 側にある。
+    check(L.SHEET_LAYOUT["front"]["Z"] == "RIGHT", "シートの表が変わっている")
+    check(L.SINGLE_LAYOUT["front"]["Z"] == "LEFT", "単体の表が変わっている")
+
+
+@test
+def test_dark_place_cage_wraps_the_box():
+    """暗所表示の檻が、箱をはみ出さずに囲う。
+
+    描画から切り離したので、線分そのものを確かめられる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft import overlay as OV
+    truescale.register()
+
+    bpy.ops.mesh.primitive_cube_add(size=2.0)   # -1..1
+    obj = bpy.context.active_object
+
+    segments = OV.dark_place_segments(obj)
+    check(segments, "檻が作られていない")
+
+    points = [p for pair in segments for p in pair]
+    for axis in range(3):
+        values = [p[axis] for p in points]
+        close(min(values), -1.0, 1e-5, f"{axis} 軸の下端が箱から出ている")
+        close(max(values), 1.0, 1e-5, f"{axis} 軸の上端が箱から出ている")
+
+    # 上下の外周8本 + 四隅の柱4本 + 縦格子
+    expected = 8 + 4 + (OV.DARK_BARS_X - 1) * 2 + (OV.DARK_BARS_Y - 1) * 2
+    check(
+        len(segments) == expected,
+        f"線の本数が合わない: {len(segments)} / 期待 {expected}",
+    )
 
 
 def main():

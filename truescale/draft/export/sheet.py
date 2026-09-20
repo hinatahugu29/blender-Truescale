@@ -34,6 +34,7 @@ from .. import bbox as _bbox
 from .. import viewstate as _viewstate
 from .. import dimension as _dimension
 from .. import keys as _keys
+from .. import labels as _labels
 from . import capture as _capture
 
 
@@ -280,16 +281,15 @@ def tsdraft_sheet_draw_dimension_labels(canvas, scene, positions, view_data, she
     color = getattr(scene, "tsdraft_font_color", (0.05, 0.05, 0.05, 1.0))
     gap_mm = max(1.2, font_mm * 0.42)
 
-    # Same outside-edge convention as the sheet layout.
-    specs = {
-        "top":   (("X", "TOP"),    ("Y", "LEFT")),
-        "front": (("X", "BOTTOM"), ("Z", "RIGHT")),
-        "side":  (("Y", "BOTTOM"), ("Z", "LEFT")),
-    }
-
-    for view_key, dim_specs in specs.items():
+    # どの軸をどちら側へ置くかは draft.labels が持つ。ここにも同じ
+    # 表があった。画面と、撮った画像の切り抜きと、このシートで
+    # 3つになる。1つ直し忘れれば、画面と刷ったもので寸法の位置が
+    # 変わる。
+    for view_key, sides in _labels.SHEET_LAYOUT.items():
         if view_key not in positions or view_key not in view_data:
             continue
+
+        dim_specs = tuple(sides.items())
 
         image_x_mm, image_y_top_mm = positions[view_key]
         vd = view_data[view_key]
@@ -346,14 +346,12 @@ def tsdraft_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
     """
     import numpy as np
 
-    axis_map = {
-        "top": ("X", "Y"),
-        "front": ("X", "Z"),
-        "side": ("Y", "Z"),
-    }
-    axes = axis_map.get(view_key)
+    # 出す軸も、置く側も、表は1つだけ。ここにも同じものがあった。
+    axes = _dimension.tsdraft_svg_dimension_axes(view_key)
     if not axes:
         return
+
+    sides = _labels.SINGLE_LAYOUT.get(view_key, {})
 
     data = bpy.app.driver_namespace.get(_keys.DATA_KEY, [])
     axis_text = {}
@@ -386,20 +384,36 @@ def tsdraft_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
 
         labels = []
 
-        if horizontal_text:
-            label = tsdraft_sheet_text_rgba(horizontal_text, font_px, color)
-            lh, lw = label.shape[0], label.shape[1]
-            x = (bbox_left + bbox_right) * 0.5 - lw * 0.5
-            y = bbox_top + gap_px
-            labels.append((label, x, y))
+        # 置く側は表から引く。以前は「1つめの軸を上、2つめを左」と
+        # 決め打ちで、表と一致しているのは偶然だった。
+        for axis, text in ((axes[0], horizontal_text),
+                           (axes[1], vertical_text)):
+            if not text:
+                continue
 
-        if vertical_text:
-            label = tsdraft_sheet_text_rgba(vertical_text, font_px, color)
-            # Actual raster rotation, independent of viewport BLF rotation.
-            label = np.rot90(label, k=1).copy()
+            side = sides.get(axis, "TOP")
+            label = tsdraft_sheet_text_rgba(text, font_px, color)
+
+            if side in {"LEFT", "RIGHT"}:
+                # 実際に画素を回す。ビューポートの文字の回転が
+                # バージョンで変わっても影響を受けない。
+                label = np.rot90(label, k=1).copy()
+
             lh, lw = label.shape[0], label.shape[1]
-            x = bbox_left - gap_px - lw
-            y = (bbox_bottom + bbox_top) * 0.5 - lh * 0.5
+
+            if side == "TOP":
+                x = (bbox_left + bbox_right) * 0.5 - lw * 0.5
+                y = bbox_top + gap_px
+            elif side == "BOTTOM":
+                x = (bbox_left + bbox_right) * 0.5 - lw * 0.5
+                y = bbox_bottom - gap_px - lh
+            elif side == "RIGHT":
+                x = bbox_right + gap_px
+                y = (bbox_bottom + bbox_top) * 0.5 - lh * 0.5
+            else:  # LEFT
+                x = bbox_left - gap_px - lw
+                y = (bbox_bottom + bbox_top) * 0.5 - lh * 0.5
+
             labels.append((label, x, y))
 
         min_x = min([0.0] + [x for _lab, x, _y in labels]) - outer_pad

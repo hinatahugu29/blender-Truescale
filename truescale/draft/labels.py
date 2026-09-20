@@ -175,7 +175,7 @@ def _shown(scene, view_key, axis_name, explicit_user_mode):
     return _dimension.tsdraft_dimension_axis_enabled(scene, view_key, axis_name)
 
 
-def _edge_on(bbox_obj, axis_name, view_dir):
+def edge_on(bbox_obj, axis_name, view_dir):
     """その寸法軸が、ビュー方向とほぼ平行か。
 
     真正面から見た奥行きの寸法は、線が点になるので書いても読めない。
@@ -315,7 +315,7 @@ def layout(scene, region, rv3d, bbox_obj, data, view_key, view_dir,
     for item in data:
         axis_name = item.get("axis", "X")
 
-        if _edge_on(bbox_obj, axis_name, view_dir):
+        if edge_on(bbox_obj, axis_name, view_dir):
             continue
         if not _shown(scene, view_key, axis_name, explicit_user_mode):
             continue

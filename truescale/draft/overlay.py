@@ -40,6 +40,79 @@ from . import keys as _keys
 from . import viewstate as _viewstate
 
 
+# 暗所表示の格子の本数。前後面と左右面で密度を変える。
+DARK_BARS_X = 8
+DARK_BARS_Y = 5
+
+
+def dark_place_segments(bbox_obj):
+    """暗所表示の檻。箱のローカル座標での線分の一覧。
+
+    上下の外周、四隅の柱、前後左右の縦格子。箱の大きさだけで
+    決まるので、ここは描画と切り離せる。
+    """
+    verts = [v.co for v in bbox_obj.data.vertices]
+    if len(verts) < 8:
+        return []
+
+    xs = [v.x for v in verts]
+    ys = [v.y for v in verts]
+    zs = [v.z for v in verts]
+
+    xmin, xmax = min(xs), max(xs)
+    ymin, ymax = min(ys), max(ys)
+    zmin, zmax = min(zs), max(zs)
+
+    segments = []
+
+    # 上下の外周
+    corners = ((xmin, ymin), (xmax, ymin), (xmax, ymax), (xmin, ymax))
+    for z in (zmin, zmax):
+        for i in range(4):
+            x1, y1 = corners[i]
+            x2, y2 = corners[(i + 1) % 4]
+            segments.append(((x1, y1, z), (x2, y2, z)))
+
+    # 四隅の縦柱
+    for x in (xmin, xmax):
+        for y in (ymin, ymax):
+            segments.append(((x, y, zmin), (x, y, zmax)))
+
+    # 前後面の縦格子
+    for i in range(1, DARK_BARS_X):
+        x = xmin + (xmax - xmin) * (i / DARK_BARS_X)
+        segments.append(((x, ymin, zmin), (x, ymin, zmax)))
+        segments.append(((x, ymax, zmin), (x, ymax, zmax)))
+
+    # 左右面の縦格子
+    for i in range(1, DARK_BARS_Y):
+        y = ymin + (ymax - ymin) * (i / DARK_BARS_Y)
+        segments.append(((xmin, y, zmin), (xmin, y, zmax)))
+        segments.append(((xmax, y, zmin), (xmax, y, zmax)))
+
+    return segments
+
+
+def draw_world_segments(shader, matrix, segments):
+    """ローカル座標の線分を、ワールドへ移して一度に描く。"""
+    coords = []
+    indices = []
+
+    for a_local, b_local in segments:
+        a = matrix @ mathutils.Vector(a_local)
+        b = matrix @ mathutils.Vector(b_local)
+        base = len(coords)
+        coords.extend((tuple(a), tuple(b)))
+        indices.append((base, base + 1))
+
+    if not coords:
+        return
+
+    batch_for_shader(
+        shader, 'LINES', {"pos": coords}, indices=indices
+    ).draw(shader)
+
+
 def draw_bbox_overlay():
     context = bpy.context
 
@@ -107,73 +180,13 @@ def draw_bbox_overlay():
         )
         gpu.state.line_width_set(scene.tsdraft_frame_width)
 
-    # -----------------------------------------------------
     # 暗所表示。背景を暗くして、箱の枠を目立たせる。
-    # -----------------------------------------------------
     if dark_place:
-        verts_local = [v.co.copy() for v in bbox_obj.data.vertices]
-        if len(verts_local) >= 8:
-            xs = [v.x for v in verts_local]
-            ys = [v.y for v in verts_local]
-            zs = [v.z for v in verts_local]
-
-            xmin, xmax = min(xs), max(xs)
-            ymin, ymax = min(ys), max(ys)
-            zmin, zmax = min(zs), max(zs)
-
-            segments_local = []
-
-            # 上下の外周
-            rects = (
-                (zmin, ((xmin, ymin), (xmax, ymin), (xmax, ymax), (xmin, ymax))),
-                (zmax, ((xmin, ymin), (xmax, ymin), (xmax, ymax), (xmin, ymax))),
-            )
-            for z, pts in rects:
-                for i in range(4):
-                    x1, y1 = pts[i]
-                    x2, y2 = pts[(i + 1) % 4]
-                    segments_local.append(((x1, y1, z), (x2, y2, z)))
-
-            # 四隅の縦柱
-            for x in (xmin, xmax):
-                for y in (ymin, ymax):
-                    segments_local.append(((x, y, zmin), (x, y, zmax)))
-
-            # 前後面の縦格子
-            bar_count_x = 8
-            for i in range(1, bar_count_x):
-                t = i / bar_count_x
-                x = xmin + (xmax - xmin) * t
-                segments_local.append(((x, ymin, zmin), (x, ymin, zmax)))
-                segments_local.append(((x, ymax, zmin), (x, ymax, zmax)))
-
-            # 左右面の縦格子
-            bar_count_y = 5
-            for i in range(1, bar_count_y):
-                t = i / bar_count_y
-                y = ymin + (ymax - ymin) * t
-                segments_local.append(((xmin, y, zmin), (xmin, y, zmax)))
-                segments_local.append(((xmax, y, zmin), (xmax, y, zmax)))
-
-            coords = []
-            indices = []
-
-            for a_local, b_local in segments_local:
-                a = bbox_obj.matrix_world @ mathutils.Vector(a_local)
-                b = bbox_obj.matrix_world @ mathutils.Vector(b_local)
-                base = len(coords)
-                coords.extend((tuple(a), tuple(b)))
-                indices.append((base, base + 1))
-
-            if coords:
-                batch = batch_for_shader(
-                    shader,
-                    'LINES',
-                    {"pos": coords},
-                    indices=indices
-                )
-                batch.draw(shader)
-
+        draw_world_segments(
+            shader,
+            bbox_obj.matrix_world,
+            dark_place_segments(bbox_obj),
+        )
         gpu.state.line_width_set(1.0)
         return
 
@@ -209,24 +222,14 @@ def draw_bbox_overlay():
             return
 
     
-        axis_vectors = {
-            "X": Vector((1.0, 0.0, 0.0)),
-            "Y": Vector((0.0, 1.0, 0.0)),
-            "Z": Vector((0.0, 0.0, 1.0)),
-        }
-
         segments = []
 
         for item in data:
-            axis_name = item.get("axis", "X")
-
-            if axis_name in axis_vectors:
-                axis_world = bbox_obj.matrix_world.to_3x3() @ axis_vectors[axis_name]
-                if axis_world.length > 0:
-                    axis_world.normalize()
-
-                    if abs(axis_world.dot(view_dir)) >= 0.965:
-                        continue
+            # 真正面から見た奥行きの寸法線は、点になるので描かない。
+            # 判定は draft.labels が持つ。文字を出す・出さないと
+            # 同じ規則でないと、線だけ残って文字が消える。
+            if _labels.edge_on(bbox_obj, item.get("axis", "X"), view_dir):
+                continue
 
             a = item.get("world_a")
             b = item.get("world_b")
