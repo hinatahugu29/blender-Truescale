@@ -51,6 +51,22 @@ class TSUNFOLD_OT_auto_layout(bpy.types.Operator):
                 return {'CANCELLED'}
 
         ok, message = _build.try_shelf_layout(context, obj, allow_rotate=True)
+
+        if not ok:
+            # 1枚に収まらないなら、紙をまたいで並べ直す。
+            #
+            # 以前はここで諦めていた。その結果、島は作ったときのまま
+            # 横一列に並び続ける。島の多い形だと3メートルの帯になり、
+            # 分割すると A4 で18枚の横長になってしまう。
+            margin = float(getattr(context.scene, "tsunfold_tile_margin_mm", 8.0))
+            paper_w, paper_h = _paper.scene_dimensions_mm(context.scene)
+            ok, message, _cols, _rows = _build.pack_for_pages(
+                context,
+                obj,
+                paper_w - margin * 2.0,
+                paper_h - margin * 2.0,
+            )
+
         _interact.invalidate_layout_cache()
 
         if not ok:

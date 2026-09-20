@@ -23,6 +23,7 @@ UV は 0〜1 の比率でしかないので、そのままでは長さを持た�
 """
 
 import json
+import math
 from statistics import median
 
 import bpy
@@ -423,4 +424,127 @@ def try_shelf_layout(context, obj, allow_rotate=True):
     mesh.update()
     return True, (
         f"{_paper.scene_display_name(scene)} / 周囲10mm余白で中央配置しました"
+    )
+
+
+def _shelf_fill(mesh, islands, usable_w, gap, allow_rotate=True):
+    """決めた幅の中へ、島を左から右・上から下へ詰める。
+
+    紙に収まるかは見ない。とにかくその幅で詰めたら縦がどれだけに
+    なるかを返す。用紙をまたぐ配置を決めるのに使う。
+
+    戻り値は (実際に使った幅, 高さ)。拡大縮小はしない。
+    """
+    items = []
+    for ids in islands:
+        min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+        items.append({
+            "verts": ids,
+            "w": max_x - min_x,
+            "h": max_y - min_y,
+        })
+
+    # 背の高いものから置くと、棚の隙間が減る
+    items.sort(key=lambda it: max(it["w"], it["h"]), reverse=True)
+
+    cursor_x = 0.0
+    cursor_y = 0.0
+    row_h = 0.0
+    used_w = 0.0
+
+    for item in items:
+        ids = item["verts"]
+        min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+        width = max_x - min_x
+        height = max_y - min_y
+
+        # 幅に入らないなら、回して入るか試す
+        if allow_rotate and width > usable_w and height <= usable_w:
+            _geometry.rotate_vertices_90(mesh, ids)
+            min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+            width = max_x - min_x
+            height = max_y - min_y
+
+        # 今の段に入らなければ次の段へ
+        if cursor_x > 0.0 and cursor_x + width > usable_w + 1e-9:
+            cursor_x = 0.0
+            cursor_y += row_h + gap
+            row_h = 0.0
+
+        _geometry.move_island_to(mesh, ids, cursor_x, cursor_y)
+
+        cursor_x += width + gap
+        used_w = max(used_w, cursor_x - gap)
+        row_h = max(row_h, height)
+
+    mesh.update()
+    return used_w, cursor_y + row_h
+
+
+def pack_for_pages(context, obj, content_w_mm, content_h_mm, max_pages_wide=8):
+    """紙をまたいでよい前提で、枚数が少なくなるように詰める。
+
+    1枚に収まらない型紙は、これまで「収まりません」で終わりだった。
+    その結果、島は作ったときのまま横一列に並び続ける。球のような
+    島の多い形だと 3 メートルの帯になり、A4 で 18 枚の横長になる。
+
+    ここでは「紙を何枚横に並べるか」を 1 から順に試し、必要な枚数が
+    最も少なくなる並べ方を選ぶ。拡大縮小はしない。
+
+    戻り値は (成功したか, 説明, 列数, 行数)。
+    """
+    mesh = obj.data
+    islands = _geometry.face_islands(mesh)
+    if not islands:
+        return False, "アイランドがありません", 0, 0
+
+    scene = context.scene
+    content_w = _units.scene_mm_to_bu(scene, content_w_mm)
+    content_h = _units.scene_mm_to_bu(scene, content_h_mm)
+    gap = _units.scene_mm_to_bu(
+        scene, max(0.0, float(getattr(scene, "tsunfold_spacing_mm", 5.0)))
+    )
+
+    if content_w <= 0.0 or content_h <= 0.0:
+        return False, "用紙に対して余白が大きすぎます", 0, 0
+
+    original = {v.index: v.co.copy() for v in mesh.vertices}
+
+    best = None
+    for pages_wide in range(1, max_pages_wide + 1):
+        # 試すたびに元へ戻す。前の試行の回転が残ると結果が変わる。
+        for index, co in original.items():
+            mesh.vertices[index].co = co
+
+        width = content_w * pages_wide
+        used_w, used_h = _shelf_fill(mesh, islands, width, gap)
+        rows = max(1, int(math.ceil((used_h - 1e-9) / content_h)))
+        sheets = pages_wide * rows
+
+        if best is None or sheets < best["sheets"]:
+            best = {
+                "sheets": sheets,
+                "wide": pages_wide,
+                "rows": rows,
+                "used_w": used_w,
+                "used_h": used_h,
+            }
+
+    # 選んだ並べ方でもう一度詰め直す
+    for index, co in original.items():
+        mesh.vertices[index].co = co
+    _shelf_fill(mesh, islands, content_w * best["wide"], gap)
+
+    cols = max(
+        1,
+        int(math.ceil((_units.scene_bu_to_mm(scene, best["used_w"]) - 1e-9)
+                      / content_w_mm)),
+    )
+    rows = best["rows"]
+
+    return (
+        True,
+        f"{cols}×{rows} = {cols * rows} 枚に収まるよう並べました",
+        cols,
+        rows,
     )
