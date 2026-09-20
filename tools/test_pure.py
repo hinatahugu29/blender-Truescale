@@ -22,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from truescale.core import paper, session, state, units
 from truescale.export import png
+from truescale.export import tiling
 from truescale.marking import storage
 
 _tests = []
@@ -466,6 +467,245 @@ def test_draw_line_color():
     buf = png.new_buffer(4, 4)
     png.draw_line(buf, 4, 4, 0, 0, 3, 0, 1, (1.0, 0.0, 0.0))
     check(buf[0:3] == b"\xff\x00\x00", f"赤で描かれていない: {bytes(buf[0:3])}")
+
+
+# ============================================================
+# export.tiling
+# ============================================================
+
+@test
+def test_tiles_cover_the_whole_pattern():
+    """型紙のどの点も、必ずどれかのタイルに入る。
+
+    抜けがあると、貼り合わせても穴が空く。角と辺の上を含めて見る。
+    """
+    shape_w, shape_h = 420.0, 520.0
+    p = tiling.plan(shape_w, shape_h, 210.0, 297.0)
+    check(p is not None, "計画が立たない")
+
+    steps = 37  # 端と中間を含む、割り切れない刻み
+    for i in range(steps + 1):
+        for j in range(steps + 1):
+            x = shape_w * i / steps
+            y = shape_h * j / steps
+            check(
+                tiling.covers(p, x, y),
+                f"どのタイルにも入らない点がある: ({x:.2f}, {y:.2f})",
+            )
+
+
+@test
+def test_overlap_is_what_was_asked_for():
+    """隣り合うタイルは、指定した幅だけ確実に重なる。"""
+    for overlap in (0.0, 5.0, 15.0, 30.0):
+        p = tiling.plan(600.0, 800.0, 210.0, 297.0, overlap=overlap)
+        check(p is not None, f"計画が立たない: のりしろ {overlap}")
+
+        horizontal, vertical = tiling.seam_overlap(p)
+        check(
+            abs(horizontal - overlap) < 1e-9,
+            f"横の重なりが違う: {horizontal} ≠ {overlap}",
+        )
+        check(
+            abs(vertical - overlap) < 1e-9,
+            f"縦の重なりが違う: {vertical} ≠ {overlap}",
+        )
+
+        # 実際に隣のタイルと重なっているか
+        if p.cols >= 2:
+            _, _, x1, _ = p.window(0, 0)
+            x0_next, _, _, _ = p.window(1, 0)
+            check(
+                abs((x1 - x0_next) - overlap) < 1e-9,
+                f"隣のタイルとの重なりが違う: {x1 - x0_next}",
+            )
+
+
+@test
+def test_no_drift_across_many_tiles():
+    """タイルが何枚並んでも、位置のずれが積み上がらない。
+
+    1枚ずつ「前の右隣」と決めていくと、丸めの誤差が枚数だけ
+    積み上がる。どのタイルも型紙の左下からの絶対値で出すこと。
+    """
+    p = tiling.plan(3000.0, 200.0, 210.0, 297.0)
+    check(p is not None, "計画が立たない")
+    check(p.cols >= 15, f"タイルが少なすぎて検証にならない: {p.cols}")
+
+    for col in range(p.cols):
+        x0, _, _, _ = p.window(col, 0)
+        expected = col * p.step_w
+        check(
+            abs(x0 - expected) < 1e-9,
+            f"{col} 枚目の位置がずれている: {x0} ≠ {expected}",
+        )
+
+    # 累積して求めた場合との差が出ないこと
+    walked = 0.0
+    for col in range(p.cols):
+        x0, _, _, _ = p.window(col, 0)
+        check(
+            abs(x0 - walked) < 1e-9,
+            f"{col} 枚目で累積とずれた: {x0} ≠ {walked}",
+        )
+        walked += p.step_w
+
+
+@test
+def test_pattern_smaller_than_paper_is_one_tile():
+    """紙に収まる型紙は1枚のまま。無駄に分割しない。"""
+    p = tiling.plan(150.0, 200.0, 210.0, 297.0)
+    check(p is not None, "計画が立たない")
+    check(p.count == 1, f"1枚で済むはずが {p.count} 枚")
+
+
+@test
+def test_tiling_works_for_any_paper():
+    """A4でもA3でも、用紙を渡せば同じように成り立つ。
+
+    どちらの人にも使える仕組みであることを、枚数と被覆で確かめる。
+    """
+    papers = {
+        "A4": (210.0, 297.0),
+        "A3": (297.0, 420.0),
+        "レターっぽい何か": (216.0, 279.0),
+    }
+    shape_w, shape_h = 500.0, 700.0
+
+    for name, (pw, ph) in papers.items():
+        p = tiling.plan(shape_w, shape_h, pw, ph)
+        check(p is not None, f"{name} で計画が立たない")
+        check(p.count >= 1, f"{name} で枚数が 0")
+
+        # 紙が大きいほど枚数は減る（同じ型紙なら）
+        for x, y in ((0.0, 0.0), (shape_w, shape_h), (shape_w / 2, shape_h)):
+            check(
+                tiling.covers(p, x, y),
+                f"{name} で ({x}, {y}) が抜けている",
+            )
+
+
+@test
+def test_pixels_round_trip_within_half_a_pixel():
+    """ミリ→ピクセル→ミリで戻しても、半ピクセル以上ずれない。
+
+    ここが分割の正確さそのもの。300dpi の半ピクセルは 0.042 mm。
+    枚数が増えても誤差が積み上がらないことを、端のタイルまで見る。
+    """
+    dpi = 300.0
+    tolerance = 25.4 / dpi / 2.0
+
+    p = tiling.plan(2400.0, 1500.0, 210.0, 297.0)
+    check(p is not None, "計画が立たない")
+    check(p.count >= 60, f"タイルが少なすぎる: {p.count}")
+
+    worst = 0.0
+    for row in range(p.rows):
+        for col in range(p.cols):
+            x0, y0, x1, y1 = p.window(col, row)
+            for x, y in (
+                (x0, y0),
+                (x1, y1),
+                ((x0 + x1) / 2.0, (y0 + y1) / 2.0),
+                (x0 + 0.3333, y1 - 0.7777),
+            ):
+                px, py = tiling.to_pixels(p, col, row, x, y, dpi)
+                bx, by = tiling.from_pixels(p, col, row, px, py, dpi)
+                worst = max(worst, abs(bx - x), abs(by - y))
+
+    check(
+        worst <= tolerance,
+        f"ミリ→ピクセルの往復で {worst:.6f} mm ずれた（許容 {tolerance:.6f}）",
+    )
+
+
+@test
+def test_the_same_point_lands_consistently_on_overlapping_tiles():
+    """重なり部分の同じ点は、どちらのタイルでも同じ実寸位置になる。
+
+    貼り合わせたときに線が食い違わないことの根拠。タイルごとに
+    座標の出し方が違うと、重なりで二重にずれて見える。
+    """
+    dpi = 300.0
+    p = tiling.plan(800.0, 600.0, 210.0, 297.0)
+    check(p is not None, "計画が立たない")
+    check(p.cols >= 2, "検証には横2枚以上が要る")
+
+    # 1枚目と2枚目が重なっている範囲の点を選ぶ
+    _, _, x1, _ = p.window(0, 0)
+    x0_next, _, _, _ = p.window(1, 0)
+    check(x0_next < x1, "隣のタイルと重なっていない")
+
+    shared_x = (x0_next + x1) / 2.0
+    shared_y = 50.0
+
+    left = tiling.to_pixels(p, 0, 0, shared_x, shared_y, dpi)
+    right = tiling.to_pixels(p, 1, 0, shared_x, shared_y, dpi)
+
+    back_left = tiling.from_pixels(p, 0, 0, left[0], left[1], dpi)
+    back_right = tiling.from_pixels(p, 1, 0, right[0], right[1], dpi)
+
+    check(
+        abs(back_left[0] - back_right[0]) < 1e-9
+        and abs(back_left[1] - back_right[1]) < 1e-9,
+        f"重なりで位置が食い違う: {back_left} と {back_right}",
+    )
+
+
+@test
+def test_tile_image_is_the_size_of_the_paper():
+    """タイルの画像は紙と同じ大きさで作られる。
+
+    紙より小さい画像を「用紙に合わせて」刷らせると拡大される。
+    実寸が崩れる一番ありがちな経路なので、画像自体を紙の寸法にする。
+    """
+    p = tiling.plan(600.0, 800.0, 210.0, 297.0)
+    width_px, height_px = tiling.pixel_size(p, 300.0)
+
+    check(width_px == 2480, f"A4の幅が 2480px でない: {width_px}")
+    check(height_px == 3508, f"A4の高さが 3508px でない: {height_px}")
+
+    # 画像の寸法をミリへ戻して、紙とのずれが 0.05mm 未満
+    back_w = width_px / 300.0 * 25.4
+    back_h = height_px / 300.0 * 25.4
+    check(abs(back_w - 210.0) < 0.05, f"幅が紙とずれる: {back_w}")
+    check(abs(back_h - 297.0) < 0.05, f"高さが紙とずれる: {back_h}")
+
+
+@test
+def test_impossible_settings_are_refused():
+    """成り立たない指定は、黙って変な値を返さない。"""
+    check(
+        tiling.plan(100.0, 100.0, 210.0, 297.0, margin=150.0) is None,
+        "余白が紙より大きいのに計画を返した",
+    )
+    check(
+        tiling.plan(100.0, 100.0, 210.0, 297.0, margin=8.0, overlap=500.0)
+        is None,
+        "のりしろが紙より大きいのに計画を返した",
+    )
+    check(tiling.plan(0.0, 100.0, 210.0, 297.0) is None, "幅0を受け入れた")
+
+
+@test
+def test_tile_labels_read_like_the_printed_sheets():
+    """タイルの呼び名が、紙を並べた見た目と一致する。
+
+    行を下から数えると、番号を見ながら並べられない。
+    左上が 1-A になること。
+    """
+    p = tiling.plan(400.0, 500.0, 210.0, 297.0)
+    check(p is not None, "計画が立たない")
+    check(p.cols >= 2 and p.rows >= 2, "検証には2×2以上が要る")
+
+    top_left = p.label(0, p.rows - 1)
+    check(top_left == "1-A", f"左上が 1-A ではない: {top_left}")
+
+    # 同じ呼び名が2つ無いこと
+    names = [
+        p.label(c, r) for r in range(p.rows) for c in range(p.cols)
+    ]
+    check(len(names) == len(set(names)), f"呼び名が重複している: {names}")
 
 
 # ============================================================
