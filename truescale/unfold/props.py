@@ -38,6 +38,7 @@ from bpy.props import (
 
 from .. import debug as _debug
 from ..core import objects as _objects
+from ..core import paper as _paper
 from ..core import session as _session
 from ..core import view as _view
 from ..marking import auto_notch as _auto_notch
@@ -314,17 +315,9 @@ def register():
     bpy.types.Scene.tsunfold_paper_size = EnumProperty(
         name="用紙サイズ",
         description="用紙ガイドとPNGの用紙サイズ",
-        items=[
-            ("A5", "A5", "148 × 210 mm"),
-            ("A4", "A4", "210 × 297 mm"),
-            ("A3", "A3", "297 × 420 mm"),
-            ("A2", "A2", "420 × 594 mm"),
-            ("A1", "A1", "594 × 841 mm"),
-            ("A0", "A0", "841 × 1189 mm"),
-            ("B5", "B5", "182 × 257 mm"),
-            ("B4", "B4", "257 × 364 mm"),
-            ("CUSTOM", "カスタム", "幅と高さをmmで指定"),
-        ],
+        # 一覧は core.paper の表から作る。手で並べると、片方にだけ
+        # 用紙が増える（三面図側に A5 と B判が無かった）。
+        items=_paper.enum_items(),
         default="A4",
         update=_paper_setting_updated,
     )

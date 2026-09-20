@@ -2416,6 +2416,86 @@ def test_draft_dimensions_use_the_addon_basis():
     check(addon_side == [40.0], f"アドオン基準が 40mm でない: {addon_side}")
 
 
+@test
+def test_both_sides_offer_the_same_papers():
+    """型紙側と三面図側で、選べる用紙が同じ。
+
+    以前は3箇所に同じ表があった。core.paper と、型紙側の一覧と、
+    三面図側の書き出し。三面図側には A5 と B判が無く、同じ
+    「用紙サイズ」という名前なのに選べるものが違っていた。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import paper as P
+    truescale.register()
+
+    scene = bpy.context.scene
+
+    def choices(prop):
+        return [
+            item.identifier
+            for item in scene.bl_rna.properties[prop].enum_items
+        ]
+
+    unfold_side = choices("tsunfold_paper_size")
+    draft_side = choices("tsdraft_sheet_paper_size")
+
+    check(
+        unfold_side == draft_side,
+        f"選べる用紙が違う: 型紙 {unfold_side} / 三面図 {draft_side}",
+    )
+    check("B4" in draft_side, "三面図側に B4 が無い")
+    check("A5" in draft_side, "三面図側に A5 が無い")
+
+    # 表に無い用紙を選べてはいけない。逆も同じ。
+    expected = list(P.SIZES_MM) + ["CUSTOM"]
+    check(
+        unfold_side == expected,
+        f"一覧が表と合わない: {unfold_side} / {expected}",
+    )
+
+
+@test
+def test_draft_resolves_every_paper_it_offers():
+    """三面図側が、選べる用紙すべての寸法を出せる。
+
+    一覧と寸法を別々の表から出すと、選べるのに寸法が無い用紙が
+    生まれる。実際 B4 がそうなるところだった。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import paper as P
+    truescale.register()
+
+    scene = bpy.context.scene
+
+    for name, (width, height) in P.SIZES_MM.items():
+        scene.tsdraft_sheet_paper_size = name
+        got = P.base_dimensions_mm(
+            scene,
+            size_prop='tsdraft_sheet_paper_size',
+            custom_width_prop='tsdraft_sheet_custom_width_mm',
+            custom_height_prop='tsdraft_sheet_custom_height_mm',
+            default_custom=(210.0, 297.0),
+        )
+        check(
+            got == (width, height),
+            f"{name} の寸法が違う: {got} / 期待 {(width, height)}",
+        )
+
+    scene.tsdraft_sheet_paper_size = 'CUSTOM'
+    scene.tsdraft_sheet_custom_width_mm = 123.0
+    scene.tsdraft_sheet_custom_height_mm = 456.0
+    got = P.base_dimensions_mm(
+        scene,
+        size_prop='tsdraft_sheet_paper_size',
+        custom_width_prop='tsdraft_sheet_custom_width_mm',
+        custom_height_prop='tsdraft_sheet_custom_height_mm',
+        default_custom=(210.0, 297.0),
+    )
+    check(got == (123.0, 456.0), f"カスタムが入力どおりでない: {got}")
+
+
 def main():
     print()
     print("=" * 72)

@@ -30,6 +30,7 @@ from bpy.props import (
 )
 
 from .. import debug as _debug
+from ..core import paper as _paper
 from . import bbox as _bbox
 from . import keys as _keys
 from . import views as _views
@@ -289,16 +290,12 @@ def register():
         max=1.0
     )
 
+    # 一覧は core.paper の表から作る。以前はここに手で並べていて、
+    # A5 と B判が抜けていた。同じ「用紙サイズ」という名前なのに、
+    # 型紙側と三面図側で選べるものが違っていた。
     bpy.types.Scene.tsdraft_sheet_paper_size = bpy.props.EnumProperty(
         name="用紙サイズ",
-        items=(
-            ('A4', "A4", "210×297mm"),
-            ('A3', "A3", "297×420mm"),
-            ('A2', "A2", "420×594mm"),
-            ('A1', "A1", "594×841mm"),
-            ('A0', "A0", "841×1189mm"),
-            ('CUSTOM', "カスタム", "幅と高さをmmで指定"),
-        ),
+        items=_paper.enum_items(),
         default='A4'
     )
 

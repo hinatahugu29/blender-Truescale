@@ -29,6 +29,7 @@ import blf
 import bpy
 
 from ... import debug as _pkg_debug
+from ...core import paper as _paper
 from .. import bbox as _bbox
 from .. import viewstate as _viewstate
 from .. import dimension as _dimension
@@ -464,18 +465,16 @@ def tsdraft_make_three_view_sheet_png(scene, filepath, exported):
     paper = getattr(scene, 'tsdraft_sheet_paper_size', 'A4')
     orientation = getattr(scene, 'tsdraft_sheet_orientation', 'AUTO')
 
-    paper_sizes = {
-        'A4': (210.0, 297.0),
-        'A3': (297.0, 420.0),
-        'A2': (420.0, 594.0),
-        'A1': (594.0, 841.0),
-        'A0': (841.0, 1189.0),
-    }
-    if paper == 'CUSTOM':
-        base_w = max(10.0, float(getattr(scene, 'tsdraft_sheet_custom_width_mm', 210.0)))
-        base_h = max(10.0, float(getattr(scene, 'tsdraft_sheet_custom_height_mm', 297.0)))
-    else:
-        base_w, base_h = paper_sizes.get(paper, (210.0, 297.0))
+    # 用紙の表は core.paper が持つ。ここにも同じ表があり、A5 と
+    # B判が抜けていた。選べる一覧と、実際に使う寸法が別々の表から
+    # 出てくると、選べるのに寸法が無い用紙が生まれる。
+    base_w, base_h = _paper.base_dimensions_mm(
+        scene,
+        size_prop='tsdraft_sheet_paper_size',
+        custom_width_prop='tsdraft_sheet_custom_width_mm',
+        custom_height_prop='tsdraft_sheet_custom_height_mm',
+        default_custom=(210.0, 297.0),
+    )
 
     view_data = {}
     source_effective_dpis = []
