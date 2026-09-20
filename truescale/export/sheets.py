@@ -334,10 +334,18 @@ def single(drawing, paper_w, paper_h, margin=8.0, footer=12.0):
         return None
 
     sheet = Sheet(paper_w, paper_h, margin=margin)
-    origin_y = margin + footer
+
+    # 1枚のときは紙の中央へ置く。左下に寄せると、余りが右上へ
+    # まとまって扱いにくい。継ぎ目が無いので寄せてよい。
+    # 分割するときは寄せない（継ぎ目の位置は型紙の左下が原点）。
+    usable_w = paper_w - margin * 2.0
+    usable_h = paper_h - margin * 2.0 - footer
+    origin_x = margin + max(0.0, (usable_w - drawing.width_mm) * 0.5)
+    origin_y = margin + footer + max(0.0, (usable_h - drawing.height_mm) * 0.5)
+
     for x0, y0, x1, y1, color, width in drawing.lines:
-        sheet.add(x0 + margin, y0 + origin_y,
-                  x1 + margin, y1 + origin_y, color, width)
+        sheet.add(x0 + origin_x, y0 + origin_y,
+                  x1 + origin_x, y1 + origin_y, color, width)
 
     # 目盛りは刷れる範囲の中。余白へ描くと切れて出ない。
     _ruler(sheet, margin, margin + 2.0, paper_w - margin * 2.0)

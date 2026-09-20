@@ -1154,6 +1154,50 @@ def test_dragging_gives_up_when_topology_changes():
 # ============================================================
 
 @test
+def test_moving_the_object_does_not_change_the_export():
+    """型紙をオブジェクトごと動かしても、書き出す中身は変わらない。
+
+    用紙ガイドが型紙に追従してよい根拠。書き出しは型紙の左下を
+    原点に組み立てるので、ワールド上のどこに置いてあるかは結果に
+    効かない。効くなら、置き場所で刷り上がりが変わることになる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import collect as CO
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+
+    def lines():
+        drawing = CO.pattern_lines(bpy.context)
+        check(drawing is not None, "書き出す線が無い")
+        return [(a, b, c, d) for a, b, c, d, _color, _w in drawing.lines]
+
+    before = lines()
+
+    unfold.location.x += 3.0
+    unfold.location.y -= 1.5
+    bpy.context.view_layer.update()
+
+    after = lines()
+    check(len(before) == len(after), "線の数が変わった")
+
+    worst = max(
+        max(abs(p - q) for p, q in zip(one, two))
+        for one, two in zip(before, after)
+    )
+    # 0.01mm は 300dpi の 1/8 画素。ここを超えたら実害がある。
+    check(worst < 0.01, f"動かしたら書き出しが {worst:.4f} mm ずれた")
+
+
+
+
+@test
 def test_paper_guide_matches_the_split():
     """用紙ガイドの枠が、実際の分割と同じ並びになる。
 

@@ -868,6 +868,39 @@ def test_tiles_do_not_move_the_pattern():
 
 
 @test
+def test_a_single_sheet_centres_the_pattern():
+    """1枚で収まるときは、紙の中央へ置く。
+
+    左下に寄せていたので、A4に 100×150mm を出すと左8mm・右102mm
+    という偏り方になっていた。切るときも扱いにくい。
+
+    分割するときは寄せない。継ぎ目の位置は型紙の左下を原点とした
+    計算で決まっており、そこをずらすと合わせの印まで作り直しになる。
+    """
+    # 目印（0.2〜0.4）と混ざらない太さにして、型紙の線だけを見る
+    drawing = _FakeDrawing(
+        [(0.0, 0.0, 100.0, 150.0, (0, 0, 0), 0.45)], 100.0, 150.0
+    )
+    sheet = sheets.single(drawing, 210.0, 297.0)[0]
+
+    pattern = [
+        line for line in sheet.lines if abs(line[5] - 0.45) < 1e-9
+    ]
+    check(pattern, "型紙の線が見つからない")
+
+    xs = [v for line in pattern for v in (line[0], line[2])]
+    left = min(xs)
+    right = 210.0 - max(xs)
+    check(
+        abs(left - right) < 1e-6,
+        f"左右の余白が違う: 左 {left:.2f} / 右 {right:.2f}",
+    )
+
+    ys = [v for line in pattern for v in (line[1], line[3])]
+    check(min(ys) > 8.0, "下の余白が刷れない縁に食い込んでいる")
+
+
+@test
 def test_a_small_pattern_needs_no_tiling():
     """紙に収まる型紙は、分割せず1枚で返る。"""
     drawing = _FakeDrawing([(0.0, 0.0, 100.0, 150.0, (0, 0, 0), 0.4)],
