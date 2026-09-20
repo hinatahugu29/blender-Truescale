@@ -493,22 +493,59 @@ def initial_layout(context, obj):
     枚数になる。拡大縮小はしない。
     """
     scene = context.scene
-    margin = float(getattr(scene, "tsunfold_tile_margin_mm", 8.0))
-    footer = 12.0
-    paper_w, paper_h = _paper.scene_dimensions_mm(scene)
+    content_w, content_h = content_size(scene)
 
     ok, _message, _cols, _rows = pack_for_pages(
-        context,
-        obj,
-        paper_w - margin * 2.0,
-        paper_h - margin * 2.0 - footer,
+        context, obj, content_w, content_h
     )
     if not ok:
         # 島がひとつも無いなど。従来どおり横一列にしておく。
         pack_islands(context, obj, scene.tsunfold_spacing_mm)
 
 
-def pack_for_pages(context, obj, content_w_mm, content_h_mm, max_pages_wide=8):
+# 目盛りとタイル名を置く帯の高さ。紙の下側に確保する。
+# export.sheets と同じ値でなければならない。片方だけ変えると、
+# 並べ替えが「収めたつもり」で1段はみ出す。
+FOOTER_MM = 12.0
+
+
+def content_size(scene, margin_mm=None):
+    """用紙のうち、型紙を載せてよい範囲（ミリ）。
+
+    刷れない余白と、目盛りを置く帯を引いた残り。並べ替えも分割も
+    この範囲を前提にする。別々に計算すると食い違い、ほとんど空の
+    紙が出る。実際それで1列ぶん無駄になっていた。
+    """
+    if margin_mm is None:
+        margin_mm = float(getattr(scene, "tsunfold_tile_margin_mm", 8.0))
+    paper_w, paper_h = _paper.scene_dimensions_mm(scene)
+    return (
+        paper_w - margin_mm * 2.0,
+        paper_h - margin_mm * 2.0 - FOOTER_MM,
+    )
+
+
+def _span(content, step, count):
+    """紙を count 枚並べたときに載る長さ。
+
+    最初の1枚は受け持ちぶん丸ごと。2枚目からは、隣と重なる分だけ
+    実入りが減る。この式を分割側と揃えないと、「収めたつもり」が
+    1列はみ出して、ほぼ空の紙が出る。
+    """
+    if count <= 0:
+        return 0.0
+    return content + step * (count - 1)
+
+
+def _rows_needed(height, content, step):
+    """その高さを収めるのに要る段数。"""
+    if height <= content + 1e-9:
+        return 1
+    return 1 + int(math.ceil((height - content - 1e-9) / step))
+
+
+def pack_for_pages(context, obj, content_w_mm, content_h_mm, max_pages_wide=8,
+                   overlap_mm=None):
     """紙をまたいでよい前提で、枚数が少なくなるように詰める。
 
     1枚に収まらない型紙は、これまで「収まりません」で終わりだった。
@@ -526,14 +563,23 @@ def pack_for_pages(context, obj, content_w_mm, content_h_mm, max_pages_wide=8):
         return False, "アイランドがありません", 0, 0
 
     scene = context.scene
+    if overlap_mm is None:
+        overlap_mm = float(getattr(scene, "tsunfold_tile_overlap_mm", 15.0))
+
     content_w = _units.scene_mm_to_bu(scene, content_w_mm)
     content_h = _units.scene_mm_to_bu(scene, content_h_mm)
+    overlap = _units.scene_mm_to_bu(scene, max(0.0, overlap_mm))
     gap = _units.scene_mm_to_bu(
         scene, max(0.0, float(getattr(scene, "tsunfold_spacing_mm", 5.0)))
     )
 
     if content_w <= 0.0 or content_h <= 0.0:
         return False, "用紙に対して余白が大きすぎます", 0, 0
+
+    step_w = content_w - overlap
+    step_h = content_h - overlap
+    if step_w <= 0.0 or step_h <= 0.0:
+        return False, "のりしろが用紙に対して大きすぎます", 0, 0
 
     original = {v.index: v.co.copy() for v in mesh.vertices}
 
@@ -543,30 +589,42 @@ def pack_for_pages(context, obj, content_w_mm, content_h_mm, max_pages_wide=8):
         for index, co in original.items():
             mesh.vertices[index].co = co
 
-        width = content_w * pages_wide
+        width = _span(content_w, step_w, pages_wide)
         used_w, used_h = _shelf_fill(mesh, islands, width, gap)
-        rows = max(1, int(math.ceil((used_h - 1e-9) / content_h)))
-        sheets = pages_wide * rows
 
-        if best is None or sheets < best["sheets"]:
+        # 実際に何列・何段になるかは、分割側と同じ式で数える
+        cols = 1
+        while _span(content_w, step_w, cols) < used_w - 1e-9:
+            cols += 1
+        rows = _rows_needed(used_h, content_h, step_h)
+        sheets = cols * rows
+
+        # 枚数が同じなら、紙の余りが少ないほうを選ぶ。
+        #
+        # 見た目の良さで「四角い並び」を選ぶようにしたら、かえって
+        # 悪くなった。段の境目をわずかに超えると、そのためだけに
+        # ほとんど空の段が1つ増える。余りを見れば、その形は自然に
+        # 避けられる。
+        waste = (
+            (_span(content_w, step_w, cols) - used_w)
+            + (_span(content_h, step_h, rows) - used_h)
+        )
+        score = (sheets, waste)
+        if best is None or score < best["score"]:
             best = {
+                "score": score,
                 "sheets": sheets,
                 "wide": pages_wide,
+                "cols": cols,
                 "rows": rows,
-                "used_w": used_w,
-                "used_h": used_h,
             }
 
     # 選んだ並べ方でもう一度詰め直す
     for index, co in original.items():
         mesh.vertices[index].co = co
-    _shelf_fill(mesh, islands, content_w * best["wide"], gap)
+    _shelf_fill(mesh, islands, _span(content_w, step_w, best["wide"]), gap)
 
-    cols = max(
-        1,
-        int(math.ceil((_units.scene_bu_to_mm(scene, best["used_w"]) - 1e-9)
-                      / content_w_mm)),
-    )
+    cols = best["cols"]
     rows = best["rows"]
 
     return (
