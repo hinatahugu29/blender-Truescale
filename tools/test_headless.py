@@ -1025,6 +1025,90 @@ def test_arrow_head_never_exceeds_shaft():
 
 
 # ============================================================
+# 注記の色
+# ============================================================
+
+@test
+def test_manual_marks_follow_color_setting():
+    """手動で置いた印も、あとから色設定を変えれば追従する。
+
+    置いた時点の色を保存して描画に使っていたため、設定を変えても
+    手動のものだけ変わらなかった。オート合印と矢印は追従していた
+    ので、同じパネルの中で挙動が食い違っていた。
+    """
+    reset_scene()
+    import truescale
+    from truescale import unfold as U
+    from truescale.marking import storage as ST
+    truescale.register()
+
+    scene = bpy.context.scene
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    # 置いた時点の色を保存値に持つ、手動の印を作る。
+    scene.tsunfold_notch_color = (1.0, 0.0, 0.0)
+    items = ST.load(obj)
+    items.append({
+        "type": "notch_edge",
+        "edge": 0,
+        "t": 0.5,
+        "auto": False,
+        "color": [1.0, 0.0, 0.0],
+    })
+    ST.save(obj, items)
+
+    def manual_colors():
+        return [
+            tuple(round(c, 4) for c in row[2])
+            for row in U._pattern_flat_colored_segments(
+                bpy.context, obj, unfold
+            )
+        ]
+
+    check((1.0, 0.0, 0.0) in manual_colors(), "置いた色で描かれていない")
+
+    # 設定を変えたら、保存値を持つ手動の印も変わること。
+    scene.tsunfold_notch_color = (0.0, 0.0, 1.0)
+    after = manual_colors()
+    check(
+        (0.0, 0.0, 1.0) in after,
+        "色設定を変えても手動の印が追従していない",
+    )
+    check(
+        (1.0, 0.0, 0.0) not in after,
+        "古い色のまま描かれている印が残っている",
+    )
+
+
+@test
+def test_color_change_does_not_drop_cache():
+    """色を変えても、重い解析をやり直さない。
+
+    色はキャッシュのキーに入っているので、捨てる必要がない。
+    捨てていた頃は、カラーピッカーをドラッグするたびに島の解析と
+    配置探索がまとめて作り直されていた。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import state as S
+    truescale.register()
+
+    scene = bpy.context.scene
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    for prop in ("tsunfold_notch_color", "tsunfold_number_color",
+                 "tsunfold_text_color", "tsunfold_arrow_color"):
+        before = int(S.epoch)
+        setattr(scene, prop, (0.25, 0.5, 0.75))
+        check(
+            int(S.epoch) == before,
+            f"{prop} を変えるとキャッシュが全部捨てられる",
+        )
+
+
+# ============================================================
 # 操作中の状態の共有
 # ============================================================
 

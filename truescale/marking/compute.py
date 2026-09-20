@@ -67,14 +67,6 @@ def readable_edge_angle(angle):
     return angle
 
 
-def _item_color(item, scene=None):
-    """注記の色。オート合印は現在のシーン設定に従う。"""
-    auto_color = None
-    if scene is not None:
-        auto_color = getattr(scene, "tsunfold_notch_color", None)
-    return _storage.item_color(item, auto_color)
-
-
 def island_metadata(context, source_obj, unfold_obj):
     """Stable island IDs + seam-neighbor labels.
 
@@ -1206,7 +1198,7 @@ def compute_colored_segments(context, source_obj, unfold_obj):
 
     for item in _storage.load(source_obj):
         kind = item.get("type")
-        color = _item_color(item, context.scene)
+        color = _storage.scene_item_color(item, context.scene)
 
         if kind == "notch_edge":
             if context.scene.get(_session.DISPLAY_MODE, "POLY") == "SMOOTH":
@@ -1311,11 +1303,15 @@ def colored_segments(context, source_obj, unfold_obj):
         # 合印の太さは計算結果のタプルに焼き込まれる。
         # キーに入れないと、値を変えても古い太さのまま描かれ続ける。
         round(float(getattr(scene, "tsunfold_notch_thickness_mm", 0.6)), 4),
-        # オート合印の色はアノテーションに保存しないので、
-        # キーに入れないと色を変えても古い結果が使われてしまう。
+        # 色は保存値ではなく設定から引くので、設定をキーに入れる。
+        # 入れ忘れると、色を変えても古い結果が使われる。
+        # 種類ごとに設定があるため、描く可能性のある全種類を入れる。
         tuple(
-            round(float(v), 4)
-            for v in getattr(scene, "tsunfold_notch_color", (0.0, 0.0, 0.0))
+            tuple(
+                round(float(v), 4)
+                for v in getattr(scene, prop, (0.0, 0.0, 0.0))
+            )
+            for prop in sorted(_storage.COLOR_PROP.values())
         ),
         str(scene.get(_session.DISPLAY_MODE, "POLY")),
     )

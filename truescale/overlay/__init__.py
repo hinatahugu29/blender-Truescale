@@ -227,7 +227,7 @@ def draw_paper_guide():
         pass
 
 
-def flat_text_items(source_obj, unfold_obj):
+def flat_text_items(source_obj, unfold_obj, scene=None):
     result = []
 
     for item in _storage.load(source_obj):
@@ -250,7 +250,7 @@ def flat_text_items(source_obj, unfold_obj):
             text,
             unfold_obj.matrix_world @ p,
             size_mm,
-            _storage.scene_item_color(item),
+            _storage.scene_item_color(item, scene),
         ))
 
     return result
@@ -285,7 +285,7 @@ def flat_memo_text_items(unfold_obj):
     return result
 
 
-def source_text_items(source_obj):
+def source_text_items(source_obj, scene=None):
     result = []
     mw = source_obj.matrix_world
 
@@ -309,7 +309,7 @@ def source_text_items(source_obj):
             text,
             mw @ p,
             size_mm,
-            _storage.scene_item_color(item),
+            _storage.scene_item_color(item, scene),
         ))
 
     context = bpy.context
@@ -1182,7 +1182,7 @@ def draw_text_2d():
         )
 
         source_labels = (
-            source_text_items(source)
+            source_text_items(source, context.scene)
             if source_visible and not lightweight
             else []
         )
@@ -1231,6 +1231,7 @@ def draw_text_2d():
             flat_labels = flat_text_items(
                 source,
                 unfold,
+                context.scene,
             )
 
             for text, world_pos, size_mm, color in flat_labels:

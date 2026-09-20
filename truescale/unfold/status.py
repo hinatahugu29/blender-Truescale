@@ -180,6 +180,59 @@ def manual_notch_count(context):
     )
 
 
+def manual_arrow_count(context):
+    """手動で置かれた矢印の数。
+
+    オート矢印は注記として保存しないので、ここに出るのは
+    手動で置いたものだけ。
+    """
+    source = _objects.seam_source(context)
+    if source is None:
+        source = _objects.source_from_context(context)
+
+    if source is None or source.type != 'MESH':
+        return 0
+
+    return sum(
+        1 for item in _storage.load(source) if item.get("type") == "arrow"
+    )
+
+
+def active_tool_text(context):
+    """いま動いているマーキング道具の案内。無ければ None。
+
+    道具はトグルで、押したあとも画面に手応えが無かった。動いて
+    いるのかどうかが分からないという声があったので、状態と
+    止め方を出す。
+    """
+    from ..marking import interact as _interact
+
+    labels = {
+        "NOTCH": "合印",
+        "NUMBER": "番号",
+        "TEXT": "文字",
+        "ARROW": "矢印",
+    }
+    mode = _interact.active_tool(context.scene)
+    name = labels.get(mode)
+    if name is None:
+        return None
+
+    if mode == "ARROW":
+        return f"{name}を配置中：始点と終点を順にクリック / Esc で終了"
+    return f"{name}を配置中：置きたい場所をクリック / Esc で終了"
+
+
+def source_required_hint(context):
+    """手動で置く道具が使えない理由。使えるなら None。"""
+    source = _objects.source_from_context(context)
+    if source is None:
+        source = _objects.seam_source(context)
+    if source is None:
+        return "元の3Dモデルか型紙を選ぶと、手動で置けます"
+    return None
+
+
 def notch_text(context):
     """パネルに出す合印の現状。
 

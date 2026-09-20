@@ -197,6 +197,14 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
         marking = layout.box()
         marking.label(text="2. マーキング")
 
+        # 道具はトグルで、押したあとの手応えが画面に無かった。
+        # 動いているのかどうかを最初に出す。
+        tool_text = _status.active_tool_text(context)
+        if tool_text:
+            running = marking.row()
+            running.alert = True
+            running.label(text=tool_text, icon='REC')
+
         source = _objects.source_from_context(context)
         if source is None:
             source = _objects.seam_source(context)
@@ -254,10 +262,17 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 )
 
         if scene.tsunfold_notch_mode != "NONE":
-            notch_box.operator(
+            add_row = notch_box.row()
+            add_row.operator(
                 "truescale_unfold.place_notch",
                 text="手動で合印を追加",
+                icon='ADD',
             )
+
+            hint = _status.source_required_hint(context)
+            if hint:
+                add_row.enabled = False
+                notch_box.label(text=hint, icon='INFO')
 
             # Frequently changed geometry setting first.
             notch_box.prop(
@@ -334,6 +349,25 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             text="方式",
         )
 
+        # 手動で足す手段は、設定の下ではなく方式のすぐ下に置く。
+        # 以前は設定4つの下にあり、あることに気付かれなかった。
+        if scene.tsunfold_arrow_mode != "NONE":
+            add_row = arrow_box.row()
+            add_row.operator(
+                "truescale_unfold.place_arrow",
+                text="手動で矢印を追加（始点→終点）",
+                icon='FORWARD',
+            )
+
+            hint = _status.source_required_hint(context)
+            if hint:
+                add_row.enabled = False
+                arrow_box.label(text=hint, icon='INFO')
+
+            count = _status.manual_arrow_count(context)
+            if count:
+                arrow_box.label(text=f"手動の矢印 {count} 本")
+
         if scene.tsunfold_arrow_mode == "AUTO":
             arrow_box.prop(
                 scene,
@@ -366,12 +400,6 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 "tsunfold_arrow_color",
                 text="",
             )
-
-            if scene.tsunfold_arrow_mode in {"AUTO", "CUSTOM"}:
-                arrow_box.operator(
-                    "truescale_unfold.place_arrow",
-                    text="手動で矢印を追加",
-                )
 
             arrow_box.operator(
                 "truescale_unfold.clear_arrows_all",

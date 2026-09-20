@@ -13,11 +13,15 @@ type ごとに持つ項目が違う。共通するのは type だけ。
 
 ■ 色の扱い
 
-オート合印は色を保存しない。常に現在のシーン設定に従う。
-保存すると、色を変えるたびに全件の書き直しが必要になり、
-カラーピッカーのドラッグ中に毎フレーム JSON の全書き出しが走る。
+描くときの色は、保存値ではなく種類ごとのシーン設定から引く。
+「合印の色」を変えたら合印が全部変わる、という読み方に合わせる。
 
-手動で置いた印は個別の色を持てるので、保存値をそのまま使う。
+色を保存値に持たせると、設定を変えたときに全件を書き直すことに
+なる。カラーピッカーをドラッグしている間ずっと JSON の全書き出しが
+走るので、保存はせず、描くときに引く。
+
+置いた時点の色は今も保存しているが、描画には使わない。古い
+ファイルを開いたときの手掛かりとして残してある。
 """
 
 import json
@@ -28,6 +32,17 @@ from .. import debug as _debug
 ANNOTATION_PROP = "tsunfold_annotations_json"
 
 NOTCH = "notch_edge"
+NUMBER = "number"
+TEXT = "text"
+ARROW = "arrow"
+
+# 種類ごとの色設定。描くときはここから引く。
+COLOR_PROP = {
+    NOTCH: "tsunfold_notch_color",
+    NUMBER: "tsunfold_number_color",
+    TEXT: "tsunfold_text_color",
+    ARROW: "tsunfold_arrow_color",
+}
 
 
 def load(source_obj):
@@ -118,35 +133,33 @@ def normalize_color(value):
 
 
 def scene_item_color(item, scene=None):
-    """注記1件の色を、シーンの設定を見て決める。
+    """注記1件の色を、種類ごとのシーン設定から決める。
 
-    オート合印は保存値を持たず、常に現在の設定に従う。保存すると
-    色を変えるたびに全件の書き直しが必要になり、カラーピッカーを
-    ドラッグしている間ずっと走ってしまう。
+    「合印の色」を変えたら、既に置いてある合印も変わる。設定が
+    種類ごとに並んでいる以上、そう読まれる。置いた時点の色を
+    保存値から使っていた頃は、オート合印と矢印だけが設定に追従し、
+    手動で置いたものだけ変わらない、という食い違いになっていた。
 
-    描く側が3箇所でこれと同じ包みを書いていたので、ここへ集めた。
+    設定が取れないときだけ保存値へ落とす。古いファイルや、
+    プロパティが未登録の状態でも描けるようにするため。
     """
-    auto_color = None
-    if scene is not None:
-        auto_color = getattr(scene, "tsunfold_notch_color", None)
-    return item_color(item, auto_color)
+    prop = COLOR_PROP.get(item.get("type"))
+    source = None
+    if scene is not None and prop:
+        source = getattr(scene, prop, None)
+    if source is None:
+        source = item.get("color", [0.0, 0.0, 0.0])
+    return item_color(item, source)
 
 
-def item_color(item, auto_notch_color=None):
-    """描画用に、注記1件の色をタプルで返す。
+def item_color(item, color_source=None):
+    """色を 0.0〜1.0 のタプルに整える。
 
-    0.0〜1.0 に収める。保存値が壊れていても描画を止めない。
-
-    オート合印は保存値を持たないので、呼び出し側が渡す
-    auto_notch_color（現在のシーン設定）を使う。
+    値が壊れていても描画を止めない。どの色を使うかは
+    scene_item_color が決める。
     """
-    if (
-        auto_notch_color is not None
-        and item.get("type") == NOTCH
-        and bool(item.get("auto", False))
-    ):
-        source = auto_notch_color
-    else:
+    source = color_source
+    if source is None:
         source = item.get("color", [0.0, 0.0, 0.0])
 
     try:

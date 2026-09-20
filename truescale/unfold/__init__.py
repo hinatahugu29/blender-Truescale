@@ -2105,6 +2105,7 @@ class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
             for text, world_pos, size_mm, color in _pattern_flat_text_items(
                 source,
                 unfold,
+                context.scene,
             ):
                 for wa, wb in _pattern_text_outline_segments(
                     context,
@@ -4023,7 +4024,7 @@ def register():
         min=0.0,
         max=1.0,
         default=(0.0, 0.0, 0.0),
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_text_color = FloatVectorProperty(
@@ -4033,7 +4034,7 @@ def register():
         min=0.0,
         max=1.0,
         default=(0.0, 0.0, 0.0),
-        update=_pattern_setting_updated,
+        update=_pattern_redraw_only_updated,
     )
 
     bpy.types.Scene.tsunfold_arrow_color = FloatVectorProperty(
