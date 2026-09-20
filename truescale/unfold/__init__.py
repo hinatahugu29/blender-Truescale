@@ -2,6 +2,8 @@ import bpy
 
 from .. import debug as _debug
 from ..core import paper as _paper
+from ..core import session as _session
+from ..core import state as _state
 from ..core import units as _units
 from ..export import png as _png
 import traceback
@@ -47,21 +49,10 @@ _pattern_island_highlight = {
     "source_faces": [],
 }
 
-_pattern_auto_island_cache = {
-    "key": None,
-    "records": None,
-    "face_to_island": None,
-    "adjacency": None,
-}
 
-# Incremented only when pattern geometry / annotations / display settings
-# actually change. View orbit/pan does NOT touch this, so expensive pattern
-# analysis can stay cached across viewport redraws.
-_pattern_cache_epoch = 0
-_pattern_draw_cache = {}
 
-# 描画用の重い解析は「型紙オブジェクトのローカル空間」で計算してキャッシュし、
-# ワールド変換はキャッシュの外で毎回掛ける。
+# 描画用の重い解析は「型紙オブジェクトのローカル空間」で計算して
+# キャッシュし、ワールド変換はキャッシュの外で毎回掛ける。
 #
 # 以前は matrix_world をキャッシュキーに含めていたため、オブジェクトを
 # G で動かすと1フレームごとにキーが変わり、島内配置の探索などが毎フレーム
@@ -69,27 +60,10 @@ _pattern_draw_cache = {}
 # 効くため、「移動したときだけ極端に重い」という症状になっていた。
 _TS_IDENTITY = Matrix.Identity(4)
 
-# キャッシュの上限。超えたら全部捨てる。
-# 以前は上限が無く、キーが変わるたびにエントリが増え続けていた。
-_PATTERN_DRAW_CACHE_LIMIT = 64
-
 
 def _pattern_draw_cache_store(key, value):
-    """描画キャッシュへ保存する。上限を超えたら古いものから捨てる。
-
-    全消しにすると、スライダーを動かして片方のキャッシュが埋まったときに
-    無関係なキャッシュ（島の解析結果など）まで巻き添えで消える。
-    dict は挿入順を保つので、先頭から落とせば古い順になる。
-    """
-    global _pattern_draw_cache
-
-    overflow = len(_pattern_draw_cache) - _PATTERN_DRAW_CACHE_LIMIT + 1
-    if overflow > 0:
-        for old_key in list(_pattern_draw_cache)[:overflow]:
-            _pattern_draw_cache.pop(old_key, None)
-
-    _pattern_draw_cache[key] = value
-    return value
+    """描画キャッシュへ保存する。実装は truescale.core.state。"""
+    return _state.store(key, value)
 
 
 def _pattern_transform_rows(rows, matrix, point_indices):
@@ -481,7 +455,7 @@ def _smooth_curve_segments_world_xy(obj, samples_per_segment=32):
 
 def _preview_outline_segments(context):
     """Return the outline matching the currently displayed finish mode."""
-    mode = context.scene.get("tsunfold_display_mode", "POLY")
+    mode = context.scene.get(_session.DISPLAY_MODE, "POLY")
 
     if mode == "SMOOTH":
         # Prefer active smooth object.
@@ -684,7 +658,7 @@ def _pattern_sanitize_arrow_axis(scene):
 
 
 def _pattern_manual_layout_active(scene):
-    return bool(scene.get("tsunfold_manual_layout_active", False))
+    return bool(scene.get(_session.MANUAL_LAYOUT_ACTIVE, False))
 
 
 def _pattern_setting_updated(self, context):
@@ -736,7 +710,7 @@ def _pattern_workflow_status(context):
     """
     scene = context.scene
 
-    loaded_name = scene.get("tsunfold_seam_source", "")
+    loaded_name = scene.get(_session.SEAM_SOURCE, "")
     source = bpy.data.objects.get(loaded_name) if loaded_name else None
 
     if source is None or source.type != 'MESH':
@@ -949,11 +923,11 @@ def _pattern_print_preview_source_visibility(context, preview_on):
         if source is None:
             return
 
-        scene["tsunfold_preview_source_name"] = source.name
-        scene["tsunfold_preview_source_hide_get"] = bool(
+        scene[_session.PREVIEW_SOURCE_NAME] = source.name
+        scene[_session.PREVIEW_SOURCE_HIDE_GET] = bool(
             source.hide_get()
         )
-        scene["tsunfold_preview_source_hide_viewport"] = bool(
+        scene[_session.PREVIEW_SOURCE_HIDE_VIEWPORT] = bool(
             source.hide_viewport
         )
 
@@ -962,7 +936,7 @@ def _pattern_print_preview_source_visibility(context, preview_on):
 
     else:
         source_name = str(
-            scene.get("tsunfold_preview_source_name", "")
+            scene.get(_session.PREVIEW_SOURCE_NAME, "")
         )
         source = bpy.data.objects.get(source_name)
 
@@ -970,14 +944,14 @@ def _pattern_print_preview_source_visibility(context, preview_on):
             try:
                 source.hide_viewport = bool(
                     scene.get(
-                        "tsunfold_preview_source_hide_viewport",
+                        _session.PREVIEW_SOURCE_HIDE_VIEWPORT,
                         False,
                     )
                 )
                 source.hide_set(
                     bool(
                         scene.get(
-                            "tsunfold_preview_source_hide_get",
+                            _session.PREVIEW_SOURCE_HIDE_GET,
                             False,
                         )
                     )
@@ -985,9 +959,9 @@ def _pattern_print_preview_source_visibility(context, preview_on):
             except Exception:
                 _debug.swallowed("unfold._pattern_print_preview_source_visibility")
 
-        scene["tsunfold_preview_source_name"] = ""
-        scene["tsunfold_preview_source_hide_get"] = False
-        scene["tsunfold_preview_source_hide_viewport"] = False
+        scene[_session.PREVIEW_SOURCE_NAME] = ""
+        scene[_session.PREVIEW_SOURCE_HIDE_GET] = False
+        scene[_session.PREVIEW_SOURCE_HIDE_VIEWPORT] = False
 
     _tag_redraw()
 
@@ -1842,8 +1816,8 @@ def _pattern_delete_generated_for_source(context, source_obj):
 
     context.scene.tsunfold_pattern_preview = False
     context.scene.tsunfold_preview = False
-    context.scene["tsunfold_preview_prev_active"] = ""
-    context.scene["tsunfold_display_mode"] = "POLY"
+    context.scene[_session.PREVIEW_PREV_ACTIVE] = ""
+    context.scene[_session.DISPLAY_MODE] = "POLY"
     _pattern_invalidate_layout_cache()
 
     return total
@@ -2296,7 +2270,7 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
 
 
 def _pattern_seam_source(context):
-    name = context.scene.get("tsunfold_seam_source", "")
+    name = context.scene.get(_session.SEAM_SOURCE, "")
     obj = bpy.data.objects.get(name)
     if obj is not None and obj.type == 'MESH':
         return obj
@@ -2368,8 +2342,8 @@ class TSUNFOLD_OT_load_seamed_object(bpy.types.Operator):
             )
             return {'CANCELLED'}
 
-        context.scene["tsunfold_seam_source"] = obj.name
-        context.scene["tsunfold_seam_preview_ready"] = False
+        context.scene[_session.SEAM_SOURCE] = obj.name
+        context.scene[_session.SEAM_PREVIEW_READY] = False
 
         _pattern_clear_island_highlight()
         _pattern_clear_live_preview()
@@ -2419,7 +2393,7 @@ class TSUNFOLD_OT_build_pattern(bpy.types.Operator):
         source.hide_viewport = False
         source.select_set(True)
         context.view_layer.objects.active = source
-        context.scene["tsunfold_seam_source"] = source.name
+        context.scene[_session.SEAM_SOURCE] = source.name
 
         # A new build is always a full regeneration from the CURRENT seams on the loaded source model.
         _pattern_remove_auto_notches(source)
@@ -2442,7 +2416,7 @@ class TSUNFOLD_OT_build_pattern(bpy.types.Operator):
         if 'FINISHED' not in result:
             return {'CANCELLED'}
 
-        context.scene["tsunfold_seam_preview_ready"] = False
+        context.scene[_session.SEAM_PREVIEW_READY] = False
 
         auto_notch_count = 0
         if str(
@@ -2613,7 +2587,7 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
         )
 
     def invoke(self, context, event):
-        context.scene["tsunfold_manual_layout_active"] = True
+        context.scene[_session.MANUAL_LAYOUT_ACTIVE] = True
         _pattern_clear_island_highlight()
         _pattern_clear_live_preview()
         _tag_redraw()
@@ -2625,7 +2599,7 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
 
         # Smooth finishing is a separate Curve. Manual layout edits operate
         # on the real flat Mesh, so temporarily return to POLY display.
-        context.scene["tsunfold_display_mode"] = "POLY"
+        context.scene[_session.DISPLAY_MODE] = "POLY"
         for candidate in bpy.data.objects:
             if (
                 candidate.type == 'CURVE'
@@ -2834,7 +2808,7 @@ class TSUNFOLD_OT_layout_confirm(bpy.types.Operator):
             )
             return {'CANCELLED'}
 
-        context.scene["tsunfold_manual_layout_active"] = False
+        context.scene[_session.MANUAL_LAYOUT_ACTIVE] = False
         _pattern_invalidate_layout_cache()
         _tag_redraw()
 
@@ -2854,10 +2828,10 @@ class TSUNFOLD_OT_delete_unfold(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        context.scene["tsunfold_manual_layout_active"] = False
+        context.scene[_session.MANUAL_LAYOUT_ACTIVE] = False
         try:
             context.scene.tsunfold_pattern_preview = False
-            context.scene["tsunfold_preview_prev_active"] = ""
+            context.scene[_session.PREVIEW_PREV_ACTIVE] = ""
         except Exception:
             _debug.swallowed("unfold.TSUNFOLD_OT_delete_unfold.execute")
 
@@ -2966,7 +2940,7 @@ class TSUNFOLD_OT_toggle_pattern_preview(bpy.types.Operator):
 
         if not showing:
             active = context.active_object
-            scene["tsunfold_preview_prev_active"] = (
+            scene[_session.PREVIEW_PREV_ACTIVE] = (
                 active.name if active is not None else ""
             )
 
@@ -2998,7 +2972,7 @@ class TSUNFOLD_OT_toggle_pattern_preview(bpy.types.Operator):
             unfold.hide_set(True)
             unfold.hide_viewport = True
 
-            prev_name = scene.get("tsunfold_preview_prev_active", "")
+            prev_name = scene.get(_session.PREVIEW_PREV_ACTIVE, "")
             prev = bpy.data.objects.get(prev_name)
 
             if prev is None:
@@ -3059,7 +3033,7 @@ class TSUNFOLD_OT_toggle_preview(bpy.types.Operator):
 
 def _export_outline_segments(context):
     """Return outline segments for the currently displayed finish."""
-    mode = context.scene.get("tsunfold_display_mode", "POLY")
+    mode = context.scene.get(_session.DISPLAY_MODE, "POLY")
     obj = context.active_object
 
     if (
@@ -3224,7 +3198,7 @@ class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
         obj = context.active_object
         filename = bpy.path.clean_name(obj.name) + ".png"
 
-        last_dir = context.scene.get("tsunfold_last_export_dir", "")
+        last_dir = context.scene.get(_session.LAST_EXPORT_DIR, "")
         if last_dir and Path(last_dir).exists():
             self.filepath = str(Path(last_dir) / filename)
         else:
@@ -3445,7 +3419,7 @@ class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
             return {'CANCELLED'}
 
         # Remember the directory used for the latest successful export.
-        context.scene["tsunfold_last_export_dir"] = str(filepath.parent)
+        context.scene[_session.LAST_EXPORT_DIR] = str(filepath.parent)
 
         self.report(
             {'INFO'},
@@ -3664,7 +3638,7 @@ def _pattern_raycast_flat_pattern_location(context, event):
 
 
 def _pattern_marking_session_active(scene):
-    return bool(scene.get("tsunfold_marking_session_active", False))
+    return bool(scene.get(_session.MARKING_SESSION_ACTIVE, False))
 
 
 def _pattern_begin_marking_session(context, source_obj):
@@ -3679,18 +3653,18 @@ def _pattern_begin_marking_session(context, source_obj):
             if obj is not None
         ]
 
-        scene["tsunfold_marking_prev_active"] = (
+        scene[_session.MARKING_PREV_ACTIVE] = (
             active.name if active is not None else ""
         )
-        scene["tsunfold_marking_prev_selected_json"] = json.dumps(
+        scene[_session.MARKING_PREV_SELECTED_JSON] = json.dumps(
             selected_names,
             ensure_ascii=False,
         )
-        scene["tsunfold_marking_prev_mode"] = (
+        scene[_session.MARKING_PREV_MODE] = (
             active.mode if active is not None else "OBJECT"
         )
-        scene["tsunfold_marking_session_active"] = True
-        scene["tsunfold_marking_finish_requested"] = False
+        scene[_session.MARKING_SESSION_ACTIVE] = True
+        scene[_session.MARKING_FINISH_REQUESTED] = False
 
     # Marking always happens on the original source Mesh in Object Mode.
     try:
@@ -3714,7 +3688,7 @@ def _pattern_begin_marking_session(context, source_obj):
 
 
 def _pattern_request_finish_marking(context):
-    context.scene["tsunfold_marking_finish_requested"] = True
+    context.scene[_session.MARKING_FINISH_REQUESTED] = True
     _tag_redraw()
 
 
@@ -3723,18 +3697,18 @@ def _pattern_restore_work_state(context):
     scene = context.scene
 
     prev_active_name = scene.get(
-        "tsunfold_marking_prev_active",
+        _session.MARKING_PREV_ACTIVE,
         "",
     )
     prev_mode = scene.get(
-        "tsunfold_marking_prev_mode",
+        _session.MARKING_PREV_MODE,
         "OBJECT",
     )
 
     try:
         selected_names = json.loads(
             scene.get(
-                "tsunfold_marking_prev_selected_json",
+                _session.MARKING_PREV_SELECTED_JSON,
                 "[]",
             )
         )
@@ -3789,13 +3763,13 @@ def _pattern_restore_work_state(context):
             except Exception:
                 _debug.swallowed("unfold._pattern_restore_work_state")
 
-    scene["tsunfold_marking_session_active"] = False
-    scene["tsunfold_marking_finish_requested"] = False
-    scene["tsunfold_modal_running"] = False
+    scene[_session.MARKING_SESSION_ACTIVE] = False
+    scene[_session.MARKING_FINISH_REQUESTED] = False
+    scene[_session.MODAL_RUNNING] = False
     scene.tsunfold_active_tool = "NONE"
-    scene["tsunfold_marking_prev_active"] = ""
-    scene["tsunfold_marking_prev_selected_json"] = "[]"
-    scene["tsunfold_marking_prev_mode"] = "OBJECT"
+    scene[_session.MARKING_PREV_ACTIVE] = ""
+    scene[_session.MARKING_PREV_SELECTED_JSON] = "[]"
+    scene[_session.MARKING_PREV_MODE] = "OBJECT"
 
     _tag_redraw()
 
@@ -3812,7 +3786,7 @@ class TSUNFOLD_OT_finish_marking(bpy.types.Operator):
 
         context.scene.tsunfold_active_tool = "NONE"
         _pattern_clear_live_preview()
-        context.scene["tsunfold_modal_running"] = False
+        context.scene[_session.MODAL_RUNNING] = False
         _pattern_request_finish_marking(context)
         _pattern_restore_work_state(context)
 
@@ -4207,18 +4181,12 @@ def _pattern_flat_vertex_source_indices(unfold_obj):
 
 
 def _pattern_invalidate_layout_cache():
-    global _pattern_auto_island_cache
-    global _pattern_cache_epoch
-    global _pattern_draw_cache
+    """型紙や注記が変わったときに呼ぶ。キャッシュを捨てて描き直す。
 
-    _pattern_cache_epoch += 1
-    _pattern_auto_island_cache = {
-        "key": None,
-        "records": None,
-        "face_to_island": None,
-        "adjacency": None,
-    }
-    _pattern_draw_cache = {}
+    キャッシュの実体は truescale.core.state。
+    ここでは再描画の要求だけを足している。
+    """
+    _state.invalidate()
     _tag_redraw()
 
 
@@ -4253,7 +4221,6 @@ def _pattern_island_label(scene, index):
     return _pattern_alpha_label(index)
 
 
-_pattern_flat_poly_cache = {"key": None, "polys": None}
 
 
 def _pattern_flat_polygons_2d(mesh):
@@ -4273,10 +4240,10 @@ def _pattern_flat_polygons_2d(mesh):
         mesh.name,
         len(mesh.vertices),
         len(mesh.polygons),
-        int(_pattern_cache_epoch),
+        int(_state.epoch),
     )
-    if _pattern_flat_poly_cache["key"] == key:
-        return _pattern_flat_poly_cache["polys"]
+    if _state.flat_poly_cache["key"] == key:
+        return _state.flat_poly_cache["polys"]
 
     coords = [(float(v.co.x), float(v.co.y)) for v in mesh.vertices]
 
@@ -4290,8 +4257,8 @@ def _pattern_flat_polygons_2d(mesh):
         ys = [p[1] for p in points]
         polys.append((min(xs), min(ys), max(xs), max(ys), points))
 
-    _pattern_flat_poly_cache["key"] = key
-    _pattern_flat_poly_cache["polys"] = polys
+    _state.flat_poly_cache["key"] = key
+    _state.flat_poly_cache["polys"] = polys
     return polys
 
 
@@ -4791,7 +4758,6 @@ def _pattern_auto_island_metadata(context, source_obj, unfold_obj):
     IDs are sorted by the minimum original source-face index, so moving layout
     islands does not randomly renumber them.
     """
-    global _pattern_auto_island_cache
 
     if (
         source_obj is None
@@ -4803,18 +4769,18 @@ def _pattern_auto_island_metadata(context, source_obj, unfold_obj):
     scene = context.scene
     cache_key = (
         unfold_obj.name,
-        int(_pattern_cache_epoch),
+        int(_state.epoch),
         len(unfold_obj.data.vertices),
         len(unfold_obj.data.edges),
         len(unfold_obj.data.polygons),
         str(getattr(scene, "tsunfold_island_id_style", "ALPHA")),
     )
 
-    if _pattern_auto_island_cache.get("key") == cache_key:
+    if _state.island_cache.get("key") == cache_key:
         return (
-            _pattern_auto_island_cache["records"],
-            _pattern_auto_island_cache["face_to_island"],
-            _pattern_auto_island_cache["adjacency"],
+            _state.island_cache["records"],
+            _state.island_cache["face_to_island"],
+            _state.island_cache["adjacency"],
         )
 
     mesh = unfold_obj.data
@@ -5026,7 +4992,7 @@ def _pattern_auto_island_metadata(context, source_obj, unfold_obj):
             "tangent_local": tangent,
         })
 
-    _pattern_auto_island_cache = {
+    _state.island_cache = {
         "key": cache_key,
         "records": records,
         "face_to_island": face_to_island,
@@ -5150,12 +5116,11 @@ def _pattern_auto_flat_oriented_text_items(
     source_obj,
     unfold_obj,
 ):
-    global _pattern_draw_cache
 
     scene = context.scene
     key = (
         "auto_text",
-        int(_pattern_cache_epoch),
+        int(_state.epoch),
         source_obj.name if source_obj else "",
         unfold_obj.name if unfold_obj else "",
         str(getattr(scene, "tsunfold_island_id_style", "ALPHA")),
@@ -5171,7 +5136,7 @@ def _pattern_auto_flat_oriented_text_items(
         str(getattr(scene, "tsunfold_arrow_up_axis", "Z")),
     )
 
-    cached = _pattern_draw_cache.get(key)
+    cached = _state.get(key)
     if cached is None:
         cached = _pattern_draw_cache_store(
             key,
@@ -5931,7 +5896,7 @@ def _pattern_auto_arrow_segments_local(context, source_obj, unfold_obj):
     scene = context.scene
     key = (
         "auto_arrows",
-        int(_pattern_cache_epoch),
+        int(_state.epoch),
         source_obj.name if source_obj else "",
         unfold_obj.name if unfold_obj else "",
         str(getattr(scene, "tsunfold_arrow_mode", "AUTO")),
@@ -5949,7 +5914,7 @@ def _pattern_auto_arrow_segments_local(context, source_obj, unfold_obj):
         ),
     )
 
-    cached = _pattern_draw_cache.get(key)
+    cached = _state.get(key)
     if cached is not None:
         return cached
 
@@ -6260,7 +6225,7 @@ def _pattern_compute_flat_colored_segments(context, source_obj, unfold_obj):
         color = _pattern_item_color(item, context.scene)
 
         if kind == "notch_edge":
-            if context.scene.get("tsunfold_display_mode", "POLY") == "SMOOTH":
+            if context.scene.get(_session.DISPLAY_MODE, "POLY") == "SMOOTH":
                 # なめらか表示はワールド空間のカーブへ投影するため、
                 # 結果をローカルへ戻してから他と揃える。
                 inverse = unfold_obj.matrix_world.inverted_safe()
@@ -6344,7 +6309,6 @@ def _pattern_compute_flat_colored_segments(context, source_obj, unfold_obj):
 
 
 def _pattern_flat_colored_segments(context, source_obj, unfold_obj):
-    global _pattern_draw_cache
 
     annotations_raw = source_obj.get(
         _PATTERN_ANNOTATION_PROP,
@@ -6354,7 +6318,7 @@ def _pattern_flat_colored_segments(context, source_obj, unfold_obj):
 
     key = (
         "flat_segments",
-        int(_pattern_cache_epoch),
+        int(_state.epoch),
         source_obj.name if source_obj else "",
         unfold_obj.name if unfold_obj else "",
         annotations_raw,
@@ -6369,10 +6333,10 @@ def _pattern_flat_colored_segments(context, source_obj, unfold_obj):
             round(float(v), 4)
             for v in getattr(scene, "tsunfold_notch_color", (0.0, 0.0, 0.0))
         ),
-        str(scene.get("tsunfold_display_mode", "POLY")),
+        str(scene.get(_session.DISPLAY_MODE, "POLY")),
     )
 
-    cached = _pattern_draw_cache.get(key)
+    cached = _state.get(key)
     if cached is None:
         cached = _pattern_draw_cache_store(
             key,
@@ -6569,7 +6533,7 @@ def _draw_pattern_marks_3d():
             # remain untouched.
             # ------------------------------------------------------
             loaded_source_name = str(
-                context.scene.get("tsunfold_seam_source", "")
+                context.scene.get(_session.SEAM_SOURCE, "")
             )
             source_visible = (
                 not bool(source.hide_get())
@@ -6663,7 +6627,7 @@ def _draw_pattern_marks_3d():
                 and (
                     not unfold.hide_viewport
                     or context.scene.get(
-                        "tsunfold_display_mode",
+                        _session.DISPLAY_MODE,
                         "POLY",
                     ) == "SMOOTH"
                 )
@@ -6765,7 +6729,7 @@ def _draw_pattern_marks_3d():
                         and (
                             not unfold.hide_viewport
                             or context.scene.get(
-                                "tsunfold_display_mode",
+                                _session.DISPLAY_MODE,
                                 "POLY",
                             ) == "SMOOTH"
                         )
@@ -6776,7 +6740,7 @@ def _draw_pattern_marks_3d():
                             "t": float(_pattern_live_preview["notch_t"]),
                         }
                         if context.scene.get(
-                            "tsunfold_display_mode",
+                            _session.DISPLAY_MODE,
                             "POLY",
                         ) == "SMOOTH":
                             preview_notches = _pattern_smooth_notch_segments(
@@ -7301,7 +7265,7 @@ def _draw_pattern_text_2d():
             and (
                 not unfold.hide_viewport
                 or context.scene.get(
-                    "tsunfold_display_mode",
+                    _session.DISPLAY_MODE,
                     "POLY",
                 ) == "SMOOTH"
             )
@@ -7652,8 +7616,8 @@ def _pattern_toggle_tool_invoke(operator, context, mode):
     if current == mode:
         _pattern_set_active_tool(context.scene, "NONE")
         _pattern_clear_live_preview()
-        context.scene["tsunfold_modal_running"] = False
-        context.scene["tsunfold_marking_finish_requested"] = False
+        context.scene[_session.MODAL_RUNNING] = False
+        context.scene[_session.MARKING_FINISH_REQUESTED] = False
         operator.report({'INFO'}, "マーキングツールをOFFにしました")
         return {'FINISHED'}
 
@@ -7669,11 +7633,11 @@ def _pattern_toggle_tool_invoke(operator, context, mode):
     _pattern_live_preview["mode"] = mode
     _pattern_live_preview["source"] = source.name
 
-    if not bool(context.scene.get("tsunfold_modal_running", False)):
+    if not bool(context.scene.get(_session.MODAL_RUNNING, False)):
         operator._source_name = source.name
         operator._first_anchor = None
         operator._last_mode = mode
-        context.scene["tsunfold_modal_running"] = True
+        context.scene[_session.MODAL_RUNNING] = True
         context.window_manager.modal_handler_add(operator)
         return {'RUNNING_MODAL'}
 
@@ -7683,16 +7647,16 @@ def _pattern_toggle_tool_invoke(operator, context, mode):
 def _pattern_modal_common(operator, context, event):
     scene = context.scene
 
-    if bool(scene.get("tsunfold_marking_finish_requested", False)):
+    if bool(scene.get(_session.MARKING_FINISH_REQUESTED, False)):
         _pattern_clear_live_preview()
-        scene["tsunfold_modal_running"] = False
+        scene[_session.MODAL_RUNNING] = False
         return {'FINISHED'}
 
     mode = _pattern_active_tool(scene)
 
     if mode == "NONE":
         _pattern_clear_live_preview()
-        scene["tsunfold_modal_running"] = False
+        scene[_session.MODAL_RUNNING] = False
         operator._first_anchor = None
         return {'FINISHED'}
 
@@ -7714,8 +7678,8 @@ def _pattern_modal_common(operator, context, event):
     if event.type == 'ESC' and event.value == 'PRESS':
         _pattern_set_active_tool(scene, "NONE")
         _pattern_clear_live_preview()
-        scene["tsunfold_modal_running"] = False
-        scene["tsunfold_marking_finish_requested"] = False
+        scene[_session.MODAL_RUNNING] = False
+        scene[_session.MARKING_FINISH_REQUESTED] = False
         operator._first_anchor = None
         return {'FINISHED'}
 
@@ -7767,7 +7731,7 @@ def _pattern_modal_common(operator, context, event):
         return {'PASS_THROUGH'}
 
     if source is None:
-        scene["tsunfold_modal_running"] = False
+        scene[_session.MODAL_RUNNING] = False
         return {'CANCELLED'}
 
     detail = _pattern_raycast_source_detail(
@@ -7889,8 +7853,8 @@ class TSUNFOLD_OT_marking_tool_off(bpy.types.Operator):
     def execute(self, context):
         _pattern_set_active_tool(context.scene, "NONE")
         _pattern_clear_live_preview()
-        context.scene["tsunfold_modal_running"] = False
-        context.scene["tsunfold_marking_finish_requested"] = False
+        context.scene[_session.MODAL_RUNNING] = False
+        context.scene[_session.MARKING_FINISH_REQUESTED] = False
         _tag_redraw()
         self.report({'INFO'}, "マーキングツールをOFFにしました")
         return {'FINISHED'}
@@ -8727,7 +8691,7 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
                 False,
             )
 
-        context.scene["tsunfold_manual_layout_active"] = False
+        context.scene[_session.MANUAL_LAYOUT_ACTIVE] = False
         scene = context.scene
         source = _pattern_seam_source(context)
 
@@ -8762,10 +8726,10 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
         _pattern_clear_island_highlight()
 
         scene.tsunfold_correspondence_mode = False
-        scene["tsunfold_modal_running"] = False
-        scene["tsunfold_marking_session_active"] = False
-        scene["tsunfold_marking_finish_requested"] = False
-        scene["tsunfold_seam_preview_ready"] = False
+        scene[_session.MODAL_RUNNING] = False
+        scene[_session.MARKING_SESSION_ACTIVE] = False
+        scene[_session.MARKING_FINISH_REQUESTED] = False
+        scene[_session.SEAM_PREVIEW_READY] = False
 
 
         scene.tsunfold_preview = False
@@ -8807,9 +8771,9 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
             source.hide_viewport = False
             source.select_set(True)
             context.view_layer.objects.active = source
-            scene["tsunfold_seam_source"] = ""
+            scene[_session.SEAM_SOURCE] = ""
         else:
-            scene["tsunfold_seam_source"] = ""
+            scene[_session.SEAM_SOURCE] = ""
 
         _pattern_invalidate_layout_cache()
         _tag_redraw()
@@ -9048,7 +9012,7 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
         source_box = layout.box()
         source_box.label(text="1. モデルと型紙")
 
-        loaded_name = scene.get("tsunfold_seam_source", "")
+        loaded_name = scene.get(_session.SEAM_SOURCE, "")
         loaded_obj = bpy.data.objects.get(loaded_name) if loaded_name else None
 
         source_box.operator(
@@ -9536,14 +9500,14 @@ def _tsunfold_reset_overlays_on_load(_dummy=None):
         except Exception:
             _debug.swallowed("unfold._tsunfold_reset_overlays_on_load")
         try:
-            scene["tsunfold_marking_session_active"] = False
-            scene["tsunfold_marking_finish_requested"] = False
-            scene["tsunfold_marking_prev_active"] = ""
-            scene["tsunfold_marking_prev_selected_json"] = "[]"
-            scene["tsunfold_marking_prev_mode"] = "OBJECT"
-            scene["tsunfold_seam_source"] = ""
-            scene["tsunfold_seam_preview_ready"] = False
-            scene["tsunfold_modal_running"] = False
+            scene[_session.MARKING_SESSION_ACTIVE] = False
+            scene[_session.MARKING_FINISH_REQUESTED] = False
+            scene[_session.MARKING_PREV_ACTIVE] = ""
+            scene[_session.MARKING_PREV_SELECTED_JSON] = "[]"
+            scene[_session.MARKING_PREV_MODE] = "OBJECT"
+            scene[_session.SEAM_SOURCE] = ""
+            scene[_session.SEAM_PREVIEW_READY] = False
+            scene[_session.MODAL_RUNNING] = False
             scene.tsunfold_active_tool = "NONE"
             scene.tsunfold_correspondence_mode = False
             scene.tsunfold_auto_island_ids = True
@@ -9555,9 +9519,9 @@ def _tsunfold_reset_overlays_on_load(_dummy=None):
             scene.tsunfold_notch_mode = "AUTO"
             scene.tsunfold_auto_notch_divisions = "3"
             scene.tsunfold_pattern_preview = False
-            scene["tsunfold_preview_source_name"] = ""
-            scene["tsunfold_preview_source_hide_get"] = False
-            scene["tsunfold_preview_source_hide_viewport"] = False
+            scene[_session.PREVIEW_SOURCE_NAME] = ""
+            scene[_session.PREVIEW_SOURCE_HIDE_GET] = False
+            scene[_session.PREVIEW_SOURCE_HIDE_VIEWPORT] = False
         except Exception:
             _debug.swallowed("unfold._tsunfold_reset_overlays_on_load")
 

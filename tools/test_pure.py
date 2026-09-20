@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from truescale.core import paper, units
+from truescale.core import paper, session, state, units
 from truescale.export import png
 
 _tests = []
@@ -124,6 +124,112 @@ def test_orientation_swap():
     check(paper.oriented(210.0, 297.0, "LANDSCAPE") == (297.0, 210.0), "横向き")
     check(paper.oriented(297.0, 210.0, "PORTRAIT") == (210.0, 297.0), "縦向き")
     check(paper.oriented(210.0, 297.0, "AUTO") == (210.0, 297.0), "自動は素通し")
+
+
+# ============================================================
+# state
+# ============================================================
+
+@test
+def test_invalidate_advances_epoch():
+    """無効化すると epoch が進み、キャッシュが空になる。"""
+    state.invalidate()
+    state.store(("x", 1), "値")
+    before = state.epoch
+
+    state.invalidate()
+
+    check(state.epoch == before + 1, f"epoch が進んでいない: {state.epoch}")
+    check(state.get(("x", 1)) is None, "キャッシュが残っている")
+
+
+@test
+def test_store_evicts_oldest():
+    """上限を超えたら古いものから捨てる。
+
+    全消しにすると、ある設定のキャッシュが埋まったときに
+    無関係なキャッシュまで巻き添えで消える。
+    """
+    state.invalidate()
+    limit = state.DRAW_CACHE_LIMIT
+
+    for index in range(limit):
+        state.store(("k", index), index)
+    check(len(state.draw_cache) == limit, f"件数が違う: {len(state.draw_cache)}")
+
+    # 1つ足すと、最も古いものだけが消える
+    state.store(("k", limit), limit)
+    check(len(state.draw_cache) == limit, f"上限を超えた: {len(state.draw_cache)}")
+    check(state.get(("k", 0)) is None, "最も古いものが残っている")
+    check(state.get(("k", 1)) == 1, "2番目まで消えている")
+    check(state.get(("k", limit)) == limit, "新しいものが入っていない")
+
+
+@test
+def test_store_never_exceeds_limit():
+    """大量に入れても上限を超えない。"""
+    state.invalidate()
+    for index in range(state.DRAW_CACHE_LIMIT * 5):
+        state.store(("many", index), index)
+    check(
+        len(state.draw_cache) <= state.DRAW_CACHE_LIMIT,
+        f"上限を超えている: {len(state.draw_cache)}",
+    )
+
+
+# ============================================================
+# session
+# ============================================================
+
+@test
+def test_session_keys_are_declared():
+    """scene["..."] で使うキーが全て session に宣言されている。
+
+    キー名を直書きすると、接頭辞の一括置換などで壊れたときに
+    気づけない。宣言と使用が一致していることを機械的に確かめる。
+    """
+    import re
+
+    declared = set(session.all_keys())
+
+    # 登録プロパティなので session の管轄外。
+    # 属性アクセスが正で、辞書アクセスは登録前に呼ばれた場合の保険。
+    registered_fallbacks = {"tsunfold_active_tool"}
+
+    source = (REPO_ROOT / "truescale" / "unfold" / "__init__.py").read_text(
+        encoding="utf-8"
+    )
+
+    used = set()
+    for match in re.finditer(r'scene(?:\.get\(|\[)"(tsunfold_\w+)"', source):
+        used.add(match.group(1))
+
+    undeclared = used - declared - registered_fallbacks
+    check(
+        not undeclared,
+        f"session に宣言されていないキーを使っている: {sorted(undeclared)}",
+    )
+
+
+@test
+def test_session_reset_covers_work_state():
+    """ファイルを開いたときの初期化が、作業状態を網羅している。"""
+    reset = session.RESET_ON_LOAD
+
+    must_reset = (
+        session.MODAL_RUNNING,
+        session.MARKING_SESSION_ACTIVE,
+        session.MANUAL_LAYOUT_ACTIVE,
+        session.SEAM_SOURCE,
+    )
+    for key in must_reset:
+        check(key in reset, f"初期化対象に含まれていない: {key}")
+
+    # 退避用の値まで消すと、プレビュー復帰ができなくなる
+    check(
+        session.PREVIEW_SOURCE_NAME not in reset,
+        "プレビューの退避情報まで初期化している",
+    )
 
 
 # ============================================================

@@ -261,6 +261,7 @@ def test_annotations_follow_object():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     obj = make_seamed_cube(size=2.0)
@@ -301,6 +302,7 @@ def test_cache_survives_object_move():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     obj = make_seamed_cube(size=2.0)
@@ -340,13 +342,14 @@ def test_draw_cache_is_bounded():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
-    limit = U._PATTERN_DRAW_CACHE_LIMIT
+    limit = S.DRAW_CACHE_LIMIT
     for index in range(limit * 3):
-        U._pattern_draw_cache_store(("dummy", index), index)
+        S.store(("dummy", index), index)
 
-    size = len(U._pattern_draw_cache)
+    size = len(S.draw_cache)
     check(size <= limit, f"キャッシュが上限を超えている: {size} > {limit}")
 
 
@@ -359,6 +362,7 @@ def test_notch_color_does_not_rebuild():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     obj = make_seamed_cube(size=2.0)
@@ -404,6 +408,7 @@ def test_sliders_do_not_invalidate_cache():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     scene = bpy.context.scene
@@ -417,9 +422,9 @@ def test_sliders_do_not_invalidate_cache():
     )
 
     for name, value in sliders:
-        before = U._pattern_cache_epoch
+        before = S.epoch
         setattr(scene, name, value)
-        after = U._pattern_cache_epoch
+        after = S.epoch
         check(
             before == after,
             f"{name} の変更でキャッシュ epoch が進んだ: {before} -> {after}",
@@ -432,6 +437,7 @@ def test_workflow_status_progresses():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     # 何も無い状態
@@ -481,6 +487,7 @@ def test_scale_warning_for_oversized_pattern():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     scene = bpy.context.scene
@@ -507,6 +514,7 @@ def test_no_scale_warning_at_sane_scale():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     scene = bpy.context.scene
@@ -525,6 +533,7 @@ def test_manual_scale_overrides_scene():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     scene = bpy.context.scene
@@ -557,6 +566,7 @@ def test_manual_scale_changes_pattern_size():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     scene = bpy.context.scene
@@ -586,6 +596,7 @@ def test_calibrated_scale_is_exact():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     scene = bpy.context.scene
@@ -619,6 +630,7 @@ def test_warning_when_island_spacing_dominates():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     scene = bpy.context.scene
@@ -658,6 +670,7 @@ def test_notch_color_follows_scene_setting():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     scene = bpy.context.scene
@@ -687,6 +700,7 @@ def test_notch_color_does_not_touch_annotations():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     obj = make_seamed_cube(size=2.0)
@@ -714,6 +728,7 @@ def test_every_marking_setting_updates_immediately():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     scene = bpy.context.scene
@@ -770,6 +785,7 @@ def test_every_marking_setting_updates_immediately():
 def add_manual_notch(source, edge_index=0, t=0.5):
     """手動で置いた合印を1つ足す。"""
     from truescale import unfold as U
+    from truescale.core import state as S
 
     items = U._pattern_get_annotations(source)
     items.append({
@@ -784,6 +800,7 @@ def add_manual_notch(source, edge_index=0, t=0.5):
 
 def count_notches(source):
     from truescale import unfold as U
+    from truescale.core import state as S
 
     auto = manual = 0
     for item in U._pattern_get_annotations(source):
@@ -855,6 +872,7 @@ def test_remove_all_notches_keeps_other_marks():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     obj = make_seamed_cube(size=2.0)
@@ -882,6 +900,7 @@ def test_notch_status_text():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import state as S
     truescale.register()
 
     # 元モデルすら無い状態
