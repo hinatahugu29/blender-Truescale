@@ -13,6 +13,7 @@ Blenderを起動せずに、以下のズレを検出する。
   8. 未定義のまま読まれている名前（実行時に NameError になる）
   9. ローカル変数が同名の関数を隠している（UnboundLocalError）
  10. @persistent が付いていないハンドラ
+ 11. return などの後ろに置かれて実行されないコード
 
 使い方:
     python tools/check_addon.py truescale/unfold/__init__.py
@@ -403,6 +404,48 @@ def handlers_without_persistent(path):
     )
 
 
+def unreachable_code(path):
+    """return などの後ろに置かれて、決して実行されない文を返す。
+
+    コードを挿し込む位置を誤ると起きる。構文としては正しいので、
+    実行しても例外が出ない。静かに効かなくなるだけ。
+
+    実際、文字の回転を戻す処理が return の後ろへ回り、Blender 本体の
+    UIまで傾いたことがある。0番フォントの状態は共有なので、戻し
+    忘れると画面全体に及ぶ。
+
+    同じブロックの中だけを見る。if/else の分岐をまたいだ到達性は
+    追わない（そこまで見ると誤検出が増える）。
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError:
+        return []
+
+    found = []
+    stoppers = (ast.Return, ast.Raise, ast.Continue, ast.Break)
+
+    for node in ast.walk(tree):
+        for field in ("body", "orelse", "finalbody"):
+            block = getattr(node, field, None)
+            if not isinstance(block, list):
+                continue
+
+            for index, statement in enumerate(block[:-1]):
+                if not isinstance(statement, stoppers):
+                    continue
+
+                after = block[index + 1]
+                kind = type(statement).__name__.lower()
+                found.append(
+                    f"行 {after.lineno} は {kind}（行 {statement.lineno}）"
+                    f"の後ろで、実行されない"
+                )
+                break
+
+    return sorted(set(found))
+
+
 def collect_references(paths):
     """複数ファイルから、名前とプロパティの参照だけを集める。
 
@@ -586,6 +629,12 @@ def analyze(path: Path, extra=None):
             ("どこからも呼ばれていないモジュール直下の関数", dead_functions)
         )
 
+    dead = unreachable_code(path)
+    if dead:
+        problems.append(
+            ("到達しないコード（挿し込む位置の誤り）", dead)
+        )
+
     unsafe_handlers = handlers_without_persistent(path)
     if unsafe_handlers:
         problems.append(
@@ -651,6 +700,8 @@ def main(argv):
         for item in undefined_names(p):
             stray.append(f"{p}: {item}")
         for item in shadowed_functions(p):
+            stray.append(f"{p}: {item}")
+        for item in unreachable_code(p):
             stray.append(f"{p}: {item}")
     if stray:
         print("=" * 72)

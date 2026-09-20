@@ -1238,6 +1238,24 @@ def draw_marks_3d():
 
 
 def draw_text_2d():
+    """型紙の上の文字を、画面の文字として描く。
+
+    blf の回転はフォント番号ごとの状態で、0番は Blender 本体のUIと
+    共有している。戻し忘れると、サイドバーもヘッダもアウトライナも、
+    画面の文字が全部傾く。影響が画面全体に及ぶので、抜けるときに
+    必ず戻す。
+    """
+    try:
+        _draw_text_2d_inner()
+    finally:
+        try:
+            blf.disable(0, blf.ROTATION)
+            blf.rotation(0, 0.0)
+        except Exception:
+            _debug.swallowed("overlay.draw_text_2d.reset")
+
+
+def _draw_text_2d_inner():
     context = bpy.context
 
     if (
@@ -1324,17 +1342,19 @@ def draw_text_2d():
 
             blf.draw(font_id, str(text))
 
+            # 描いたら必ず回転を戻す。0番のフォントは Blender 本体の
+            # UIと共有なので、戻し忘れると画面の文字が全部傾く。
+            try:
+                blf.disable(font_id, blf.ROTATION)
+            except Exception:
+                _debug.swallowed("overlay.draw_text_2d.draw_label")
+
         if dragging:
             # 動かしている最中の文字。控えたものをずらして描く。
             _unfold, _segments, texts = dragging_marks(context)
             for text, world_pos, size_mm, color, angle in texts:
                 draw_label(text, world_pos, size_mm, color, angle)
             return
-
-            try:
-                blf.disable(font_id, blf.ROTATION)
-            except Exception:
-                _debug.swallowed("overlay._draw_pattern_text_2d.draw_label")
 
         # ------------------------------------------------------
         # Source-model labels.
