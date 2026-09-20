@@ -1,0 +1,214 @@
+"""パネルに出す案内文。
+
+初めて触ったとき「どこで何が起きているのか分からない」という状態に
+なりやすい。ボタンは並んでいるが、押せる状態なのか、いま何段目なのかが
+画面から読めなかった。ここはその道案内を組み立てる。
+
+■ 進み具合
+
+読み込み → シーム → 型紙、のどこにいるかを (アイコン, 現在地, 次の一手)
+で返す。次の一手が None なら完了。
+
+■ 数を出す
+
+設定を変えても見た目が変わったか分かりにくい。合印の件数を出して、
+効いていることを目に見える形で返す。
+
+■ スケールの注意
+
+Unit Scale が既定の 1 のままだと 1 BU = 1000 mm となり、デフォルトの
+円柱が2メートルの物体になる。用紙ガイドが点になり、自動レイアウトが
+必ず失敗し、合印が小さすぎて見えない。全部同じ原因なのに、画面には
+どれも理由が出ていなかった。
+"""
+
+import bpy
+
+from ..core import geometry as _geometry
+from ..core import objects as _objects
+from ..core import paper as _paper
+from ..core import session as _session
+from ..core import units as _units
+from ..marking import storage as _storage
+from . import build as _build
+
+
+def workflow(context):
+    """いま何ができていて、次に何をすればよいかを返す。
+
+    (アイコン, 現在地, 次の一手) の3つ組。次の一手が無ければ None。
+
+    初回に触ったとき「どこで何が起きているのか分からない」という
+    状態になりやすいため、パネルの先頭に出して道案内にする。
+    """
+    scene = context.scene
+
+    loaded_name = scene.get(_session.SEAM_SOURCE, "")
+    source = bpy.data.objects.get(loaded_name) if loaded_name else None
+
+    if source is None or source.type != 'MESH':
+        active = context.active_object
+        if active is not None and active.type == 'MESH':
+            return (
+                'INFO',
+                f"未読み込み（選択中: {active.name}）",
+                "「モデルの読み込み」を押してください",
+            )
+        return (
+            'INFO',
+            "未読み込み",
+            "シームを設定したMeshを選んでください",
+        )
+
+    seam_count = sum(1 for edge in source.data.edges if edge.use_seam)
+
+    if seam_count == 0:
+        return (
+            'ERROR',
+            f"{source.name} を読み込み済み / シーム 0 本",
+            "編集モードで辺を選び「シームを入れる」を押してください",
+        )
+
+    unfold = _objects.unfold_for_source(source)
+    if unfold is None:
+        return (
+            'INFO',
+            f"{source.name} / シーム {seam_count} 本",
+            "「型紙を作成 / 更新」を押してください",
+        )
+
+    islands = len(_geometry.face_islands(unfold.data))
+    size = _build.object_xy_size_mm(context, unfold)
+    size_text = f" / {size[0]:.0f}×{size[1]:.0f} mm" if size else ""
+
+    return (
+        'CHECKMARK',
+        f"型紙 {islands} 枚{size_text}",
+        None,
+    )
+
+
+def scale_warnings(context, unfold_obj):
+    """型紙が用紙に対して極端に大きい／小さい場合の注意を返す。
+
+    Unit Scale が 1 のままだと 1 BU = 1000 mm 換算になり、Blenderの
+    デフォルト円柱（半径1 BU）が直径2メートルの物体として扱われる。
+    その状態では
+      - 用紙ガイドが画面上でほぼ点にしかならない
+      - 自動レイアウトが必ず失敗する
+      - 300dpi PNG がピクセル数の上限を超える
+      - 実寸で正しいはずの合印が小さすぎて見えない
+    が同時に起きるが、どれも「なぜそうなるか」が画面に出ていなかった。
+    """
+    size = _build.object_xy_size_mm(context, unfold_obj)
+    if not size:
+        return []
+
+    width_mm, height_mm = size
+    longest = max(width_mm, height_mm)
+    if longest <= 0.0:
+        return []
+
+    paper_w, paper_h = _paper.scene_dimensions_mm(context.scene)
+    paper_longest = max(paper_w, paper_h)
+
+    lines = []
+
+    # 用紙に対して大きすぎる
+    if longest > paper_longest:
+        ratio = longest / paper_longest
+        lines.append(
+            f"用紙 {_paper.scene_display_name(context.scene)} の約 {ratio:.1f} 倍です"
+        )
+
+        fits = [
+            name for name, (pw, ph) in sorted(
+                _paper.SIZES_MM.items(),
+                key=lambda kv: kv[1][0] * kv[1][1],
+            )
+            if width_mm <= max(pw, ph) and height_mm <= min(pw, ph)
+            or width_mm <= min(pw, ph) and height_mm <= max(pw, ph)
+        ]
+        if fits:
+            lines.append(f"{fits[0]} なら収まります")
+        else:
+            lines.append("A0でも収まりません。分割が必要です")
+
+    # 合印が小さすぎて見えない
+    notch_mm = float(getattr(context.scene, "tsunfold_notch_length_mm", 6.0))
+    if notch_mm > 0.0 and longest / notch_mm > 300.0:
+        lines.append(
+            f"合印 {notch_mm:.1f} mm は型紙に対して小さすぎます"
+        )
+
+    # 島の間隔が型紙より大きいと、島が散らばって全体が巨大に見える。
+    # 間隔は絶対値のミリ指定なので、基準を小さくすると相対的に効きすぎる。
+    spacing_mm = float(getattr(context.scene, "tsunfold_spacing_mm", 10.0))
+    islands = len(_geometry.face_islands(unfold_obj.data))
+    if islands > 1 and spacing_mm > 0.0:
+        # 間隔の総和が型紙の長辺の半分を超えたら、間隔が支配的
+        total_gap = spacing_mm * (islands - 1)
+        if total_gap > longest * 0.5:
+            lines.append(
+                f"島の間隔 {spacing_mm:g} mm が型紙に対して大きすぎます"
+            )
+
+    # 原因が Unit Scale にありそうな場合だけ添える
+    if lines:
+        scale, mm_per_bu = _units.scene_unit_summary(context.scene)
+        if mm_per_bu >= 100.0:
+            lines.append(
+                f"Unit Scale {scale:g}（1 BU = {mm_per_bu:g} mm）を確認してください"
+            )
+
+    return lines
+
+
+def manual_notch_count(context):
+    """手動で置かれた合印の数。"""
+    source = _objects.seam_source(context)
+    if source is None:
+        source = _objects.source_from_context(context)
+
+    if source is None or source.type != 'MESH':
+        return 0
+
+    return sum(
+        1
+        for item in _storage.load(source)
+        if item.get("type") == "notch_edge" and not bool(item.get("auto", False))
+    )
+
+
+def notch_text(context):
+    """パネルに出す合印の現状。
+
+    設定を変えても見た目の変化が分かりにくく、効いているのか
+    判断できないという声があったため、件数を出して手応えを返す。
+    """
+    source = _objects.seam_source(context)
+    if source is None:
+        source = _objects.source_from_context(context)
+
+    if source is None or source.type != 'MESH':
+        return "元モデルが未読み込み"
+
+    if _objects.unfold_for_source(source) is None:
+        return "型紙が未作成"
+
+    auto = manual = 0
+    for item in _storage.load(source):
+        if item.get("type") != "notch_edge":
+            continue
+        if bool(item.get("auto", False)):
+            auto += 1
+        else:
+            manual += 1
+
+    if auto == 0 and manual == 0:
+        return "合印なし（「作成 / 更新」を押してください）"
+
+    text = f"合印 {auto + manual} 個"
+    if manual:
+        text += f"（オート {auto} / 手動 {manual}）"
+    return text

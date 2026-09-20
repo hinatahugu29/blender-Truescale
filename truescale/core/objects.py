@@ -16,6 +16,7 @@
 import bpy
 
 from . import mapping as _mapping
+from . import session as _session
 
 GENERATED_PROP = "tsunfold_generated"
 SOURCE_PROP = "tsunfold_source"
@@ -186,3 +187,27 @@ def boundary_segments_world_xy(obj):
         segments.append(((pa.x, pa.y), (pb.x, pb.y)))
 
     return segments
+
+
+def seam_source(context):
+    name = context.scene.get(_session.SEAM_SOURCE, "")
+    obj = bpy.data.objects.get(name)
+    if obj is not None and obj.type == 'MESH':
+        return obj
+
+    active = context.active_object
+    if active is not None:
+        if (
+            active.type == 'MESH'
+            and not bool(active.get("tsunfold_generated", False))
+        ):
+            return active
+
+        if bool(active.get("tsunfold_generated", False)):
+            src = bpy.data.objects.get(
+                active.get("tsunfold_source", "")
+            )
+            if src is not None and src.type == 'MESH':
+                return src
+
+    return None

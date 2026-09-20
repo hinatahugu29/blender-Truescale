@@ -16,6 +16,9 @@ from .. import overlay as _overlay
 from ..marking import storage as _storage
 from ..core import units as _units
 from ..export import png as _png
+from . import build as _build
+from . import status as _status
+from ..export import outline as _outline
 import traceback
 import gpu
 from bpy.props import EnumProperty, StringProperty, FloatProperty, BoolProperty, FloatVectorProperty
@@ -36,6 +39,35 @@ import heapq
 import json
 import time
 import blf
+
+
+# 書き出す線の抽出は truescale.export.outline にある。
+# 既存の呼び出しをそのまま動かすための別名。
+_segments_bbox = _outline.bbox
+_export_paper_dimensions = _outline.paper_dimensions
+_export_outline_segments = _outline.current_finish_segments
+_can_export_current_finish = _outline.can_export
+_pattern_text_outline_segments = _outline.text_segments
+
+
+# 型紙メッシュの生成と配置は truescale.unfold.build にある。
+# 既存の呼び出しをそのまま動かすための別名。
+_world_edge_length = _build.world_edge_length
+_calc_real_scale = _build.real_scale
+_build_flat_mesh = _build.flat_mesh
+_pack_islands = _build.pack_islands
+_object_xy_size_mm = _build.object_xy_size_mm
+_show_generated_from_top = _build.show_from_top
+_try_shelf_layout = _build.try_shelf_layout
+
+
+# パネルの案内文は truescale.unfold.status にある。
+# 既存の呼び出しをそのまま動かすための別名。
+_pattern_seam_source = _objects.seam_source
+_pattern_workflow_status = _status.workflow
+_pattern_scale_warnings = _status.scale_warnings
+_pattern_manual_notch_count = _status.manual_notch_count
+_pattern_notch_status_text = _status.notch_text
 
 # 用紙サイズと印刷解像度の定義は共通モジュールが持つ。
 # 既存の参照をそのまま動かすために別名を置いている。
@@ -136,7 +168,7 @@ _pattern_min_clearance = _geometry.min_clearance
 
 PAPER_SIZES_MM = _paper.SIZES_MM
 PRINT_DPI = _png.PRINT_DPI
-UNFOLD_SUFFIX = "_展開図"
+UNFOLD_SUFFIX = _build.UNFOLD_SUFFIX
 _draw_handle = None
 _pattern_draw_handle = None
 _pattern_text_handle = None
@@ -201,228 +233,18 @@ def _bu_to_mm(scene, bu):
     return _units.scene_bu_to_mm(scene, bu)
 
 
-def _world_edge_length(obj, v1, v2):
-    """Physical source edge length in current Scene Blender Units.
-
-    Full matrix_world is used so unapplied object scale, parent scale,
-    rotation, and other object transforms are reflected automatically.
-    """
-    mw = obj.matrix_world
-    p1 = mw @ v1.co
-    p2 = mw @ v2.co
-    return (p2 - p1).length
-
-
-def _calc_real_scale(obj, mesh, uv_layer):
-    ratios = []
-    eps = 1e-10
-
-    for poly in mesh.polygons:
-        loops = list(poly.loop_indices)
-        if len(loops) < 2:
-            continue
-
-        for i, li_a in enumerate(loops):
-            li_b = loops[(i + 1) % len(loops)]
-            loop_a = mesh.loops[li_a]
-            loop_b = mesh.loops[li_b]
-            uv_a = uv_layer.data[li_a].uv
-            uv_b = uv_layer.data[li_b].uv
-
-            uv_len = (uv_b - uv_a).length
-            if uv_len <= eps:
-                continue
-
-            v_a = mesh.vertices[loop_a.vertex_index]
-            v_b = mesh.vertices[loop_b.vertex_index]
-            world_len = _world_edge_length(obj, v_a, v_b)
-
-            if world_len > eps:
-                ratios.append(world_len / uv_len)
-
-    return median(ratios) if ratios else None
-
-
-def _build_flat_mesh(context, src_obj, mesh, uv_layer, scale_bu_per_uv):
-    verts = []
-    faces = []
-    vert_map = {}
-    flat_vertex_source_vertex = []
-    flat_face_source_face = []
-    flat_side_source_edge = {}
-
-    source_edge_lookup = {
-        tuple(sorted((int(e.vertices[0]), int(e.vertices[1])))): int(e.index)
-        for e in mesh.edges
-    }
-
-    def uv_key(loop_index):
-        loop = mesh.loops[loop_index]
-        uv = uv_layer.data[loop_index].uv
-        return (
-            loop.vertex_index,
-            round(float(uv.x), 8),
-            round(float(uv.y), 8),
-        )
-
-    for poly in mesh.polygons:
-        face = []
-        loop_indices = list(poly.loop_indices)
-
-        for li in loop_indices:
-            loop = mesh.loops[li]
-            key = uv_key(li)
-            idx = vert_map.get(key)
-
-            if idx is None:
-                uv = uv_layer.data[li].uv
-                idx = len(verts)
-                vert_map[key] = idx
-                verts.append((
-                    float(uv.x) * scale_bu_per_uv,
-                    float(uv.y) * scale_bu_per_uv,
-                    0.0,
-                ))
-                flat_vertex_source_vertex.append(int(loop.vertex_index))
-
-            face.append(idx)
-
-        if len(face) >= 3:
-            faces.append(face)
-            flat_face_source_face.append(int(poly.index))
-
-            for i, li in enumerate(loop_indices):
-                lj = loop_indices[(i + 1) % len(loop_indices)]
-
-                sva = int(mesh.loops[li].vertex_index)
-                svb = int(mesh.loops[lj].vertex_index)
-                source_edge = source_edge_lookup.get(
-                    tuple(sorted((sva, svb))),
-                    -1,
-                )
-
-                fva = int(face[i])
-                fvb = int(face[(i + 1) % len(face)])
-                flat_side_source_edge[tuple(sorted((fva, fvb)))] = source_edge
-
-    if not verts or not faces:
-        return None
-
-    mesh_name = f"{src_obj.name}{UNFOLD_SUFFIX}_Mesh"
-    obj_name = f"{src_obj.name}{UNFOLD_SUFFIX}"
-
-    new_mesh = bpy.data.meshes.new(mesh_name)
-    new_mesh.from_pydata(verts, [], faces)
-    new_mesh.update()
-
-    new_obj = bpy.data.objects.new(obj_name, new_mesh)
-    context.collection.objects.link(new_obj)
-
-    new_obj.location = (0.0, 0.0, 0.0)
-    new_obj.rotation_euler = (0.0, 0.0, 0.0)
-    new_obj.scale = (1.0, 1.0, 1.0)
-
-    new_obj["tsunfold_generated"] = True
-    new_obj["tsunfold_source"] = src_obj.name
-
-    # Record the unit context used to create this pattern.
-    scene_scale, mm_per_bu = _scene_unit_summary(context.scene)
-    new_obj["tsunfold_scene_scale_length"] = float(scene_scale)
-    new_obj["tsunfold_mm_per_bu"] = float(mm_per_bu)
-    new_obj["tsunfold_source_object_scale"] = [
-        float(src_obj.scale.x),
-        float(src_obj.scale.y),
-        float(src_obj.scale.z),
-    ]
-
-    new_obj["tsunfold_flat_vertex_source_json"] = json.dumps(
-        flat_vertex_source_vertex
-    )
-    new_obj["tsunfold_flat_face_source_json"] = json.dumps(
-        flat_face_source_face
-    )
-
-    flat_edge_source = [-1] * len(new_mesh.edges)
-    for edge in new_mesh.edges:
-        key = tuple(sorted((int(edge.vertices[0]), int(edge.vertices[1]))))
-        flat_edge_source[edge.index] = int(
-            flat_side_source_edge.get(key, -1)
-        )
-
-    new_obj["tsunfold_flat_edge_source_json"] = json.dumps(
-        flat_edge_source
-    )
-
-    for o in context.selected_objects:
-        o.select_set(False)
-
-    new_obj.select_set(True)
-    context.view_layer.objects.active = new_obj
-    return new_obj
 
 
 
 
-def _pack_islands(context, obj, spacing_mm):
-    """Pack islands left-to-right. Translation only, never scaling."""
-    if not obj or obj.type != 'MESH':
-        return
-
-    mesh = obj.data
-    islands = _get_face_islands(mesh)
-    if not islands:
-        return
-
-    spacing_bu = _mm_to_bu(context.scene, max(0.0, spacing_mm))
-
-    data = []
-    for ids in islands:
-        xs = [mesh.vertices[i].co.x for i in ids]
-        ys = [mesh.vertices[i].co.y for i in ids]
-        data.append({
-            "verts": ids,
-            "min_x": min(xs),
-            "max_x": max(xs),
-            "min_y": min(ys),
-            "max_y": max(ys),
-        })
-
-    # Stable order based on current left-to-right position.
-    data.sort(key=lambda c: (c["min_x"], c["min_y"]))
-
-    cursor_x = 0.0
-    baseline_y = 0.0
-
-    for comp in data:
-        dx = cursor_x - comp["min_x"]
-        dy = baseline_y - comp["min_y"]
-
-        for vi in comp["verts"]:
-            mesh.vertices[vi].co.x += dx
-            mesh.vertices[vi].co.y += dy
-
-        width = comp["max_x"] - comp["min_x"]
-        cursor_x += width + spacing_bu
-
-    mesh.update()
 
 
 
 
-def _object_xy_size_mm(context, obj):
-    if obj is None or obj.type != 'MESH' or not obj.data.vertices:
-        return None
 
-    points = [obj.matrix_world @ v.co for v in obj.data.vertices]
-    min_x = min(p.x for p in points)
-    max_x = max(p.x for p in points)
-    min_y = min(p.y for p in points)
-    max_y = max(p.y for p in points)
 
-    return (
-        _bu_to_mm(context.scene, max_x - min_x),
-        _bu_to_mm(context.scene, max_y - min_y),
-    )
+
+
 
 
 # ------------------------------------------------------------
@@ -507,185 +329,12 @@ def _pattern_notch_divisions_updated(self, context):
     _pattern_invalidate_layout_cache()
 
 
-def _pattern_workflow_status(context):
-    """いま何ができていて、次に何をすればよいかを返す。
-
-    (アイコン, 現在地, 次の一手) の3つ組。次の一手が無ければ None。
-
-    初回に触ったとき「どこで何が起きているのか分からない」という
-    状態になりやすいため、パネルの先頭に出して道案内にする。
-    """
-    scene = context.scene
-
-    loaded_name = scene.get(_session.SEAM_SOURCE, "")
-    source = bpy.data.objects.get(loaded_name) if loaded_name else None
-
-    if source is None or source.type != 'MESH':
-        active = context.active_object
-        if active is not None and active.type == 'MESH':
-            return (
-                'INFO',
-                f"未読み込み（選択中: {active.name}）",
-                "「モデルの読み込み」を押してください",
-            )
-        return (
-            'INFO',
-            "未読み込み",
-            "シームを設定したMeshを選んでください",
-        )
-
-    seam_count = sum(1 for edge in source.data.edges if edge.use_seam)
-
-    if seam_count == 0:
-        return (
-            'ERROR',
-            f"{source.name} を読み込み済み / シーム 0 本",
-            "編集モードで辺を選び「シームを入れる」を押してください",
-        )
-
-    unfold = _pattern_unfold_for_source(source)
-    if unfold is None:
-        return (
-            'INFO',
-            f"{source.name} / シーム {seam_count} 本",
-            "「型紙を作成 / 更新」を押してください",
-        )
-
-    islands = len(_get_face_islands(unfold.data))
-    size = _object_xy_size_mm(context, unfold)
-    size_text = f" / {size[0]:.0f}×{size[1]:.0f} mm" if size else ""
-
-    return (
-        'CHECKMARK',
-        f"型紙 {islands} 枚{size_text}",
-        None,
-    )
 
 
-def _pattern_scale_warnings(context, unfold_obj):
-    """型紙が用紙に対して極端に大きい／小さい場合の注意を返す。
-
-    Unit Scale が 1 のままだと 1 BU = 1000 mm 換算になり、Blenderの
-    デフォルト円柱（半径1 BU）が直径2メートルの物体として扱われる。
-    その状態では
-      - 用紙ガイドが画面上でほぼ点にしかならない
-      - 自動レイアウトが必ず失敗する
-      - 300dpi PNG がピクセル数の上限を超える
-      - 実寸で正しいはずの合印が小さすぎて見えない
-    が同時に起きるが、どれも「なぜそうなるか」が画面に出ていなかった。
-    """
-    size = _object_xy_size_mm(context, unfold_obj)
-    if not size:
-        return []
-
-    width_mm, height_mm = size
-    longest = max(width_mm, height_mm)
-    if longest <= 0.0:
-        return []
-
-    paper_w, paper_h = _paper_dimensions_mm(context.scene)
-    paper_longest = max(paper_w, paper_h)
-
-    lines = []
-
-    # 用紙に対して大きすぎる
-    if longest > paper_longest:
-        ratio = longest / paper_longest
-        lines.append(
-            f"用紙 {_paper_display_name(context.scene)} の約 {ratio:.1f} 倍です"
-        )
-
-        fits = [
-            name for name, (pw, ph) in sorted(
-                PAPER_SIZES_MM.items(),
-                key=lambda kv: kv[1][0] * kv[1][1],
-            )
-            if width_mm <= max(pw, ph) and height_mm <= min(pw, ph)
-            or width_mm <= min(pw, ph) and height_mm <= max(pw, ph)
-        ]
-        if fits:
-            lines.append(f"{fits[0]} なら収まります")
-        else:
-            lines.append("A0でも収まりません。分割が必要です")
-
-    # 合印が小さすぎて見えない
-    notch_mm = float(getattr(context.scene, "tsunfold_notch_length_mm", 6.0))
-    if notch_mm > 0.0 and longest / notch_mm > 300.0:
-        lines.append(
-            f"合印 {notch_mm:.1f} mm は型紙に対して小さすぎます"
-        )
-
-    # 島の間隔が型紙より大きいと、島が散らばって全体が巨大に見える。
-    # 間隔は絶対値のミリ指定なので、基準を小さくすると相対的に効きすぎる。
-    spacing_mm = float(getattr(context.scene, "tsunfold_spacing_mm", 10.0))
-    islands = len(_get_face_islands(unfold_obj.data))
-    if islands > 1 and spacing_mm > 0.0:
-        # 間隔の総和が型紙の長辺の半分を超えたら、間隔が支配的
-        total_gap = spacing_mm * (islands - 1)
-        if total_gap > longest * 0.5:
-            lines.append(
-                f"島の間隔 {spacing_mm:g} mm が型紙に対して大きすぎます"
-            )
-
-    # 原因が Unit Scale にありそうな場合だけ添える
-    if lines:
-        scale, mm_per_bu = _scene_unit_summary(context.scene)
-        if mm_per_bu >= 100.0:
-            lines.append(
-                f"Unit Scale {scale:g}（1 BU = {mm_per_bu:g} mm）を確認してください"
-            )
-
-    return lines
 
 
-def _pattern_manual_notch_count(context):
-    """手動で置かれた合印の数。"""
-    source = _pattern_seam_source(context)
-    if source is None:
-        source = _pattern_source_object_from_context(context)
-
-    if source is None or source.type != 'MESH':
-        return 0
-
-    return sum(
-        1
-        for item in _pattern_get_annotations(source)
-        if item.get("type") == "notch_edge" and not bool(item.get("auto", False))
-    )
 
 
-def _pattern_notch_status_text(context):
-    """パネルに出す合印の現状。
-
-    設定を変えても見た目の変化が分かりにくく、効いているのか
-    判断できないという声があったため、件数を出して手応えを返す。
-    """
-    source = _pattern_seam_source(context)
-    if source is None:
-        source = _pattern_source_object_from_context(context)
-
-    if source is None or source.type != 'MESH':
-        return "元モデルが未読み込み"
-
-    if _pattern_unfold_for_source(source) is None:
-        return "型紙が未作成"
-
-    auto = manual = 0
-    for item in _pattern_get_annotations(source):
-        if item.get("type") != "notch_edge":
-            continue
-        if bool(item.get("auto", False)):
-            auto += 1
-        else:
-            manual += 1
-
-    if auto == 0 and manual == 0:
-        return "合印なし（「作成 / 更新」を押してください）"
-
-    text = f"合印 {auto + manual} 個"
-    if manual:
-        text += f"（オート {auto} / 手動 {manual}）"
-    return text
 
 
 def _pattern_redraw_only_updated(self, context):
@@ -802,17 +451,6 @@ def _spacing_updated(self, context):
     _tag_redraw()
 
 
-def _show_generated_from_top(context, obj):
-    for o in context.selected_objects:
-        o.select_set(False)
-    obj.select_set(True)
-    context.view_layer.objects.active = obj
-
-    try:
-        bpy.ops.view3d.view_axis(type='TOP', align_active=False)
-        bpy.ops.view3d.view_selected(use_all_regions=False)
-    except RuntimeError:
-        _debug.swallowed("unfold._show_generated_from_top")
 
 
 
@@ -822,161 +460,6 @@ def _show_generated_from_top(context, obj):
 
 
 
-def _try_shelf_layout(context, obj, allow_rotate=True):
-    """Simple deterministic paper packing.
-
-    Uses island bounding rectangles, current paper size/orientation, and
-    current spacing. No scaling is ever applied.
-    """
-    mesh = obj.data
-    islands = _get_face_islands(mesh)
-    if not islands:
-        return False, "アイランドがありません"
-
-    scene = context.scene
-    paper_w_mm, paper_h_mm = _paper_dimensions_mm(scene)
-    paper_w = _mm_to_bu(scene, paper_w_mm)
-    paper_h = _mm_to_bu(scene, paper_h_mm)
-
-    # Printer-safe margin must be defined before usable area is calculated.
-    safe = _mm_to_bu(scene, 10.0)
-    gap = _mm_to_bu(scene, 5.0)
-
-    usable_w = max(0.0, paper_w - safe * 2.0)
-    usable_h = max(0.0, paper_h - safe * 2.0)
-
-    # Snapshot original coordinates so failure can restore everything.
-    original = {v.index: v.co.copy() for v in mesh.vertices}
-
-    # Work largest-first, tends to pack more reliably.
-    items = []
-    for ids in islands:
-        min_x, min_y, max_x, max_y = _island_bbox(mesh, ids)
-        w = max_x - min_x
-        h = max_y - min_y
-        items.append({
-            "verts": ids,
-            "w": w,
-            "h": h,
-            "area": w * h,
-        })
-
-    items.sort(key=lambda it: (max(it["w"], it["h"]), it["area"]), reverse=True)
-
-    cursor_x = 0.0
-    cursor_y = 0.0
-    row_h = 0.0
-
-    for item in items:
-        ids = item["verts"]
-        min_x, min_y, max_x, max_y = _island_bbox(mesh, ids)
-        w = max_x - min_x
-        h = max_y - min_y
-
-        # If the island cannot fit the current row, consider rotation first
-        # when that makes it fit horizontally and within paper height.
-        rotated = False
-
-        def fits_here(test_w, test_h):
-            return (
-                cursor_x + test_w <= usable_w + 1e-9
-                and cursor_y + test_h <= usable_h + 1e-9
-            )
-
-        if allow_rotate:
-            rw, rh = h, w
-            normal_ok = fits_here(w, h)
-            rotated_ok = fits_here(rw, rh)
-
-            # Prefer rotation if normal does not fit but rotated does,
-            # or if both fit and rotation wastes less remaining row width.
-            if rotated_ok and (
-                not normal_ok
-                or (usable_w - (cursor_x + rw)) < (usable_w - (cursor_x + w))
-            ):
-                _rotate_vertices_90(mesh, ids)
-                rotated = True
-                min_x, min_y, max_x, max_y = _island_bbox(mesh, ids)
-                w = max_x - min_x
-                h = max_y - min_y
-
-        # Start a new row if needed.
-        if cursor_x > 0.0 and cursor_x + w > usable_w + 1e-9:
-            cursor_x = 0.0
-            cursor_y += row_h + gap
-            row_h = 0.0
-
-            # Re-evaluate rotation for the fresh row.
-            if allow_rotate:
-                min_x, min_y, max_x, max_y = _island_bbox(mesh, ids)
-                w = max_x - min_x
-                h = max_y - min_y
-                rw, rh = h, w
-
-                normal_ok = (
-                    w <= usable_w + 1e-9
-                    and cursor_y + h <= usable_h + 1e-9
-                )
-                rotated_ok = (
-                    rw <= usable_w + 1e-9
-                    and cursor_y + rh <= usable_h + 1e-9
-                )
-
-                if rotated_ok and (
-                    not normal_ok
-                    or (usable_w - rw) < (usable_w - w)
-                ):
-                    _rotate_vertices_90(mesh, ids)
-                    rotated = not rotated
-                    min_x, min_y, max_x, max_y = _island_bbox(mesh, ids)
-                    w = max_x - min_x
-                    h = max_y - min_y
-
-        # Hard failure: no scaling, no clipping.
-        if (
-            w > usable_w + 1e-9
-            or cursor_y + h > usable_h + 1e-9
-        ):
-            for vi, co in original.items():
-                mesh.vertices[vi].co = co
-            mesh.update()
-            return False, (
-                f"{paper_w_mm:.0f}×{paper_h_mm:.0f} mm の用紙に "
-                "すべてのアイランドを収められませんでした"
-            )
-
-        _move_island_to(mesh, ids, cursor_x, cursor_y)
-
-        cursor_x += w + gap
-        row_h = max(row_h, h)
-
-    # Center the final packed layout inside the safe printable area.
-    all_x = [v.co.x for v in mesh.vertices]
-    all_y = [v.co.y for v in mesh.vertices]
-
-    if all_x and all_y:
-        min_x = min(all_x)
-        max_x = max(all_x)
-        min_y = min(all_y)
-        max_y = max(all_y)
-
-        packed_w = max_x - min_x
-        packed_h = max_y - min_y
-
-        target_min_x = safe + max(0.0, (usable_w - packed_w) * 0.5)
-        target_min_y = safe + max(0.0, (usable_h - packed_h) * 0.5)
-
-        dx = target_min_x - min_x
-        dy = target_min_y - min_y
-
-        for v in mesh.vertices:
-            v.co.x += dx
-            v.co.y += dy
-
-    mesh.update()
-    return True, (
-        f"{_paper_display_name(scene)} / 周囲10mm余白で中央配置しました"
-    )
 
 
 
@@ -986,48 +469,8 @@ def _try_shelf_layout(context, obj, allow_rotate=True):
 
 
 
-def _segments_bbox(segments):
-    pts = [p for seg in segments for p in seg]
-    if not pts:
-        return None
-
-    xs = [p[0] for p in pts]
-    ys = [p[1] for p in pts]
-    return min(xs), min(ys), max(xs), max(ys)
 
 
-def _export_paper_dimensions(scene, shape_w_mm, shape_h_mm):
-    paper_key = str(getattr(scene, "tsunfold_paper_size", "A4"))
-
-    if paper_key == "CUSTOM":
-        return _paper_dimensions_mm(scene)
-
-    orientation = str(
-        getattr(scene, "tsunfold_orientation", "PORTRAIT")
-    )
-    base_w, base_h = PAPER_SIZES_MM[paper_key]
-    portrait = (min(base_w, base_h), max(base_w, base_h))
-    landscape = (portrait[1], portrait[0])
-
-    if orientation == "PORTRAIT":
-        return portrait
-    if orientation == "LANDSCAPE":
-        return landscape
-
-    fitting = [
-        p for p in (portrait, landscape)
-        if shape_w_mm <= p[0] + 1e-6 and shape_h_mm <= p[1] + 1e-6
-    ]
-    if fitting:
-        return min(
-            fitting,
-            key=lambda p: (p[0] - shape_w_mm) * (p[1] - shape_h_mm)
-        )
-
-    def overflow(p):
-        return max(0.0, shape_w_mm - p[0]) + max(0.0, shape_h_mm - p[1])
-
-    return min((portrait, landscape), key=overflow)
 
 
 def _draw_line_rgb(buf, width, height, x0, y0, x1, y1, thickness=1,
@@ -1852,28 +1295,6 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
 
 
 
-def _pattern_seam_source(context):
-    name = context.scene.get(_session.SEAM_SOURCE, "")
-    obj = bpy.data.objects.get(name)
-    if obj is not None and obj.type == 'MESH':
-        return obj
-
-    active = context.active_object
-    if active is not None:
-        if (
-            active.type == 'MESH'
-            and not bool(active.get("tsunfold_generated", False))
-        ):
-            return active
-
-        if bool(active.get("tsunfold_generated", False)):
-            src = bpy.data.objects.get(
-                active.get("tsunfold_source", "")
-            )
-            if src is not None and src.type == 'MESH':
-                return src
-
-    return None
 
 
 
@@ -2557,155 +1978,11 @@ class TSUNFOLD_OT_toggle_preview(bpy.types.Operator):
 
 
 
-def _export_outline_segments(context):
-    """Return outline segments for the currently displayed finish."""
-    mode = context.scene.get(_session.DISPLAY_MODE, "POLY")
-    obj = context.active_object
-
-    if (
-        mode == "SMOOTH"
-        or (
-            obj
-            and obj.type == 'CURVE'
-            and bool(obj.get("tsunfold_smooth_generated", False))
-        )
-    ):
-        if (
-            obj
-            and obj.type == 'CURVE'
-            and bool(obj.get("tsunfold_smooth_generated", False))
-        ):
-            return _smooth_curve_segments_world_xy(obj)
-
-        for candidate in bpy.data.objects:
-            if (
-                candidate.type == 'CURVE'
-                and bool(candidate.get("tsunfold_smooth_generated", False))
-                and not candidate.hide_viewport
-            ):
-                return _smooth_curve_segments_world_xy(candidate)
-
-    if (
-        obj
-        and obj.type == 'MESH'
-        and bool(obj.get("tsunfold_generated", False))
-    ):
-        return _boundary_segments_world_xy(obj)
-
-    for candidate in bpy.data.objects:
-        if (
-            candidate.type == 'MESH'
-            and bool(candidate.get("tsunfold_generated", False))
-            and not candidate.hide_viewport
-        ):
-            return _boundary_segments_world_xy(candidate)
-
-    return []
-
-
-def _can_export_current_finish(context):
-    obj = context.active_object
-    if obj is None:
-        return False
-
-    if obj.type == 'MESH' and bool(obj.get("tsunfold_generated", False)):
-        return True
-
-    if obj.type == 'CURVE' and bool(obj.get("tsunfold_smooth_generated", False)):
-        return True
-
-    return False
 
 
 
-def _pattern_text_outline_segments(context, text, world_pos, size_mm, angle=0.0):
-    """Create temporary Blender FONT geometry and return boundary segments."""
-    if not text:
-        return []
 
-    curve = None
-    obj = None
-    mesh = None
 
-    try:
-        curve = bpy.data.curves.new(
-            "型紙ヘルパー_TMP_TEXT",
-            type='FONT',
-        )
-        curve.body = str(text)
-        curve.align_x = 'CENTER'
-        curve.align_y = 'CENTER'
-        curve.size = _mm_to_bu(
-            context.scene,
-            float(size_mm),
-        )
-        curve.extrude = 0.0
-        curve.offset = 0.0
-
-        obj = bpy.data.objects.new(
-            "型紙ヘルパー_TMP_TEXT",
-            curve,
-        )
-        context.scene.collection.objects.link(obj)
-        obj.location = (
-            float(world_pos.x),
-            float(world_pos.y),
-            0.0,
-        )
-        obj.rotation_euler[2] = float(angle)
-
-        depsgraph = context.evaluated_depsgraph_get()
-        depsgraph.update()
-
-        eval_obj = obj.evaluated_get(depsgraph)
-        mesh = eval_obj.to_mesh()
-
-        edge_counts = {}
-        edge_lookup = {}
-
-        for edge in mesh.edges:
-            key = tuple(sorted((
-                int(edge.vertices[0]),
-                int(edge.vertices[1]),
-            )))
-            edge_lookup[key] = int(edge.index)
-            edge_counts[int(edge.index)] = 0
-
-        for poly in mesh.polygons:
-            for key in poly.edge_keys:
-                idx = edge_lookup.get(tuple(sorted(key)))
-                if idx is not None:
-                    edge_counts[idx] += 1
-
-        result = []
-
-        for edge in mesh.edges:
-            if edge_counts.get(int(edge.index), 0) != 1:
-                continue
-
-            a = obj.matrix_world @ mesh.vertices[edge.vertices[0]].co
-            b = obj.matrix_world @ mesh.vertices[edge.vertices[1]].co
-            result.append((a, b))
-
-        eval_obj.to_mesh_clear()
-        mesh = None
-        return result
-
-    except Exception:
-        return []
-
-    finally:
-        if obj is not None and obj.name in bpy.data.objects:
-            try:
-                bpy.data.objects.remove(obj, do_unlink=True)
-            except Exception:
-                _debug.swallowed("unfold._pattern_text_outline_segments")
-
-        if curve is not None and curve.users == 0:
-            try:
-                bpy.data.curves.remove(curve)
-            except Exception:
-                _debug.swallowed("unfold._pattern_text_outline_segments")
 
 
 class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
