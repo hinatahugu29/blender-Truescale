@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Truescale マニュアル</title>
+<style>
+:root {
+  --bg: #fbfaf8;
+  --panel: #ffffff;
+  --ink: #23201c;
+  --soft: #6a635b;
+  --line: #e2ddd5;
+  --accent: #8a5a2b;
+  --code-bg: #f3f0ea;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17161a;
+    --panel: #1e1d22;
+    --ink: #e8e4dd;
+    --soft: #a29a90;
+    --line: #34313a;
+    --accent: #d8a56a;
+    --code-bg: #26242b;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17161a;
+  --panel: #1e1d22;
+  --ink: #e8e4dd;
+  --soft: #a29a90;
+  --line: #34313a;
+  --accent: #d8a56a;
+  --code-bg: #26242b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI",
+               system-ui, sans-serif;
+  line-height: 1.85;
+  font-size: 15px;
+}
+
+.wrap {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 40px;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 16px 96px;
+}
+
+nav {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 32px 0;
+  font-size: 13.5px;
+}
+nav .brand {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  margin-bottom: 4px;
+}
+nav .sub { color: var(--soft); font-size: 12.5px; margin-bottom: 20px; }
+nav a {
+  display: block;
+  color: var(--soft);
+  text-decoration: none;
+  padding: 3px 0;
+  border-left: 2px solid transparent;
+  padding-left: 10px;
+}
+nav a:hover { color: var(--accent); border-left-color: var(--accent); }
+nav a.lvl2 { font-weight: 600; color: var(--ink); margin-top: 14px; }
+nav a.lvl3 { padding-left: 22px; }
+
+main { padding: 32px 0 0; min-width: 0; }
+
+h1 { font-size: 30px; letter-spacing: .01em; margin: 0 0 6px; }
+h2 {
+  font-size: 23px;
+  margin: 56px 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--line);
+}
+h3 { font-size: 18px; margin: 36px 0 10px; }
+h4 { font-size: 15.5px; margin: 26px 0 8px; color: var(--accent); }
+
+p { margin: 12px 0; }
+ul { margin: 12px 0; padding-left: 22px; }
+li { margin: 5px 0; }
+
+a { color: var(--accent); }
+
+code {
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: .88em;
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+pre code { background: none; padding: 0; font-size: 13px; }
+
+blockquote {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--accent);
+  background: var(--panel);
+  border-radius: 0 8px 8px 0;
+  color: var(--soft);
+}
+blockquote strong { color: var(--ink); }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+th, td {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+th { font-weight: 600; background: var(--code-bg); }
+tbody tr:last-child td { border-bottom: none; }
+
+hr { border: none; border-top: 1px solid var(--line); margin: 40px 0; }
+
+.note {
+  color: var(--soft);
+  font-size: 12.5px;
+  margin-top: 64px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 820px) {
+  .wrap { grid-template-columns: 1fr; gap: 0; }
+  nav {
+    position: static;
+    max-height: none;
+    padding: 24px 0 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  main { padding-top: 20px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+<div class="brand">Truescale</div>
+<div class="sub">v0.2.0 マニュアル</div>
+<a class="lvl2" href="#つかいかた">つかいかた</a>
+<a class="lvl3" href="#つかいかた-型紙をつくる">型紙をつくる</a>
+<a class="lvl3" href="#つかいかた-三面図をつくる">三面図をつくる</a>
+<a class="lvl3" href="#つかいかた-覚えておくとよいこと">覚えておくとよいこと</a>
+<a class="lvl2" href="#こまったとき">こまったとき</a>
+<a class="lvl3" href="#こまったとき-刷ったものが合わない">刷ったものが合わない</a>
+<a class="lvl3" href="#こまったとき-型紙がうまく出ない">型紙がうまく出ない</a>
+<a class="lvl3" href="#こまったとき-糊代・縫い代">糊代・縫い代</a>
+<a class="lvl3" href="#こまったとき-三面図">三面図</a>
+<a class="lvl3" href="#こまったとき-いまできないこと">いまできないこと</a>
+<a class="lvl3" href="#こまったとき-不具合を報告するとき">不具合を報告するとき</a>
+</nav>
+<main>
+<h1>Truescale マニュアル</h1>
+<p>Blender のモデルを、実寸のまま紙へ出すためのアドオンです。</p>
+<section><h2 id="つかいかた">つかいかた</h2>
+<p>3D ビューの N パネル、<strong>Truescale</strong> タブを開いてください。 「型紙」と「三面図」が別々のパネルとして並んでいます。</p>
+<ul><li><a href="#型紙をつくる">型紙をつくる</a></li><li><a href="#三面図をつくる">三面図をつくる</a></li></ul>
+<hr>
+<h3 id="つかいかた-型紙をつくる">型紙をつくる</h3>
+<p>パネルは番号の順に上から並んでいます。<strong>1 → 2 → 3 → 4</strong> をなぞれば終わります。 番号の付いていない区画（「印をつける」「縫い代・糊代」など）は任意です。</p>
+<h4 id="つかいかた-0">0. 実寸の基準（最初に一度だけ）</h4>
+<p>いちばん上の <strong>実寸の前提</strong> を開きます。畳んであります。</p>
+<table><thead><tr><th>決め方</th><th>どういうとき</th></tr></thead><tbody><tr><td>シーンに従う（既定）</td><td>Blender の Unit Scale が正しく設定されている</td></tr><tr><td>このアドオンで指定</td><td>シーン側を触りたくない。1 BU を何ミリとして扱うかを直に入れる</td></tr></tbody></table>
+<p><strong>編集モードで辺を1本選び「選択した辺を基準に実寸を決める」</strong> を押すと、 その辺を何ミリにしたいかを入れるだけで基準が決まります。 「この筒の直径は 80mm のはず」が分かっていれば、これがいちばん確実です。</p>
+<p>一度決めれば、ふつうは触りません。三面図側も同じ基準で測ります。</p>
+<h4 id="つかいかた-1">1. 読み込む</h4>
+<p><strong>モデルの読み込み</strong> で対象を決めます。選択しているメッシュが対象になります。</p>
+<p>続けて <strong>シーム編集</strong> で、どこで切り開くかを入れます。 編集モードで辺を選び、「シームを入れる」。外すときは「外す」。</p>
+<p><strong>対称 X / Y / Z</strong> を入れておくと、反対側の辺にも同時に入ります。 左右対称の衣装や造形では、これでほぼ半分の手間になります。</p>
+<blockquote>シームの出来がそのまま型紙の形になります。ここを間違えると後の工程では 取り返せないので、いちばん時間をかけてよいところです。</blockquote>
+<h4 id="つかいかた-2">2. 型紙にする</h4>
+<p><strong>型紙を作成 / 更新</strong> を押すと、実寸の平面メッシュが <code>&lt;名前&gt;_展開図</code> として作られます。</p>
+<ul><li><strong>元モデルを非表示</strong> — 型紙だけを見たいとき</li><li><strong>型紙を表示して選択</strong> — 型紙を選び直す</li><li><strong>軽量ビュー</strong> — 元モデル側の重い表示を止める。動作が重いときに</li><li><strong>型紙を削除</strong> — 作り直すとき</li></ul>
+<p>このあと、必要なら次の2つを足します。どちらも<strong>型紙を大きくする</strong>ので、 紙に並べる前にやってください。</p>
+<h5 id="つかいかた-縫い代・糊代-任意">縫い代・糊代（任意）</h5>
+<p><strong>縫い代</strong> … 輪郭を外へ一定量ひろげます。外側の実線が裁断線、 元の輪郭が破線の縫い線になります。布向きです。</p>
+<p><strong>糊代（のりしろ）</strong> … 貼り合わせる辺に、折って糊を付けるための台形を出します。 紙模型向きです。</p>
+<ul><li>シームの辺<strong>すべて</strong>に、<strong>片側だけ</strong>付きます（両側に付けたら二重になります）</li><li><strong>根元の破線は折り線です。切らないでください</strong></li><li>置けない辺では自動で細くなり、それでも入らない辺には付きません</li><li>要らない辺は消せます。元メッシュを編集モードにして辺を選び、「消す」</li></ul>
+<blockquote>消した記録は<strong>元メッシュ</strong>に残ります。型紙を作り直しても消えたままです。</blockquote>
+<p>画面での色は変えられます。<strong>刷るときは黒</strong>になります（白黒で刷っても 実線と破線で区別が付くように）。</p>
+<h5 id="つかいかた-印をつける-任意">印をつける（任意）</h5>
+<p>畳んであります。必要になったときだけ開いてください。</p>
+<table><tbody><tr><td>合印</td><td>縫い合わせる位置の目印。シームの辺から自動で作ることもできます</td></tr><tr><td>型紙番号</td><td>連番を置く</td></tr><tr><td>文字</td><td>任意の文字を置く</td></tr><tr><td>上方向矢印</td><td>生地の向き・柄の向き</td></tr><tr><td>型紙ID</td><td>島ごとに A / B / C…（自動）。接続先の記号も出ます</td></tr><tr><td>型紙メモ</td><td>型紙に直接書く文字</td></tr></tbody></table>
+<p><strong>対応確認</strong> を使うと、型紙の島と元モデルの面がどう対応しているかを 色で確かめられます。</p>
+<h4 id="つかいかた-3">3. 紙に並べる</h4>
+<p>用紙と向きを選ぶと、<strong>実寸・必要な枚数・収まる用紙</strong>がその場で出ます。</p>
+<pre><code>型紙 568 × 251 mm を 210×297 mm を 3×1 = 3 枚
+A2 なら1枚で収まります</code></pre>
+<p><strong>用紙ガイドを表示</strong> で、紙の切れ目が 3D ビューに出ます。</p>
+<h5 id="つかいかた-分割の設定">分割の設定</h5>
+<table><tbody><tr><td>用紙の余白 (mm)</td><td>プリンタが刷れない縁の幅。多めに取ってください</td></tr><tr><td>重ねしろ (mm)</td><td>隣の紙と重ねて貼る幅。切らずに重ねられます</td></tr><tr><td>型紙のまわり (mm)</td><td>型紙とガイドの枠の間に空ける余白。鋏を入れる余地</td></tr></tbody></table>
+<h5 id="つかいかた-並べかた">並べかた</h5>
+<ul><li><strong>自動レイアウト</strong> — 枚数がいちばん少なくなるように詰めます</li><li><strong>手動で調整</strong> — 編集モードに入り、島を選んで G で動かせます。 印・寸法・縫い代も一緒に動きます。終わったら <strong>レイアウト確定</strong></li></ul>
+<h4 id="つかいかた-4">4. 出す / 残す</h4>
+<p><strong>印刷プレビュー</strong> で、刷ったときの見た目を確認できます。</p>
+<p><strong>形式</strong> を選んで <strong>実寸で書き出し（300dpi）</strong>。</p>
+<table><tbody><tr><td>PDF</td><td>何枚に分かれても<strong>1ファイル</strong>。線のまま残るので拡大しても粗くならない</td></tr><tr><td>PNG</td><td>1枚ずつの画像。他のソフトへ持ち込むとき。分割すると枚数分できます</td></tr></tbody></table>
+<p>分割したときは、各ページに次のものが入ります。</p>
+<ul><li><strong>受け持ち範囲の枠</strong> — 隣の紙と合わせる線</li><li><strong>合わせの印</strong>（十字と菱形） — 重ねると隣の紙の同じ印とぴたり重なります</li><li><strong>実寸の目盛り</strong> — 定規を当てて、縮んでいないか確かめるため</li><li><strong>タイル名</strong>（1-A、2-A…）と総数</li></ul>
+<blockquote><strong>印刷ダイアログで「用紙に合わせる」を選ばないでください。</strong> 数パーセント縮み、目では気付けません。「実際のサイズ」「100%」を選んでください。 刷ったら必ず目盛りに定規を当てて確かめてください。</blockquote>
+<h5 id="つかいかた-型紙を残したいとき">型紙を残したいとき</h5>
+<p><strong>型紙を確定して残す</strong> を押すと、アドオンから切り離した普通のメッシュになります。</p>
+<ul><li>マーキングは消えます</li><li>「作業終了・型紙を片付ける」でも消えなくなります</li><li>元メッシュが同じなら、あとから同じ型紙を作り直せます</li></ul>
+<p><strong>作業終了・型紙を片付ける</strong> は、確定していない型紙を消して元の表示に戻します。</p>
+<hr>
+<h3 id="つかいかた-三面図をつくる">三面図をつくる</h3>
+<h4 id="つかいかた-1">1. サイズ表示</h4>
+<p>対象のメッシュを選んで <strong>BOX＋寸法を作成</strong>。</p>
+<p>モデルを囲む直方体ができ、その<strong>外形寸法</strong>が 3D ビューに出ます。 <strong>自動追従</strong> を入れておくと、モデルを編集したとき箱も付いてきます。</p>
+<blockquote>測っているのは<strong>箱</strong>であって、モデルの形そのものではありません。 凹凸のある形でも「全体で何ミリか」を読めるようにするためです。</blockquote>
+<p>寸法の文字は手で書き換えられます（「およそ」「max」など）。 空にすると実測値に戻ります。</p>
+<h4 id="つかいかた-2">2. 枠線・文字</h4>
+<p>枠の出しかた（BOX / 寸法線のみ / なし）、色、太さ、文字の大きさと色。</p>
+<p><strong>暗所表示</strong> は、背景を暗くして箱の枠を目立たせる表示です。</p>
+<h4 id="つかいかた-3">3. 図面ビュー</h4>
+<p><strong>三面＋任意ビュー</strong> で4分割にします。正面・上面・側面のズームは揃います。</p>
+<p><strong>正面 / 上面 / 側面 / 任意</strong> で1つのビューへ切り替えられます。 <strong>元の表示に戻す</strong> で作業前の状態へ戻ります。</p>
+<h4 id="つかいかた-4">4. 出力</h4>
+<p><strong>用紙・向き・縮尺</strong> を決めます。縮尺は 1:1、1:2、1:5、1:10、または任意の 1:N。</p>
+<table><tbody><tr><td>三面図シートを書き出し</td><td>三面を1枚の用紙へ並べた PNG。縮尺が紙に書き込まれます</td></tr><tr><td>三面図シートをプレビュー</td><td>書き出さずに確認</td></tr><tr><td>上面 / 前面 / 側面 / 任意</td><td>1面だけの実寸 PNG（300dpi）</td></tr><tr><td>3面まとめてPNG</td><td>3面を別々の PNG で</td></tr></tbody></table>
+<p>三面の縮尺は必ず揃います。面ごとに「紙に収まるように」倍率を変えると、 図面として読めなくなるためです。収まらなければ、縮尺を落とすよう案内が出ます。</p>
+<p><strong>寸法位置の微調整</strong> を開くと、文字の位置を面ごと・軸ごとにずらせます。</p>
+<hr>
+<h3 id="つかいかた-覚えておくとよいこと">覚えておくとよいこと</h3>
+<p><strong>実寸は嘘をつけません。</strong> 型紙側は縮尺を掛けないので、刷ったものに定規を 当てれば正しいかどうかがすぐ分かります。目盛りは必ず確かめてください。</p>
+<p><strong>シームを直したら型紙も作り直しです。</strong> 「型紙を作成 / 更新」を押し直して ください。糊代を消した記録と、元モデルに置いた印は残ります。</p>
+<p><strong>元モデルを作り直す（リトポロジーする）と、シームも糊代の設定も失われます。</strong> 辺の番号が変わるためです。</p>
+</section>
+<section><h2 id="こまったとき">こまったとき</h2>
+<p>v0.2.0 時点。</p>
+<ul><li><a href="#刷ったものが合わない">刷ったものが合わない</a></li><li><a href="#型紙がうまく出ない">型紙がうまく出ない</a></li><li><a href="#糊代縫い代">糊代・縫い代</a></li><li><a href="#三面図">三面図</a></li><li><a href="#いまできないこと">いまできないこと</a></li></ul>
+<hr>
+<h3 id="こまったとき-刷ったものが合わない">刷ったものが合わない</h3>
+<h4 id="こまったとき-定規を当てると寸法が違う">定規を当てると寸法が違う</h4>
+<p><strong>まず印刷設定を疑ってください。</strong> ここが原因の大半です。</p>
+<p>印刷ダイアログの「用紙に合わせる」「フィット」を選ぶと、数パーセント縮みます。 <strong>「実際のサイズ」「100%」「倍率 100%」</strong> を選んでください。</p>
+<p>分割して刷ったときは、各ページの下に実寸の目盛りが入っています。 そこに書いてある数値（100MM など）と実測が合っているか確かめてください。</p>
+<h4 id="こまったとき-実寸そのものが違う">実寸そのものが違う</h4>
+<p>型紙パネルの <strong>実寸の前提</strong> を確認してください。</p>
+<ul><li>「シーンに従う」のとき … Blender の Unit Scale が意図どおりか</li><li>「このアドオンで指定」のとき … 1 BU のミリ数が正しいか</li></ul>
+<p>分からないときは、<strong>編集モードで長さの分かっている辺を1本選び、 「選択した辺を基準に実寸を決める」</strong> が確実です。</p>
+<p>三面図側も同じ基準で測ります。片方だけ違う、ということは起きません。</p>
+<h4 id="こまったとき-分割した紙がつながらない">分割した紙がつながらない</h4>
+<ul><li>各ページの<strong>枠線</strong>を隣の紙と合わせてください。紙の端ではありません</li><li><strong>合わせの印</strong>（十字と菱形）は、重なった帯の中央にあります。 重ねたときに隣の紙の同じ印とぴたり重なります</li><li>線は受け持ち範囲より少し外まで描いてあります。線が続いていることを 目で確かめながら貼れます</li><li><strong>全ページが同じ倍率で刷れているか</strong>を、それぞれの目盛りで確かめてください。 1枚だけ設定が違うことがあります</li></ul>
+<hr>
+<h3 id="こまったとき-型紙がうまく出ない">型紙がうまく出ない</h3>
+<h4 id="こまったとき-用紙に収まりません-と出る">「用紙に収まりません」と出る</h4>
+<p>縮めません。次のどれかです。</p>
+<ul><li>用紙を大きくする（「A2 なら1枚で収まります」という案内が出ます）</li><li>分割して刷る（3×1 = 3枚、のように出ます）</li><li>シームを増やして、島を小さく分ける</li><li>「用紙のまわり」「重ねしろ」を減らす</li></ul>
+<h4 id="こまったとき-島の間隔が広すぎる-狭すぎる">島の間隔が広すぎる／狭すぎる</h4>
+<p>「紙に並べる」の <strong>アイランド間隔</strong> を変えると、その場で並べ直します。</p>
+<h4 id="こまったとき-型紙の形が歪む">型紙の形が歪む</h4>
+<p>UV 展開の性質上、元の形とシームの位置によって歪みます。 円錐や球のように、そもそも平面へ展開できない形では必ず起きます。</p>
+<p><strong>歪みの量を数字で確かめる手段は、いまありません。</strong> シームを増やして、1つの島を小さくすると軽くなります。</p>
+<h4 id="こまったとき-印や文字が消えた">印や文字が消えた</h4>
+<ul><li><strong>手動で調整</strong>（レイアウト編集）の最中は、控えた印をずらして描いています。 頂点を足したり消したりすると、対応が取れなくなるため表示を止めます</li><li>「型紙を確定して残す」を押すと、マーキングは消えます（仕様です）</li></ul>
+<h4 id="こまったとき-動作が重い">動作が重い</h4>
+<ul><li><strong>軽量ビュー</strong> を入れてください。元モデル側の重い表示を止めます</li><li>元モデルを非表示にすると、そちら側の計算をまるごと飛ばします</li><li>面数の多いモデル（数百面の島）では、糊代の計算に数百ミリ秒かかります。 一度計算すれば、形と設定が変わるまで作り直しません</li></ul>
+<hr>
+<h3 id="こまったとき-糊代・縫い代">糊代・縫い代</h3>
+<h4 id="こまったとき-糊代が付かない辺がある">糊代が付かない辺がある</h4>
+<p>次のどれかです。</p>
+<ul><li><strong>相手がいない辺</strong> … 元の立体の縁（開いた口など）。貼り合わせる先が 無いので付きません</li><li><strong>場所がない</strong> … 隣の島やタブとぶつかる。自動で細くし、下限まで 細くしても入らなければ諦めます。無理に置くと、切ったとき型紙自体を 切ってしまうためです</li><li><strong>手で消してある</strong> … 「全部戻す」で戻ります</li></ul>
+<p>詰まったレイアウトでは、ぶつかって付かないタブが増えます。 「アイランド間隔」を広げると付きやすくなります。</p>
+<h4 id="こまったとき-糊代を切ってしまった">糊代を切ってしまった</h4>
+<p><strong>根元の破線は折り線です。</strong> 切るのは台形の外側の3辺だけです。</p>
+<p>画面では色で分かれています（既定は裁断線＝青緑、折り線＝桃）。 <strong>刷ると両方とも黒</strong>になり、実線と破線で区別します。</p>
+<h4 id="こまったとき-なめらか仕上げ-カーブ表示-で出ない">なめらか仕上げ（カーブ表示）で出ない</h4>
+<p>糊代・縫い代はメッシュの辺を単位にしています。カーブにはメッシュの辺が 無いため、どの辺がどのシームかを引けません。<strong>なめらか仕上げでは効きません。</strong></p>
+<hr>
+<h3 id="こまったとき-三面図">三面図</h3>
+<h4 id="こまったとき-書き出したあと画面が変わっている">書き出したあと画面が変わっている</h4>
+<p>戻るはずです。戻っていなければ不具合なので、どの操作の後かを添えて 教えてください。</p>
+<p>視点・背景・オーバーレイ・BOX と寸法の表示は、書き出しの間だけ変わり、 終われば必ず元へ戻るようにしてあります。</p>
+<h4 id="こまったとき-画像に-n-パネルやツールバーが写る">画像に N パネルやツールバーが写る</h4>
+<p>写らないように切り抜いています。写っていれば不具合です。</p>
+<h4 id="こまったとき-用紙が大きすぎます-と出る">「用紙が大きすぎます」と出る</h4>
+<p>カスタム用紙が大きすぎます。下限の解像度（96dpi）でも画素数が上限を 超える大きさ（おおよそ 1m × 2.5m 以上）では、メモリが足りなくなるため 断ります。用紙を小さくしてください。</p>
+<h4 id="こまったとき-三面図が用紙に収まらない">三面図が用紙に収まらない</h4>
+<p>縮尺の N を大きくしてください（1:2 → 1:5 など）。N が大きいほど図は 小さくなります。用紙を大きくしても構いません。</p>
+<h4 id="こまったとき-寸法の文字が図に重なる">寸法の文字が図に重なる</h4>
+<p><strong>寸法位置の微調整</strong> を開くと、面ごと・軸ごとに位置をずらせます。 <strong>文字位置をリセット</strong> で戻ります。</p>
+<hr>
+<h3 id="こまったとき-いまできないこと">いまできないこと</h3>
+<h4 id="こまったとき-型紙">型紙</h4>
+<ul><li><strong>歪み率の表示</strong> — 展開の歪みを数字で見る手段がありません</li><li><strong>素材の厚みの補正</strong> — 厚みのぶんの寸法調整は入りません</li><li><strong>SVG 出力</strong> — PDF と PNG のみです</li><li><strong>糊代を付ける側を手で入れ替える</strong> — 消すことはできますが、 反対側へ移すことはできません（自動で反対側も試します）</li><li><strong>島の間隔の自動調整</strong> — 糊代を入れても間隔は変わりません。 ぶつかるタブは細くなるか、付きません</li></ul>
+<h4 id="こまったとき-三面図">三面図</h4>
+<ul><li><strong>部分の寸法</strong> — 出せるのは外接直方体の縦横高さだけです。 「穴は左端から 40mm」のような寸法は表現できません</li><li><strong>線画</strong> — ビューポートを撮っているので、陰影のついた絵になります。 隠線処理・断面・公差はありません</li><li><strong>複数用紙への分割</strong> — 1枚に収める前提です（縮尺を落としてください）</li></ul>
+<h4 id="こまったとき-共通">共通</h4>
+<ul><li><strong>元モデルを作り直すと設定が失われる</strong> — リトポロジーすると辺の番号が 変わるため、シームも糊代の設定も失われます</li><li><strong>Blender 4.x での動作は未検証</strong> — 5.2 固有の API は見つかっていないので 下げられる見込みですが、確かめていません</li></ul>
+<hr>
+<h3 id="こまったとき-不具合を報告するとき">不具合を報告するとき</h3>
+<p>次があると調べやすくなります。</p>
+<ul><li>どの操作を押したか（パネルのどの区画か）</li><li>画面のスクリーンショット</li><li>Blender のコンソールに出たメッセージ（<strong>ウィンドウ › システムコンソールを切り替え</strong>）</li><li>可能なら .blend ファイル</li></ul>
+</section>
+<p class="note">
+このページは <code>docs/*.md</code> から <code>tools/build_docs.py</code> が
+作っています。直に編集しても次の生成で消えます。直すときは Markdown のほうを。
+</p>
+</main>
+</div>
+</body>
+</html>
