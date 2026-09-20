@@ -204,28 +204,46 @@ def register():
         default="PDF",
     )
 
+    # unit='LENGTH' を付けてはいけない。付けると Blender が中身を
+    # シーンの長さ単位（既定はメートル）として表示するので、8 が
+    # 「8 m」と出る。実際にはミリとして使っている値なので、画面の
+    # 表示だけが嘘になる。名前と説明にミリと書いておく。
     bpy.types.Scene.tsunfold_tile_margin_mm = FloatProperty(
-        name="用紙の余白",
+        name="用紙の余白 (mm)",
         description=(
-            "プリンタが刷れない縁の幅。機種によって違うので多めに取る。"
-            "足りないと、端の線が切れる"
+            "プリンタが刷れない縁の幅（ミリ）。機種によって違うので"
+            "多めに取る。足りないと、端の線が切れる"
         ),
         default=8.0,
         min=0.0,
         max=40.0,
-        unit='LENGTH',
+        precision=1,
+    )
+
+    bpy.types.Scene.tsunfold_pattern_inset_mm = FloatProperty(
+        name="型紙のまわりの余白 (mm)",
+        description=(
+            "型紙の外形と、用紙ガイドの枠との間に空ける幅（ミリ）。"
+            "切るときに鋏が入る余地になる。糊代が継ぎ目の上に"
+            "乗るのも避けられる。枚数が増えることがある"
+        ),
+        default=0.0,
+        min=0.0,
+        max=50.0,
+        precision=1,
+        update=_pattern_setting_updated,
     )
 
     bpy.types.Scene.tsunfold_tile_overlap_mm = FloatProperty(
-        name="重ねしろ",
+        name="重ねしろ (mm)",
         description=(
-            "隣の紙と重ねる幅。切らずに重ねて貼るためのもの。"
+            "隣の紙と重ねる幅（ミリ）。切らずに重ねて貼るためのもの。"
             "広くしても枚数はほとんど変わらないので、貼りやすさで決める"
         ),
         default=15.0,
         min=0.0,
         max=60.0,
-        unit='LENGTH',
+        precision=1,
     )
 
     bpy.types.Scene.tsunfold_scale_mode = EnumProperty(

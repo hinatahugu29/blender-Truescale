@@ -518,10 +518,18 @@ def content_size(scene, margin_mm=None):
     """
     if margin_mm is None:
         margin_mm = float(getattr(scene, "tsunfold_tile_margin_mm", 8.0))
+
+    # 型紙のまわりに空ける余白。集める側は外形にこれを含めるので、
+    # 詰め込むときはその分だけ狭い範囲を狙う。ここで引かないと、
+    # 枠いっぱいに詰めたものが余白のぶんはみ出す。
+    inset_mm = max(0.0, float(
+        getattr(scene, "tsunfold_pattern_inset_mm", 0.0)
+    ))
+
     paper_w, paper_h = _paper.scene_dimensions_mm(scene)
     return (
-        paper_w - margin_mm * 2.0,
-        paper_h - margin_mm * 2.0 - FOOTER_MM,
+        paper_w - margin_mm * 2.0 - inset_mm * 2.0,
+        paper_h - margin_mm * 2.0 - FOOTER_MM - inset_mm * 2.0,
     )
 
 

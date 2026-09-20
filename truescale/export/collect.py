@@ -116,11 +116,19 @@ def pattern_lines(context):
 
     min_x, min_y, _, _ = box
 
+    # 型紙のまわりに空ける余白。外形に含めてしまえば、枚数の計算も
+    # 用紙ガイドの位置も、何も変えずに正しくなる。ガイドの枠は
+    # 型紙の左下に合わせて置かれるので、外形が広がればそのぶん
+    # 枠が外へ出て、間に隙間ができる。
+    inset = max(0.0, float(
+        getattr(scene, "tsunfold_pattern_inset_mm", 0.0)
+    ))
+
     def point(x, y):
-        """Blender Unit の座標を、左下原点のミリへ。"""
+        """Blender Unit の座標を、左下原点のミリへ。余白のぶんずらす。"""
         return (
-            _mm(scene, _units, x - min_x),
-            _mm(scene, _units, y - min_y),
+            _mm(scene, _units, x - min_x) + inset,
+            _mm(scene, _units, y - min_y) + inset,
         )
 
     lines = []
@@ -178,8 +186,8 @@ def pattern_lines(context):
     if not lines:
         return None
 
-    width_mm = max(max(line[0], line[2]) for line in lines)
-    height_mm = max(max(line[1], line[3]) for line in lines)
+    width_mm = max(max(line[0], line[2]) for line in lines) + inset
+    height_mm = max(max(line[1], line[3]) for line in lines) + inset
 
     return Drawing(lines, width_mm, height_mm)
 
@@ -274,6 +282,12 @@ def pattern_bounds(context):
         pad_mm = max(pad_mm, conf["tab_mm"])
     if conf["seam"]:
         pad_mm = max(pad_mm, conf["seam_mm"])
+
+    # 型紙のまわりに空ける余白。pattern_lines と同じ値を足す。
+    # ここが食い違うと、画面のガイドと刷ったものがずれる。
+    pad_mm += max(0.0, float(
+        getattr(scene, "tsunfold_pattern_inset_mm", 0.0)
+    ))
 
     if pad_mm > 0.0:
         pad = _units.scene_mm_to_bu(scene, pad_mm)

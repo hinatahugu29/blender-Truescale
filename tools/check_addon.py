@@ -16,6 +16,7 @@ Blenderを起動せずに、以下のズレを検出する。
  11. return などの後ろに置かれて実行されないコード
  12. くだけた言い回し（利用者が読む文章に混ざったもの）
  13. 用語の揺れ（縮率 → 縮尺 など）
+ 14. ミリの値に unit='LENGTH'（画面には「8 m」と出る）
 
 使い方:
     python tools/check_addon.py truescale/unfold/__init__.py
@@ -497,6 +498,63 @@ WRONG_TERMS = {
 }
 
 
+def millimetre_props_with_length_unit(path):
+    """ミリの値なのに unit='LENGTH' を付けているプロパティを返す。
+
+    unit='LENGTH' を付けると、Blender は中身をシーンの長さ単位
+    （既定はメートル）として表示する。ミリとして使っている値に
+    付けると、8 が「8 m」と出る。
+
+    実際、用紙の余白と重ねしろがそうなっていた。画面には「1 m」と
+    出ているのに、中身は 1mm として使われる。目盛りのときと同じで、
+    表示だけが嘘になる型の間違いは、使う人が気付けない。
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError:
+        return []
+
+    found = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+
+        unit = None
+        for keyword in node.keywords:
+            if keyword.arg == "unit" and isinstance(keyword.value, ast.Constant):
+                unit = keyword.value.value
+        if unit != "LENGTH":
+            continue
+
+        # 代入先の名前に _mm が付いていれば、ミリの値である。
+        parent = None
+        for owner in ast.walk(tree):
+            for field in ("body", "orelse", "finalbody"):
+                for statement in getattr(owner, field, []) or []:
+                    if not isinstance(statement, ast.Assign):
+                        continue
+                    if statement.value is node:
+                        parent = statement
+        if parent is None:
+            continue
+
+        names = []
+        for target in parent.targets:
+            names.append(
+                target.attr if isinstance(target, ast.Attribute)
+                else getattr(target, "id", "")
+            )
+
+        if any(name.endswith("_mm") for name in names):
+            found.append(
+                f"行 {node.lineno}: {names[0]} はミリの値だが "
+                f"unit='LENGTH' が付いている（画面に「8 m」と出る）"
+            )
+
+    return sorted(set(found))
+
+
 def wrong_terms(path):
     """使うべきでない用語を含む行を返す。"""
     try:
@@ -731,6 +789,12 @@ def analyze(path: Path, extra=None):
     if terms:
         problems.append(("用語の揺れ", terms))
 
+    wrong_unit = millimetre_props_with_length_unit(path)
+    if wrong_unit:
+        problems.append(
+            ("ミリの値に unit='LENGTH'（画面の単位が嘘になる）", wrong_unit)
+        )
+
     casual = casual_wording(path)
     if casual:
         problems.append(
@@ -810,6 +874,8 @@ def main(argv):
         for item in shadowed_functions(p):
             stray.append(f"{p}: {item}")
         for item in unreachable_code(p):
+            stray.append(f"{p}: {item}")
+        for item in millimetre_props_with_length_unit(p):
             stray.append(f"{p}: {item}")
         for item in casual_wording(p):
             stray.append(f"{p}: {item}")

@@ -360,8 +360,12 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             tile = box.box()
             tile.label(text="分割の設定", icon='MOD_BUILD')
             tile.use_property_split = True
-            tile.prop(scene, "tsunfold_tile_margin_mm", text="用紙の余白")
-            tile.prop(scene, "tsunfold_tile_overlap_mm", text="重ねしろ")
+            tile.prop(scene, "tsunfold_tile_margin_mm", text="用紙の余白 (mm)")
+            tile.prop(scene, "tsunfold_tile_overlap_mm", text="重ねしろ (mm)")
+            tile.prop(
+                scene, "tsunfold_pattern_inset_mm",
+                text="型紙のまわり (mm)",
+            )
             tile.label(text="切らずに重ねて貼れます")
             tile.label(text="刷ったら目盛りを定規で確認")
 

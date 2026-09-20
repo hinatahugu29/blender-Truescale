@@ -2194,6 +2194,81 @@ def test_memo_text_follows_the_island_being_dragged():
     )
 
 
+@test
+def test_pattern_inset_pushes_the_guide_outward():
+    """型紙のまわりの余白が、ガイドの枠と型紙の間に隙間を作る。
+
+    ガイドの枠は型紙の左下に合わせて置かれる。外形に余白を
+    含めてしまえば、そのぶん枠が外へ出て隙間になる。枚数の計算も
+    同じ外形を見るので、別に足す必要がない。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import collect as C
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_pattern_inset_mm = 0.0
+    plain = C.pattern_extent(bpy.context)
+    plain_box = C.pattern_bounds(bpy.context)
+    check(plain is not None, "大きさが取れない")
+
+    scene.tsunfold_pattern_inset_mm = 10.0
+    wide = C.pattern_extent(bpy.context)
+    wide_box = C.pattern_bounds(bpy.context)
+
+    # 四方へ 10mm ずつなので、縦横とも 20mm 増える。
+    close(wide[0] - plain[0], 20.0, 0.5, "横の増え方が違う")
+    close(wide[1] - plain[1], 20.0, 0.5, "縦の増え方が違う")
+
+    check(
+        wide_box[0] < plain_box[0] and wide_box[1] < plain_box[1],
+        "外形が左下へ広がっていない",
+    )
+
+
+@test
+def test_pattern_inset_keeps_the_export_consistent():
+    """余白を入れても、書き出す線と外形の見積もりが食い違わない。
+
+    ここが食い違うと、画面のガイドは収まると言うのに刷ると
+    はみ出す。目盛りのときと同じで、表示だけが嘘になる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import collect as C
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_pattern_inset_mm = 12.0
+
+    drawing = C.pattern_lines(bpy.context)
+    extent = C.pattern_extent(bpy.context)
+    check(drawing is not None, "線が集まらない")
+
+    # 見積もりは少し大きめでよいが、小さくてはいけない。
+    check(
+        extent[0] >= drawing.width_mm - 0.5
+        and extent[1] >= drawing.height_mm - 0.5,
+        f"見積もり {extent} が実際 "
+        f"{(drawing.width_mm, drawing.height_mm)} より小さい",
+    )
+
+    # 線が余白の中へ食い込んでいないこと。
+    lowest = min(min(row[0], row[2]) for row in drawing.lines)
+    leftmost = min(min(row[1], row[3]) for row in drawing.lines)
+    check(
+        lowest >= 12.0 - 0.5 and leftmost >= 12.0 - 0.5,
+        f"線が余白へ食い込んでいる: {lowest:.2f}, {leftmost:.2f}",
+    )
+
+
 def main():
     print()
     print("=" * 72)
