@@ -15,6 +15,9 @@ from ..marking import source as _source
 from .. import overlay as _overlay
 from ..marking import storage as _storage
 from ..marking import interact as _interact
+from ..marking import auto_notch as _auto_notch
+from ..marking import symmetry as _symmetry
+from ..marking import tools as _tools
 from ..core import units as _units
 from ..core import view as _view
 from ..export import png as _png
@@ -105,6 +108,20 @@ _pattern_flat_island_from_source_face = _interact.flat_island_from_source_face
 _pattern_set_island_highlight = _interact.set_island_highlight
 _pattern_clear_island_highlight = _interact.clear_island_highlight
 _pattern_raycast_any_visible = _interact.raycast_any_visible
+
+
+# シーム対称・オート合印・道具の中身は truescale.marking にある。
+# 既存の呼び出しをそのまま動かすための別名。
+_mirrored_point_xyz = _symmetry.mirrored_point
+_find_strict_mirrored_edge_xyz = _symmetry.find_mirrored_edge
+_symmetry_variants_xyz = _symmetry.variants
+_sync_blender_mesh_symmetry = _symmetry.sync_mesh_symmetry
+_apply_selected_edges_seam_strict_symmetry = _symmetry.apply_to_selected_edges
+_pattern_auto_notch_division_value = _auto_notch.division_value
+_pattern_refresh_auto_notches = _auto_notch.refresh
+_pattern_remove_auto_notches = _auto_notch.remove
+_pattern_toggle_tool_invoke = _tools.toggle_invoke
+_pattern_modal_common = _tools.modal
 
 # 用紙サイズと印刷解像度の定義は共通モジュールが持つ。
 # 既存の参照をそのまま動かすために別名を置いている。
@@ -528,173 +545,6 @@ def _active_smooth_object(context):
 # ------------------------------------------------------------
 
 
-def _mirrored_point_xyz(p, mirror_x=False, mirror_y=False, mirror_z=False):
-    q = p.copy()
-    if mirror_x:
-        q.x *= -1.0
-    if mirror_y:
-        q.y *= -1.0
-    if mirror_z:
-        q.z *= -1.0
-    return q
-
-
-def _find_strict_mirrored_edge_xyz(
-    mesh,
-    source_edge,
-    mirror_x=False,
-    mirror_y=False,
-    mirror_z=False,
-):
-    if not mirror_x and not mirror_y and not mirror_z:
-        return source_edge
-
-    a_idx, b_idx = source_edge.vertices
-    a = mesh.vertices[a_idx].co.copy()
-    b = mesh.vertices[b_idx].co.copy()
-
-    ma = _mirrored_point_xyz(
-        a,
-        mirror_x=mirror_x,
-        mirror_y=mirror_y,
-        mirror_z=mirror_z,
-    )
-    mb = _mirrored_point_xyz(
-        b,
-        mirror_x=mirror_x,
-        mirror_y=mirror_y,
-        mirror_z=mirror_z,
-    )
-
-    # Strict matching avoids the old "nearest unrelated edge" problem.
-    avg_len = 0.0
-    if mesh.edges:
-        for e in mesh.edges:
-            p1 = mesh.vertices[e.vertices[0]].co
-            p2 = mesh.vertices[e.vertices[1]].co
-            avg_len += (p2 - p1).length
-        avg_len /= max(len(mesh.edges), 1)
-
-    tol = max(avg_len * 0.08, 1e-6)
-
-    nearest_a = None
-    nearest_b = None
-    best_a = float("inf")
-    best_b = float("inf")
-
-    for v in mesh.vertices:
-        da = (v.co - ma).length
-        if da < best_a:
-            best_a = da
-            nearest_a = v.index
-
-        db = (v.co - mb).length
-        if db < best_b:
-            best_b = db
-            nearest_b = v.index
-
-    if (
-        nearest_a is None
-        or nearest_b is None
-        or best_a > tol
-        or best_b > tol
-        or nearest_a == nearest_b
-    ):
-        return None
-
-    wanted = {nearest_a, nearest_b}
-    for e in mesh.edges:
-        if set(e.vertices) == wanted:
-            return e
-
-    return None
-
-
-def _symmetry_variants_xyz(scene):
-    use_x = bool(getattr(scene, "tsunfold_seam_symmetry_x", False))
-    use_y = bool(getattr(scene, "tsunfold_seam_symmetry_y", False))
-    use_z = bool(getattr(scene, "tsunfold_seam_symmetry_z", False))
-
-    variants = []
-    for mx in ([False, True] if use_x else [False]):
-        for my in ([False, True] if use_y else [False]):
-            for mz in ([False, True] if use_z else [False]):
-                variants.append((mx, my, mz))
-
-    return variants
-
-
-def _sync_blender_mesh_symmetry(context, obj=None):
-    """Drive Blender's native Edit Mode symmetry from the helper XYZ toggles."""
-    if obj is None:
-        obj = context.active_object
-
-    if obj is None or obj.type != 'MESH':
-        return
-
-    mesh = obj.data
-    mesh.use_mirror_x = bool(
-        getattr(context.scene, "tsunfold_seam_symmetry_x", False)
-    )
-    mesh.use_mirror_y = bool(
-        getattr(context.scene, "tsunfold_seam_symmetry_y", False)
-    )
-    mesh.use_mirror_z = bool(
-        getattr(context.scene, "tsunfold_seam_symmetry_z", False)
-    )
-
-
-def _apply_selected_edges_seam_strict_symmetry(context, clear=False):
-    """Apply seam/clear to selected edges and exact XYZ mirrored mates.
-
-    Selection is preserved. Knife topology mirroring itself is delegated to
-    Blender's native Mesh.use_mirror_x/y/z settings.
-    """
-    obj = context.active_object
-    if obj is None or obj.type != 'MESH':
-        return 0
-
-    _sync_blender_mesh_symmetry(context, obj)
-
-    if obj.mode != 'EDIT':
-        bpy.ops.object.mode_set(mode='EDIT')
-
-    bpy.ops.object.mode_set(mode='OBJECT')
-    mesh = obj.data
-
-    selected = [e for e in mesh.edges if e.select]
-    if not selected:
-        bpy.ops.object.mode_set(mode='EDIT')
-        return 0
-
-    targets = set(e.index for e in selected)
-    variants = _symmetry_variants_xyz(context.scene)
-
-    for edge in selected:
-        for mx, my, mz in variants:
-            if not mx and not my and not mz:
-                continue
-
-            mirrored = _find_strict_mirrored_edge_xyz(
-                mesh,
-                edge,
-                mirror_x=mx,
-                mirror_y=my,
-                mirror_z=mz,
-            )
-            if mirrored is not None:
-                targets.add(mirrored.index)
-
-    for edge_idx in targets:
-        e = mesh.edges[edge_idx]
-        e.use_seam = not clear
-        e.select = True
-
-    mesh.update()
-    bpy.ops.object.mode_set(mode='EDIT')
-    context.tool_settings.mesh_select_mode = (False, True, False)
-
-    return len(targets)
 
 
 
@@ -707,95 +557,18 @@ def _apply_selected_edges_seam_strict_symmetry(context, clear=False):
 
 
 
-def _pattern_auto_notch_division_value(scene):
-    """Safely normalize auto-notch division selector to 2 / 3 / 4."""
-    raw = getattr(
-        scene,
-        "tsunfold_auto_notch_divisions",
-        "3",
-    )
-
-    try:
-        value = int(str(raw).strip())
-    except Exception:
-        value = 3
-
-    if value not in {2, 3, 4}:
-        value = 3
-
-    return value
 
 
-def _pattern_refresh_auto_notches(context, source_obj):
-    """Rebuild only automatically generated notch annotations."""
-    if source_obj is None or source_obj.type != 'MESH':
-        return 0
-
-    _pattern_sync_live_seams(source_obj)
-
-    mode = str(getattr(context.scene, "tsunfold_notch_mode", "AUTO"))
-    items = _pattern_get_annotations(source_obj)
-
-    # Preserve manual notches and every other annotation type.
-    items = [
-        item
-        for item in items
-        if not (
-            item.get("type") == "notch_edge"
-            and bool(item.get("auto", False))
-        )
-    ]
-
-    if mode != "AUTO":
-        _pattern_set_annotations(source_obj, items)
-        return 0
-
-    divisions = _pattern_auto_notch_division_value(
-        context.scene
-    )
-
-    count = 0
-
-    for trail in _pattern_seam_trails(source_obj):
-        for edge_index, fraction in _pattern_trail_mark_positions(
-            context,
-            source_obj,
-            trail,
-            divisions,
-        ):
-            # 色は保存しない。オート合印は常に現在のシーン設定に従う
-            # （_pattern_item_color を参照）。保存すると色を変えるたびに
-            # 全アノテーションの書き直しが必要になる。
-            items.append({
-                "type": "notch_edge",
-                "edge": int(edge_index),
-                "t": float(fraction),
-                "auto": True,
-            })
-            count += 1
-
-    _pattern_set_annotations(source_obj, items)
-    return count
 
 
-def _pattern_remove_auto_notches(source_obj):
-    if source_obj is None:
-        return 0
 
-    items = _pattern_get_annotations(source_obj)
-    before = len(items)
 
-    items = [
-        item
-        for item in items
-        if not (
-            item.get("type") == "notch_edge"
-            and bool(item.get("auto", False))
-        )
-    ]
 
-    _pattern_set_annotations(source_obj, items)
-    return before - len(items)
+
+
+
+
+
 
 
 def _pattern_delete_generated_for_source(context, source_obj):
@@ -2446,246 +2219,8 @@ def _pattern_set_annotations(source_obj, annotations):
 
 
 
-def _pattern_toggle_tool_invoke(operator, context, mode):
-    source = _pattern_source_object_from_context(context)
-
-    if source is None:
-        operator.report({'WARNING'}, "元の3Dモデルを選択してください")
-        return {'CANCELLED'}
-
-    current = _pattern_active_tool(context.scene)
-
-    if current == mode:
-        _pattern_set_active_tool(context.scene, "NONE")
-        _pattern_clear_live_preview()
-        context.scene[_session.MODAL_RUNNING] = False
-        context.scene[_session.MARKING_FINISH_REQUESTED] = False
-        operator.report({'INFO'}, "マーキングツールをOFFにしました")
-        return {'FINISHED'}
-
-    _pattern_begin_marking_session(context, source)
-
-    if mode == "NUMBER":
-        context.scene.tsunfold_next_number = int(
-            context.scene.tsunfold_number_start
-        )
-
-    _pattern_set_active_tool(context.scene, mode)
-    _pattern_clear_live_preview()
-    _interact.live_preview["mode"] = mode
-    _interact.live_preview["source"] = source.name
-
-    if not bool(context.scene.get(_session.MODAL_RUNNING, False)):
-        operator._source_name = source.name
-        operator._first_anchor = None
-        operator._last_mode = mode
-        context.scene[_session.MODAL_RUNNING] = True
-        context.window_manager.modal_handler_add(operator)
-        return {'RUNNING_MODAL'}
-
-    return {'FINISHED'}
 
 
-def _pattern_modal_common(operator, context, event):
-    scene = context.scene
-
-    if bool(scene.get(_session.MARKING_FINISH_REQUESTED, False)):
-        _pattern_clear_live_preview()
-        scene[_session.MODAL_RUNNING] = False
-        return {'FINISHED'}
-
-    mode = _pattern_active_tool(scene)
-
-    if mode == "NONE":
-        _pattern_clear_live_preview()
-        scene[_session.MODAL_RUNNING] = False
-        operator._first_anchor = None
-        return {'FINISHED'}
-
-    if mode != getattr(operator, "_last_mode", mode):
-        operator._first_anchor = None
-        operator._last_mode = mode
-
-    # N-panel, header, toolbar, etc. belong to Blender UI.
-    # Never consume their mouse events.
-    if event.type in {
-        'LEFTMOUSE',
-        'RIGHTMOUSE',
-        'MIDDLEMOUSE',
-        'WHEELUPMOUSE',
-        'WHEELDOWNMOUSE',
-    } and not _pattern_event_is_view_window(context, event):
-        return {'PASS_THROUGH'}
-
-    if event.type == 'ESC' and event.value == 'PRESS':
-        _pattern_set_active_tool(scene, "NONE")
-        _pattern_clear_live_preview()
-        scene[_session.MODAL_RUNNING] = False
-        scene[_session.MARKING_FINISH_REQUESTED] = False
-        operator._first_anchor = None
-        return {'FINISHED'}
-
-    source = bpy.data.objects.get(getattr(operator, "_source_name", ""))
-
-    # Real-time preview follows the mouse inside the actual viewport.
-    if event.type == 'MOUSEMOVE':
-        if source is None:
-            return {'PASS_THROUGH'}
-
-        detail = _pattern_raycast_source_detail(
-            context,
-            event,
-            source,
-        )
-
-        _interact.live_preview["mode"] = mode
-        _interact.live_preview["source"] = source.name
-
-        if detail is None:
-            _interact.live_preview["hover_anchor"] = None
-            _interact.live_preview["notch_edge"] = -1
-            _tag_redraw()
-            return {'PASS_THROUGH'}
-
-        hover_anchor, hover_local, _hover_face = detail
-        _interact.live_preview["hover_anchor"] = hover_anchor
-
-        if mode == "NOTCH":
-            nearest = _pattern_nearest_seam_edge(
-                context,
-                source,
-                hover_local,
-            )
-            if nearest is None:
-                _interact.live_preview["notch_edge"] = -1
-            else:
-                edge_index, fraction, _dist = nearest
-                _interact.live_preview["notch_edge"] = int(edge_index)
-                _interact.live_preview["notch_t"] = float(fraction)
-
-        if mode == "ARROW":
-            _interact.live_preview["arrow_start"] = operator._first_anchor
-
-        _tag_redraw()
-        return {'PASS_THROUGH'}
-
-    if event.type != 'LEFTMOUSE' or event.value != 'PRESS':
-        return {'PASS_THROUGH'}
-
-    if source is None:
-        scene[_session.MODAL_RUNNING] = False
-        return {'CANCELLED'}
-
-    detail = _pattern_raycast_source_detail(
-        context,
-        event,
-        source,
-    )
-    if detail is None:
-        operator.report({'WARNING'}, "モデル表面をクリックしてください")
-        return {'RUNNING_MODAL'}
-
-    anchor, local_hit, _face_index = detail
-    color = _pattern_current_color(scene, mode)
-    items = _pattern_get_annotations(source)
-
-    if mode == "NOTCH":
-        if scene.tsunfold_notch_mode == "NONE":
-            operator.report({'WARNING'}, "合印方式が「合印なし」です")
-            return {'RUNNING_MODAL'}
-
-        nearest = _pattern_nearest_seam_edge(
-            context,
-            source,
-            local_hit,
-        )
-
-        if nearest is None:
-            operator.report({'WARNING'}, "赤いシーム付近をクリックしてください")
-            return {'RUNNING_MODAL'}
-
-        edge_index, fraction, _dist = nearest
-
-        items.append({
-            "type": "notch_edge",
-            "edge": edge_index,
-            "t": round(float(fraction), 7),
-            "color": color,
-            "auto": False,
-        })
-        _pattern_set_annotations(source, items)
-
-        operator.report({'INFO'}, "合印を追加しました")
-        return {'RUNNING_MODAL'}
-
-    if mode == "NUMBER":
-        value = int(scene.tsunfold_next_number)
-
-        items.append({
-            "type": "number",
-            "value": value,
-            "anchor": anchor,
-            "size_mm": float(scene.tsunfold_number_size_mm),
-            "color": color,
-        })
-        _pattern_set_annotations(source, items)
-
-        scene.tsunfold_next_number = value + 1
-        operator.report({'INFO'}, f"型紙番号 {value} を追加しました")
-        return {'RUNNING_MODAL'}
-
-    if mode == "TEXT":
-        text = str(scene.tsunfold_custom_text)
-
-        if not text:
-            operator.report({'WARNING'}, "任意テキストを入力してください")
-            return {'RUNNING_MODAL'}
-
-        items.append({
-            "type": "text",
-            "text": text,
-            "anchor": anchor,
-            "size_mm": float(scene.tsunfold_text_size_mm),
-            "color": color,
-        })
-        _pattern_set_annotations(source, items)
-
-        operator.report({'INFO'}, f"「{text}」を追加しました")
-        return {'RUNNING_MODAL'}
-
-    if mode == "ARROW":
-        if str(
-            getattr(scene, "tsunfold_arrow_mode", "AUTO")
-        ) == "NONE":
-            operator.report({'WARNING'}, "矢印方式が「なし」です")
-            return {'RUNNING_MODAL'}
-
-        if operator._first_anchor is None:
-            operator._first_anchor = anchor
-            _interact.live_preview["arrow_start"] = anchor
-            _interact.live_preview["hover_anchor"] = anchor
-            _tag_redraw()
-            operator.report({'INFO'}, "次に矢印の先端をクリック")
-            return {'RUNNING_MODAL'}
-
-        items.append({
-            "type": "arrow",
-            "a": operator._first_anchor,
-            "b": anchor,
-            "color": color,
-            "head_mm": float(scene.tsunfold_arrow_head_mm),
-            "thickness_mm": float(scene.tsunfold_arrow_thickness_mm),
-        })
-        _pattern_set_annotations(source, items)
-
-        operator._first_anchor = None
-        _interact.live_preview["arrow_start"] = None
-        _interact.live_preview["hover_anchor"] = None
-        _tag_redraw()
-        operator.report({'INFO'}, "上方向矢印を追加しました")
-        return {'RUNNING_MODAL'}
-
-    return {'PASS_THROUGH'}
 
 class TSUNFOLD_OT_marking_tool_off(bpy.types.Operator):
     bl_idname = "truescale_unfold.marking_tool_off"
