@@ -59,6 +59,88 @@ def manual_layout_active(scene):
     return _scene_flag(scene, _session.MANUAL_LAYOUT_ACTIVE)
 
 
+def _plane_normal(obj):
+    """型紙が乗っている面の法線。太さを広げる向きを決めるのに使う。"""
+    if obj is None:
+        return Vector((0.0, 0.0, 1.0))
+    normal = obj.matrix_world.to_3x3() @ Vector((0.0, 0.0, 1.0))
+    if normal.length <= 1e-12:
+        return Vector((0.0, 0.0, 1.0))
+    return normal.normalized()
+
+
+def draw_thick_segments(rows, unfold_obj, scene):
+    """太さのある線を、面の中で直角に広げた四角形として描く。
+
+    gpu.state.line_width_set は使わない。OpenGL の太線は多くの
+    ドライバが軸方向へ広げるため、斜めの線が平行四辺形になる。
+    線の向きに対して直角へ広げれば、どの角度でも同じ太さになる。
+
+    広げる幅はミリをそのまま Blender Unit へ直したもの。つまり
+    画面上の太さが実寸に対応し、ズームしても実寸は変わらない。
+    以前はミリを適当な係数でピクセルに換算していたので、
+    ズームすると太さの意味が変わっていた。
+
+    細い線はズームを引くと1ピクセル未満になって消えるので、
+    中心線を1ピクセルで重ねて必ず見えるようにする。
+
+    rows は (始点, 終点, 色, 太さmm) の並び。
+    """
+    if not rows:
+        return
+
+    normal = _plane_normal(unfold_obj)
+
+    tris = []
+    tri_colors = []
+    lines = []
+    line_colors = []
+
+    for a, b, color, width_mm in rows:
+        rgba = (float(color[0]), float(color[1]), float(color[2]), 1.0)
+
+        lines.extend((a, b))
+        line_colors.extend((rgba, rgba))
+
+        direction = Vector(b) - Vector(a)
+        if direction.length <= 1e-12:
+            continue
+
+        side = normal.cross(direction.normalized())
+        if side.length <= 1e-12:
+            continue
+
+        half = _units.scene_mm_to_bu(scene, float(width_mm)) * 0.5
+        if half <= 0.0:
+            continue
+
+        offset = side.normalized() * half
+        p0 = Vector(a) + offset
+        p1 = Vector(a) - offset
+        p2 = Vector(b) - offset
+        p3 = Vector(b) + offset
+
+        tris.extend((p0, p1, p2, p0, p2, p3))
+        tri_colors.extend((rgba,) * 6)
+
+    smooth = gpu.shader.from_builtin('SMOOTH_COLOR')
+
+    if tris:
+        batch = batch_for_shader(
+            smooth, 'TRIS', {"pos": tris, "color": tri_colors}
+        )
+        smooth.bind()
+        batch.draw(smooth)
+
+    if lines:
+        gpu.state.line_width_set(1.0)
+        batch = batch_for_shader(
+            smooth, 'LINES', {"pos": lines, "color": line_colors}
+        )
+        smooth.bind()
+        batch.draw(smooth)
+
+
 def preview_outline_segments(context):
     """Return the outline matching the currently displayed finish mode."""
     mode = context.scene.get(_session.DISPLAY_MODE, "POLY")
@@ -174,31 +256,11 @@ def draw_paper_guide():
             unfold = _objects.unfold_for_source(source) if source else None
 
             if source is not None and unfold is not None:
-                for a, b, color, width_mm in _compute.colored_segments(
-                    context,
-                    source,
+                draw_thick_segments(
+                    _compute.colored_segments(context, source, unfold),
                     unfold,
-                ):
-                    mark_batch = batch_for_shader(
-                        shader,
-                        'LINES',
-                        {"pos": [a, b]},
-                    )
-                    gpu.state.line_width_set(
-                    max(
-                        1.0,
-                        min(
-                            12.0,
-                            float(width_mm) * 4.0,
-                        ),
-                    )
+                    context.scene,
                 )
-                    shader.bind()
-                    shader.uniform_float(
-                        "color",
-                        (color[0], color[1], color[2], 1.0),
-                    )
-                    mark_batch.draw(shader)
 
             gpu.state.line_width_set(1.0)
             gpu.state.blend_set('NONE')
@@ -858,27 +920,8 @@ def draw_marks_3d():
                     unfold,
                 )
 
-                for pa, pb, color, width_mm in flat_colored:
-                    batch = batch_for_shader(
-                        shader,
-                        'LINES',
-                        {"pos": [pa, pb]},
-                    )
-                    gpu.state.line_width_set(
-                    max(
-                        1.0,
-                        min(
-                            12.0,
-                            float(width_mm) * 4.0,
-                        ),
-                    )
-                )
-                    shader.bind()
-                    shader.uniform_float(
-                        "color",
-                        (color[0], color[1], color[2], 1.0),
-                    )
-                    batch.draw(shader)
+                draw_thick_segments(flat_colored, unfold, context.scene)
+                shader.bind()
 
             # ------------------------------------------------------
             # Live placement preview on source.

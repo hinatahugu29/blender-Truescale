@@ -36,54 +36,64 @@ def new_buffer(width, height, fill=255):
 
 def draw_line(buf, width, height, x0, y0, x1, y1, thickness=1,
               color=(0.0, 0.0, 0.0)):
-    """バッファへ直線を引く（Bresenham）。
+    """バッファへ直線を引く。
 
-    色は 0.0〜1.0 の RGB で受け取る。太さは中心からの半径で広げる。
-    範囲外のピクセルは書き込まない。
+    色は 0.0〜1.0 の RGB で受け取る。太さは線の向きに対して直角へ
+    広げる。範囲外のピクセルは書き込まない。
+
+    以前は線上の各ピクセルへ正方形のブラシを置いていた。斜めの線
+    では対角方向に広がり、指定した太さの最大1.41倍になっていた。
+    実寸で刷るための機能なので、指定と実際がずれるのは避ける。
     """
-    x0 = int(round(x0))
-    y0 = int(round(y0))
-    x1 = int(round(x1))
-    y1 = int(round(y1))
-
     rgb = bytes(
         max(0, min(255, int(round(float(c) * 255.0))))
         for c in color[:3]
     )
 
-    dx = abs(x1 - x0)
-    sx = 1 if x0 < x1 else -1
-    dy = -abs(y1 - y0)
-    sy = 1 if y0 < y1 else -1
-    err = dx + dy
-    radius = max(0, thickness // 2)
+    ax = float(x0)
+    ay = float(y0)
+    bx = float(x1)
+    by = float(y1)
 
-    while True:
-        for oy in range(-radius, radius + 1):
-            yy = y0 + oy
-            if yy < 0 or yy >= height:
-                continue
+    dx = bx - ax
+    dy = by - ay
+    length_sq = dx * dx + dy * dy
 
-            for ox in range(-radius, radius + 1):
-                xx = x0 + ox
-                if xx < 0 or xx >= width:
-                    continue
+    half = max(0.5, float(thickness) / 2.0)
 
-                pos = (yy * width + xx) * 3
+    # 塗る必要があるのは線を囲む矩形の中だけ。端の丸みの分だけ広げる。
+    pad = int(half) + 1
+    min_x = max(0, int(min(ax, bx)) - pad)
+    max_x = min(width - 1, int(max(ax, bx)) + pad)
+    min_y = max(0, int(min(ay, by)) - pad)
+    max_y = min(height - 1, int(max(ay, by)) + pad)
+
+    if min_x > max_x or min_y > max_y:
+        return
+
+    half_sq = half * half
+
+    for py in range(min_y, max_y + 1):
+        row = py * width
+        for px in range(min_x, max_x + 1):
+            # 線分までの距離。端では端点までの距離になる。
+            if length_sq <= 1e-12:
+                t_along = 0.0
+            else:
+                t_along = ((px - ax) * dx + (py - ay) * dy) / length_sq
+                if t_along < 0.0:
+                    t_along = 0.0
+                elif t_along > 1.0:
+                    t_along = 1.0
+
+            near_x = ax + dx * t_along
+            near_y = ay + dy * t_along
+            off_x = px - near_x
+            off_y = py - near_y
+
+            if off_x * off_x + off_y * off_y <= half_sq:
+                pos = (row + px) * 3
                 buf[pos:pos + 3] = rgb
-
-        if x0 == x1 and y0 == y1:
-            break
-
-        e2 = 2 * err
-
-        if e2 >= dy:
-            err += dy
-            x0 += sx
-
-        if e2 <= dx:
-            err += dx
-            y0 += sy
 
 
 def _chunk(chunk_type, data):

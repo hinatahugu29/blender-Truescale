@@ -11,6 +11,7 @@ Blender を起動せずに検証できる。ヘッドレステストより桁違
 終了コード: 0 = 全て成功 / 1 = 失敗あり
 """
 
+import math
 import sys
 import traceback
 from pathlib import Path
@@ -391,6 +392,72 @@ def test_draw_line_writes_pixels():
 
     # 範囲外を指定しても落ちない
     png.draw_line(buf, width, height, -50, -50, 100, 100, 3, (1.0, 0.0, 0.0))
+
+
+@test
+def test_diagonal_line_keeps_its_thickness():
+    """斜めの線でも、指定した太さで引かれる。
+
+    以前は線上の各ピクセルへ正方形のブラシを置いていたため、
+    45度の線は指定の約1.41倍に太った。実寸で刷るための機能なので、
+    指定と実際がずれるのは困る。
+    """
+    size = 81
+    thickness = 9
+
+    def stroke_width(x0, y0, x1, y1):
+        buf = png.new_buffer(size, size)
+        png.draw_line(buf, size, size, x0, y0, x1, y1,
+                      thickness, (0.0, 0.0, 0.0))
+
+        # 塗られた画素の総数を線の長さで割れば、平均の太さになる。
+        # 斜めの長さは辺の差ではなく斜辺なので、hypot で測る。
+        painted = sum(
+            1
+            for i in range(size * size)
+            if buf[i * 3] == 0
+        )
+        length = math.hypot(x1 - x0, y1 - y0)
+        return painted / length
+
+    horizontal = stroke_width(10, 40, 70, 40)
+    diagonal = stroke_width(10, 10, 70, 70)
+
+    check(
+        abs(horizontal - thickness) <= 1.5,
+        f"水平線の太さがずれている: {horizontal:.2f}",
+    )
+    check(
+        abs(diagonal - horizontal) <= 1.5,
+        f"斜めの線だけ太さが違う: 水平 {horizontal:.2f} / 斜め {diagonal:.2f}",
+    )
+
+
+@test
+def test_line_is_not_skewed():
+    """斜めの線が平行四辺形にならない。
+
+    線の向きに直角ではなく軸方向へ広げると、断面が斜めになる。
+    線をまたぐ縦の並びと横の並びで、塗られた幅が同じになるはず。
+    """
+    size = 61
+    buf = png.new_buffer(size, size)
+    png.draw_line(buf, size, size, 10, 10, 50, 50, 9, (0.0, 0.0, 0.0))
+
+    def painted_in_row(y):
+        return sum(1 for x in range(size) if buf[(y * size + x) * 3] == 0)
+
+    def painted_in_col(x):
+        return sum(1 for y in range(size) if buf[(y * size + x) * 3] == 0)
+
+    # 端の影響を避けて真ん中で測る
+    row = painted_in_row(30)
+    col = painted_in_col(30)
+    check(row > 0 and col > 0, "中央に線が無い")
+    check(
+        abs(row - col) <= 1,
+        f"縦横で断面が違う（傾いている）: 行 {row} / 列 {col}",
+    )
 
 
 @test
