@@ -152,6 +152,32 @@ def _unregister_scene_props():
 
 def register():
     """UIに出す設定を作る。"""
+    # --- パネルの折りたたみ ---
+    #
+    # 必須の4段は常に開いておき、それ以外は畳む。以前はマーキングが
+    # パネルの半分を占め、必須の道を分断していた。
+    #
+    # 開閉はシーンに持つ。ファイルを開き直しても、その人が開いて
+    # いた区画が開いたままになる。
+
+    bpy.types.Scene.tsunfold_show_scale_setup = BoolProperty(
+        name="実寸の前提を開く",
+        description="1 Blender Unit を何ミリとして扱うかの設定",
+        default=False,
+    )
+
+    bpy.types.Scene.tsunfold_show_marking = BoolProperty(
+        name="印をつけるを開く",
+        description="合印・番号・文字・型紙ID・矢印",
+        default=False,
+    )
+
+    bpy.types.Scene.tsunfold_show_correspondence = BoolProperty(
+        name="対応を確かめるを開く",
+        description="平面のどこが立体のどこだったかの確認と、型紙へのメモ",
+        default=False,
+    )
+
     bpy.types.Scene.tsunfold_export_format = EnumProperty(
         name="形式",
         description="書き出すファイルの形式",

@@ -70,6 +70,18 @@ def _joinedstr_shape(node: ast.JoinedStr):
     return (head, tail)
 
 
+def _looks_like_prop_name(text):
+    """アドオンのプロパティ名らしい文字列か。
+
+    接頭辞と、識別子として成り立つことだけを見る。厳しくすると
+    拾い漏れ、緩くすると無関係な文字列まで数える。
+    """
+    return (
+        text.startswith(("tsunfold_", "tsdraft_"))
+        and text.isidentifier()
+    )
+
+
 class AddonAnalyzer(ast.NodeVisitor):
     def __init__(self):
         self.string_constants = {}   # 定数名 -> 文字列（定数経由の参照を追うため）
@@ -84,6 +96,7 @@ class AddonAnalyzer(ast.NodeVisitor):
         self.registered_props = {}      # プロパティ名 -> 行番号
         self.unregistered_props = set() # unregister 内で言及される名前
         self.referenced_props = {}      # プロパティ名 -> [行番号]
+        self.literal_props = set()      # 文字列で書かれたプロパティ名
         self._func_stack = []
 
     # --- クラス定義 ---
@@ -232,6 +245,16 @@ class AddonAnalyzer(ast.NodeVisitor):
             current = self._func_stack[-1]
             if current == "unregister" or current.lstrip("_").startswith("unregister"):
                 self.unregistered_props.add(node.value)
+
+        # プロパティ名そのものが書かれていれば、使われていると見なす。
+        #
+        # scene.<名前> でも prop(scene, "名前") でもない渡し方がある。
+        # パネルの折りたたみは名前を関数の引数にしており、その先で
+        # getattr と prop に使う。形を追うと切りが無いので、名前が
+        # 書いてあること自体を参照として数える。
+        if isinstance(node.value, str) and _looks_like_prop_name(node.value):
+            self.literal_props.add(node.value)
+
         self.generic_visit(node)
 
 
@@ -462,6 +485,7 @@ def collect_references(paths):
     operators = set()
     defined = set()
     registered = set()
+    literals = set()
 
     for path in paths:
         try:
@@ -481,8 +505,9 @@ def collect_references(paths):
             if info["bl_idname"] and "Operator" in info["bases"]
         )
         registered.update(analyzer.registered_classes)
+        literals.update(analyzer.literal_props)
 
-    return props, patterns, names, operators, defined, registered
+    return props, patterns, names, operators, defined, registered, literals
 
 
 def analyze(path: Path, extra=None):
@@ -493,7 +518,7 @@ def analyze(path: Path, extra=None):
 
     # 他のファイルからの参照も合わせる
     if extra is not None:
-        extra_props, extra_patterns, extra_names, extra_ops, _, _ = extra
+        extra_props, extra_patterns, extra_names, extra_ops, _, _, _ = extra
         for name in extra_props:
             analyzer.referenced_props.setdefault(name, [])
         analyzer.dynamic_prop_patterns.update(extra_patterns)
@@ -522,6 +547,13 @@ def analyze(path: Path, extra=None):
         return any(name.startswith(p + "_") for p in prefixes)
 
     # 登録は別のファイルで行うことがある（パネルと登録本体のように）。
+    # 文字列で名前が書かれていれば「使われている」と見なす。
+    # ただし Scene プロパティである証拠にはならないので、
+    # 「参照しているのに未登録」の判定には混ぜない。
+    known_literals = set(analyzer.literal_props)
+    if extra is not None:
+        known_literals |= extra[6]
+
     registered_anywhere = set(analyzer.registered_classes)
     if extra is not None:
         registered_anywhere |= extra[5]
@@ -610,7 +642,9 @@ def analyze(path: Path, extra=None):
 
     orphan = sorted(
         name for name in analyzer.registered_props
-        if name not in analyzer.referenced_props and not matched_dynamically(name)
+        if name not in analyzer.referenced_props
+        and name not in known_literals
+        and not matched_dynamically(name)
     )
     if orphan:
         problems.append(("register されているがどこからも参照されていないプロパティ", orphan))

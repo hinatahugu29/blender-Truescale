@@ -3,21 +3,45 @@
 描くだけで、押した先の処理はオペレータが持つ。ここに判断を書くと、
 同じことをオペレータ側でも書くことになり、片方だけ直す事故が起きる。
 
-■ 先頭に道案内を出す
+■ 必須の道を4段に絞り、任意のものは畳む
 
-初見では、ボタンは並んでいるのにいま何段目なのかが分からなかった。
-status が返す (現在地, 次の一手) を最初に出し、その下に手順の順で
-並べている。
+  前提（畳む）  実寸の基準。最初に一度決めたら触らない
+  道案内        いまどこにいて、次に何を押すか
+  1 読み込む
+  2 型紙にする
+  3 紙に並べる
+  4 出す / 残す
+  ── ここから任意 ──
+  印をつける（畳む）
+  対応を確かめる・メモ（畳む）
+
+以前はマーキングが「2/4」に置かれ、パネル全体の半分を占めていた。
+番号が付いていると必須に読めるが、型紙を作って刷るだけなら要らない。
+必須の道が、任意の作業で分断されていた。
+
+段の名前は動詞で揃える。「モデルと型紙」のような名詞だと、そこで
+何をするのかが読み取れない。
+
+■ 紙に並べるのが、印をつけるより前
+
+用紙より大きい型紙は分割して刷る。継ぎ目の位置が決まっていないと、
+合印が継ぎ目に乗ってしまう。分割が無かった頃は用紙が最後の確認
+だったので、この順序は当時の名残だった。
+
+■ 道案内と、動いている道具は必ず見える場所へ
+
+畳んだ中に隠すと、道具が動いていることに気付けない。止め方も
+そこへ置く。
 
 ■ 状態によって出し分ける
 
 型紙ができていない段階でレイアウトや書き出しを出しても押せない。
 押せないものは薄くするのではなく、出さないか理由を添える。
 
-■ 単位の注意は畳まない
+■ スケールの警告は畳まない
 
-スケールの警告は、それが出ている時点で結果が間違っている可能性がある。
-折りたたみの中に入れると気付かれないので、その場に出す。
+それが出ている時点で結果が間違っている可能性がある。折りたたみの
+中に入れると気付かれない。
 """
 
 import bpy
@@ -36,6 +60,35 @@ def _manual_layout_active(scene):
     return overlay.manual_layout_active(scene)
 
 
+def _folded(layout, scene, prop, text, icon='NONE'):
+    """畳める区画。(中身を入れる場所, 開いているか) を返す。
+
+    見出しは常に出す。中身を隠しても、そこに何があるかは分かる
+    ようにしておかないと、機能ごと見えなくなる。
+    """
+    box = layout.box()
+    header = box.row(align=True)
+    open_now = bool(getattr(scene, prop, False))
+    header.prop(
+        scene,
+        prop,
+        text="",
+        icon='TRIA_DOWN' if open_now else 'TRIA_RIGHT',
+        emboss=False,
+    )
+    header.label(text=text, icon=icon)
+    return box, open_now
+
+
+def _step(layout, number, text, icon='NONE'):
+    """番号付きの段。必須の道なので、常に開いている。"""
+    box = layout.box()
+    head = box.row()
+    head.scale_y = 1.1
+    head.label(text=f"{number}. {text}", icon=icon)
+    return box
+
+
 class TSUNFOLD_PT_main(bpy.types.Panel):
     bl_label = "Truescale Unfold"
     bl_idname = "TSUNFOLD_PT_main"
@@ -45,76 +98,132 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        obj = context.active_object
         scene = context.scene
         unfold_obj = _objects.resolve_unfold_for_layout(context)
 
-        # ------------------------------------------------------
-        # 1. Load seamed model + build pattern
-        # ------------------------------------------------------
-        unit_box = layout.box()
-        unit_box.label(text="実寸の基準")
-        unit_box.prop(scene, "tsunfold_scale_mode", text="")
+        loaded_name = scene.get(_session.SEAM_SOURCE, "")
+        loaded_obj = bpy.data.objects.get(loaded_name) if loaded_name else None
+
+        self._draw_setup(layout, context, scene)
+        self._draw_status(layout, context, unfold_obj)
+
+        self._draw_load(layout, context, scene)
+        self._draw_build(layout, context, scene, loaded_obj, unfold_obj)
+        self._draw_layout(layout, context, scene, unfold_obj)
+        self._draw_output(layout, context, scene, unfold_obj)
+
+        layout.separator()
+
+        self._draw_marking(layout, context, scene)
+        self._draw_correspondence(layout, context, scene)
+
+        info = layout.box()
+        info.label(text="Truescale Unfold Beta v1.5.6")
+
+    # ------------------------------------------------------------
+    # 前提と道案内
+    # ------------------------------------------------------------
+
+    def _draw_setup(self, layout, context, scene):
+        """実寸の基準。最初に一度決めたら触らないので畳んでおく。"""
+        box, open_now = _folded(
+            layout, scene, "tsunfold_show_scale_setup",
+            "実寸の前提", 'DRIVER_DISTANCE',
+        )
 
         scene_scale, mm_per_bu = _units.scene_unit_summary(scene)
 
+        if not open_now:
+            # 畳んでいても、いまの基準だけは見えるようにする。
+            # これが分からないと、出てくる寸法の意味が決まらない。
+            box.label(text=f"1 BU = {mm_per_bu:g} mm")
+            return
+
+        box.prop(scene, "tsunfold_scale_mode", text="")
+
         if scene.tsunfold_scale_mode == "MANUAL":
-            unit_box.prop(scene, "tsunfold_manual_mm_per_bu", text="1 BU =")
+            box.prop(scene, "tsunfold_manual_mm_per_bu", text="1 BU =")
             # シーン側の値も併記する。どちらが使われているかを明確にするため。
-            unit_box.label(
-                text=f"シーンの Unit Scale {_units.scene_unit_scale_raw(scene):g} は未使用",
+            box.label(
+                text=(
+                    f"シーンの Unit Scale "
+                    f"{_units.scene_unit_scale_raw(scene):g} は未使用"
+                ),
                 icon='INFO',
             )
         else:
-            unit_box.label(
+            box.label(
                 text=f"Unit Scale {scene_scale:g} / 1 BU = {mm_per_bu:g} mm"
             )
 
         if context.mode == 'EDIT_MESH':
-            unit_box.operator(
+            box.operator(
                 "truescale_unfold.calibrate_scale",
                 text="選択した辺を基準に決める",
                 icon='DRIVER_DISTANCE',
             )
 
         active_source = _objects.seam_source(context)
-        if active_source is not None:
-            sx, sy, sz = (
-                float(active_source.scale.x),
-                float(active_source.scale.y),
-                float(active_source.scale.z),
-            )
-            unit_box.label(
-                text=f"Object Scale: {sx:g}, {sy:g}, {sz:g}"
-            )
-            if (
-                abs(sx - 1.0) > 1.0e-6
-                or abs(sy - 1.0) > 1.0e-6
-                or abs(sz - 1.0) > 1.0e-6
-            ):
-                unit_box.label(
-                    text="未適用Scaleもワールド寸法として反映",
-                    icon='INFO',
-                )
+        if active_source is None:
+            return
 
-        # いまどの段階にいて、次に何を押せばよいかを先頭に出す。
+        sx = float(active_source.scale.x)
+        sy = float(active_source.scale.y)
+        sz = float(active_source.scale.z)
+        box.label(text=f"Object Scale: {sx:g}, {sy:g}, {sz:g}")
+
+        if (
+            abs(sx - 1.0) > 1.0e-6
+            or abs(sy - 1.0) > 1.0e-6
+            or abs(sz - 1.0) > 1.0e-6
+        ):
+            box.label(text="未適用Scaleもワールド寸法として反映", icon='INFO')
+
+    def _draw_status(self, layout, context, unfold_obj):
+        """いまどこにいて、次に何を押すか。動いている道具もここ。
+
+        畳める区画の中には置かない。道具が動いていることに気付けず、
+        止め方も分からなくなる。
+        """
         icon, current, next_step = _status.workflow(context)
-        status_box = layout.box()
-        status_box.label(text=current, icon=icon)
+        box = layout.box()
+        box.label(text=current, icon=icon)
         if next_step:
-            status_box.label(text=next_step, icon='FORWARD')
+            box.label(text=next_step, icon='FORWARD')
 
         if unfold_obj is not None:
             for warning in _status.scale_warnings(context, unfold_obj):
-                status_box.label(text=warning, icon='ERROR')
+                box.label(text=warning, icon='ERROR')
 
-        source_box = layout.box()
-        source_box.label(text="1. モデルと型紙")
+        tool_text = _status.active_tool_text(context)
+        if not tool_text:
+            return
 
-        loaded_name = scene.get(_session.SEAM_SOURCE, "")
-        loaded_obj = bpy.data.objects.get(loaded_name) if loaded_name else None
+        running = box.row()
+        running.alert = True
+        running.label(text=tool_text, icon='REC')
 
-        source_box.operator(
+        stop = box.row(align=True)
+        stop.operator(
+            "truescale_unfold.marking_tool_off",
+            text="道具を止める",
+            icon='PAUSE',
+        )
+        stop.operator(
+            "truescale_unfold.finish_marking",
+            text="終了して元の選択へ",
+            icon='LOOP_BACK',
+        )
+
+    # ------------------------------------------------------------
+    # 必須の4段
+    # ------------------------------------------------------------
+
+    def _draw_load(self, layout, context, scene):
+        """1. 読み込む。モデルを決めて、どこで切り開くかを入れる。"""
+        box = _step(layout, 1, "読み込む", 'IMPORT')
+
+        box.operator(
             "truescale_unfold.load_seamed_object",
             text="モデルの読み込み",
             icon='IMPORT',
@@ -122,32 +231,50 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
 
         # 編集モードで選んだエッジをその場でシーム化できるようにする。
         # これが無いと、シームを足すたびにパネルの外へ出る必要があった。
-        seam_box = source_box.box()
+        seam_box = box.box()
         seam_box.label(text="シーム編集", icon='EDGESEL')
 
-        if context.mode == 'EDIT_MESH':
-            seam_row = seam_box.row(align=True)
-            seam_row.operator(
-                "truescale_unfold.mark_seam",
-                text="シームを入れる",
-                icon='ADD',
-            )
-            seam_row.operator(
-                "truescale_unfold.clear_seam",
-                text="外す",
-                icon='REMOVE',
-            )
-
-            sym_row = seam_box.row(align=True)
-            sym_row.label(text="対称")
-            sym_row.prop(scene, "tsunfold_seam_symmetry_x", text="X", toggle=True)
-            sym_row.prop(scene, "tsunfold_seam_symmetry_y", text="Y", toggle=True)
-            sym_row.prop(scene, "tsunfold_seam_symmetry_z", text="Z", toggle=True)
-        else:
+        if context.mode != 'EDIT_MESH':
             seam_box.label(text="編集モードでエッジを選ぶと使えます")
+            return
+
+        seam_row = seam_box.row(align=True)
+        seam_row.operator(
+            "truescale_unfold.mark_seam",
+            text="シームを入れる",
+            icon='ADD',
+        )
+        seam_row.operator(
+            "truescale_unfold.clear_seam",
+            text="外す",
+            icon='REMOVE',
+        )
+
+        sym_row = seam_box.row(align=True)
+        sym_row.label(text="対称")
+        sym_row.prop(scene, "tsunfold_seam_symmetry_x", text="X", toggle=True)
+        sym_row.prop(scene, "tsunfold_seam_symmetry_y", text="Y", toggle=True)
+        sym_row.prop(scene, "tsunfold_seam_symmetry_z", text="Z", toggle=True)
+
+    def _draw_build(self, layout, context, scene, loaded_obj, unfold_obj):
+        """2. 型紙にする。作る・消す・どちらを見るか。"""
+        box = _step(layout, 2, "型紙にする", 'UV')
+
+        build_row = box.row()
+        build_row.scale_y = 1.2
+        build_row.enabled = (
+            loaded_obj is not None
+            and loaded_obj.type == 'MESH'
+            and any(bool(edge.use_seam) for edge in loaded_obj.data.edges)
+        )
+        build_row.operator(
+            "truescale_unfold.build_pattern",
+            text="型紙を作成 / 更新",
+            icon='UV',
+        )
 
         if loaded_obj is not None and loaded_obj.type == 'MESH':
-            vis_row = source_box.row(align=True)
+            vis_row = box.row(align=True)
             vis_row.operator(
                 "truescale_unfold.toggle_source_visibility",
                 text=(
@@ -169,33 +296,15 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 ),
                 icon='MESH_GRID',
             )
-            source_box.prop(
-                scene,
-                "tsunfold_lightweight_view",
-                text="軽量ビュー",
-            )
+
+            box.prop(scene, "tsunfold_lightweight_view", text="軽量ビュー")
 
             # ONのあいだ元モデル側のマーキングが一切描かれない。
             # 既定でONなので、何も表示されない理由が分からなくなりやすい。
             if scene.tsunfold_lightweight_view:
-                source_box.label(
-                    text="元モデル側の合印表示はOFF",
-                    icon='HIDE_ON',
-                )
+                box.label(text="元モデル側の合印表示はOFF", icon='HIDE_ON')
 
-        build_row = source_box.row()
-        build_row.enabled = (
-            loaded_obj is not None
-            and loaded_obj.type == 'MESH'
-            and any(bool(edge.use_seam) for edge in loaded_obj.data.edges)
-        )
-        build_row.operator(
-            "truescale_unfold.build_pattern",
-            text="型紙を作成 / 更新",
-            icon='UV',
-        )
-
-        delete_row = source_box.row()
+        delete_row = box.row()
         delete_row.enabled = (unfold_obj is not None)
         delete_row.operator(
             "truescale_unfold.delete_unfold",
@@ -203,64 +312,172 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             icon='TRASH',
         )
 
-        # ------------------------------------------------------
-        # 2. Marking
-        # ------------------------------------------------------
-        marking = layout.box()
-        marking.label(text="2. マーキング")
+    def _draw_layout(self, layout, context, scene, unfold_obj):
+        """3. 紙に並べる。用紙を決め、島を置き、分割の見通しを出す。
 
-        # 道具はトグルで、押したあとの手応えが画面に無かった。
-        # 動いているのかどうかを最初に出す。
-        tool_text = _status.active_tool_text(context)
-        if tool_text:
-            running = marking.row()
-            running.alert = True
-            running.label(text=tool_text, icon='REC')
+        印をつけるより前に置く。用紙より大きい型紙は分割して刷るので、
+        継ぎ目の位置が決まっていないと、合印が継ぎ目に乗る。
+        """
+        box = _step(layout, 3, "紙に並べる", 'MESH_GRID')
 
-            # 同じボタンをもう一度押しても止まるが、それが分かる
-            # 作りになっていなかった。止め方をその場に出す。
-            stop = marking.row(align=True)
-            stop.operator(
-                "truescale_unfold.marking_tool_off",
-                text="道具を止める",
-                icon='PAUSE',
+        if unfold_obj is None:
+            box.label(text="先に型紙を作成してください")
+            return
+
+        size = _build.object_xy_size_mm(context, unfold_obj)
+        if size:
+            box.label(text=f"実寸: 横 {size[0]:.1f} × 縦 {size[1]:.1f} mm")
+
+        row = box.row(align=True)
+        row.prop(scene, "tsunfold_paper_size", text="用紙")
+
+        if scene.tsunfold_paper_size != "CUSTOM":
+            row.prop(scene, "tsunfold_orientation", text="向き")
+        else:
+            custom = box.box()
+            custom.label(text="カスタム用紙サイズ（mm）")
+            custom_row = custom.row(align=True)
+            custom_row.prop(
+                scene, "tsunfold_custom_paper_width_mm", text="幅"
             )
-            stop.operator(
-                "truescale_unfold.finish_marking",
-                text="終了して元の選択へ",
-                icon='LOOP_BACK',
+            custom_row.prop(
+                scene, "tsunfold_custom_paper_height_mm", text="高さ"
             )
+            custom.label(text="入力した幅 × 高さをそのまま使用")
 
-        source = _objects.source_from_context(context)
-        if source is None:
-            source = _objects.seam_source(context)
+        paper_w_mm, paper_h_mm = _paper.scene_dimensions_mm(scene)
+        box.label(text=f"使用サイズ: {paper_w_mm:.1f} × {paper_h_mm:.1f} mm")
 
-        # -------------------------
-        # NOTCH
-        # -------------------------
-        notch_box = marking.box()
-        notch_box.use_property_split = True
-        notch_box.use_property_decorate = False
-        head = notch_box.row()
+        # 何枚になるかは、用紙を変えられるこの場所で出す。
+        # 書き出しの直前で知らされても、戻って直すことになる。
+        for line in _status.paper_fit_text(context):
+            box.label(text=line, icon='INFO')
+
+        box.prop(scene, "tsunfold_show_paper", text="用紙ガイドを表示")
+
+        if _status.needs_tiling(context):
+            tile = box.box()
+            tile.label(text="分割の設定", icon='MOD_BUILD')
+            tile.use_property_split = True
+            tile.prop(scene, "tsunfold_tile_margin_mm", text="用紙の余白")
+            tile.prop(scene, "tsunfold_tile_overlap_mm", text="重ねしろ")
+            tile.label(text="切らずに重ねて貼れます")
+            tile.label(text="刷ったら目盛りを定規で確認")
+
+        box.separator()
+
+        row = box.row(align=True)
+        row.operator(
+            "truescale_unfold.auto_layout",
+            text="自動レイアウト",
+            icon='NODE_CORNER',
+        )
+        row.operator(
+            "truescale_unfold.layout_edit",
+            text="手動で調整",
+            icon='EDITMODE_HLT',
+        )
+        box.operator(
+            "truescale_unfold.layout_confirm",
+            text="レイアウト確定",
+            icon='CHECKMARK',
+        )
+
+        if _manual_layout_active(scene):
+            box.label(text="手動調整中：印は島と一緒に動きます")
+        else:
+            box.label(text="面を選択してGで移動 → レイアウト確定")
+
+    def _draw_output(self, layout, context, scene, unfold_obj):
+        """4. 出す / 残す。ゴールは2つあるので、並べて出す。"""
+        box = _step(layout, 4, "出す / 残す", 'EXPORT')
+
+        has_pattern = unfold_obj is not None
+
+        export = box.column()
+        export.enabled = has_pattern
+
+        export.operator(
+            "truescale_unfold.toggle_preview",
+            text=(
+                "印刷プレビューを終了"
+                if scene.tsunfold_preview
+                else "印刷プレビュー"
+            ),
+            icon='HIDE_OFF',
+            depress=scene.tsunfold_preview,
+        )
+        export.prop(scene, "tsunfold_export_format", text="形式")
+
+        run = export.row()
+        run.scale_y = 1.2
+        run.operator(
+            "truescale_unfold.export_sheets",
+            text="実寸で書き出し（300dpi）",
+            icon='EXPORT',
+        )
+
+        box.separator()
+
+        keep = box.column()
+        keep.enabled = has_pattern
+        keep.operator(
+            "truescale_unfold.finalize_pattern",
+            text="型紙を確定して残す",
+            icon='CHECKMARK',
+        )
+        keep.label(text="アドオンから切り離し、普通のメッシュにします")
+        keep.label(text="マーキングは消えますが、片付けでも消えません")
+
+        box.separator()
+
+        box.operator(
+            "truescale_unfold.return_default",
+            text="作業終了・型紙を片付ける",
+            icon='HOME',
+        )
+        box.label(text="確定していない型紙は消えます")
+
+    # ------------------------------------------------------------
+    # 任意
+    # ------------------------------------------------------------
+
+    def _draw_marking(self, layout, context, scene):
+        """印をつける。必要に応じてやるものなので畳んでおく。"""
+        box, open_now = _folded(
+            layout, scene, "tsunfold_show_marking",
+            "印をつける（任意）", 'SNAP_MIDPOINT',
+        )
+        if not open_now:
+            return
+
+        hint = _status.source_required_hint(context)
+
+        self._draw_notch(box, context, scene, hint)
+        self._draw_number_text(box, context, scene, hint)
+        self._draw_island_id(box, scene)
+        self._draw_arrow(box, context, scene, hint)
+
+        box.operator(
+            "truescale_unfold.clear_annotations",
+            text="すべてのマーキングをクリア",
+            icon='TRASH',
+        )
+
+    def _draw_notch(self, layout, context, scene, hint):
+        box = layout.box()
+        box.use_property_split = True
+        box.use_property_decorate = False
+        head = box.row()
         head.scale_y = 1.25
         head.label(text="◆ 合印", icon='SNAP_MIDPOINT')
 
-        notch_box.prop(
-            scene,
-            "tsunfold_notch_mode",
-            text="方式",
-        )
+        box.prop(scene, "tsunfold_notch_mode", text="方式")
 
         if scene.tsunfold_notch_mode == "AUTO":
-            notch_box.prop(
-                scene,
-                "tsunfold_auto_notch_divisions",
-                text="分割数",
-            )
+            box.prop(scene, "tsunfold_auto_notch_divisions", text="分割数")
 
-
-        if scene.tsunfold_notch_mode == "AUTO":
-            row = notch_box.row(align=True)
+            row = box.row(align=True)
             row.operator(
                 "truescale_unfold.refresh_auto_notches",
                 text="作成 / 更新",
@@ -276,64 +493,47 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
 
             # 今いくつ合印があるのかを出す。
             # これが無いと、設定を変えても効いているのか分からなかった。
-            notch_box.label(text=_status.notch_text(context))
+            box.label(text=_status.notch_text(context))
 
             # 手動で置いた合印があるときだけ、残す選択肢も出す。
             # 常に2つ並べると、違いが分からず選べない。
             if _status.manual_notch_count(context) > 0:
-                notch_box.operator(
+                box.operator(
                     "truescale_unfold.remove_auto_notches",
                     text="オートだけ削除（手動は残す）",
                     icon='X',
                 )
 
-        if scene.tsunfold_notch_mode != "NONE":
-            add_row = notch_box.row()
-            add_row.operator(
-                "truescale_unfold.place_notch",
-                text="手動で合印を追加",
-                icon='ADD',
-            )
+        if scene.tsunfold_notch_mode == "NONE":
+            return
 
-            hint = _status.source_required_hint(context)
-            if hint:
-                add_row.enabled = False
-                notch_box.label(text=hint, icon='INFO')
+        add_row = box.row()
+        add_row.operator(
+            "truescale_unfold.place_notch",
+            text="手動で合印を追加",
+            icon='ADD',
+        )
+        if hint:
+            add_row.enabled = False
+            box.label(text=hint, icon='INFO')
 
-            # Frequently changed geometry setting first.
-            notch_box.prop(
-                scene,
-                "tsunfold_notch_length_mm",
-                text="合印の長さ",
-            )
-            notch_box.prop(
-                scene,
-                "tsunfold_notch_thickness_mm",
-                text="合印の太さ",
-            )
+        # よく変える寸法を先に、色を後に。
+        box.prop(scene, "tsunfold_notch_length_mm", text="合印の長さ")
+        box.prop(scene, "tsunfold_notch_thickness_mm", text="合印の太さ")
 
-            # Color is secondary.
-            color_row = notch_box.row(align=True)
-            color_row.label(text="色")
-            color_row.prop(
-                scene,
-                "tsunfold_notch_color",
-                text="",
-            )
+        color_row = box.row(align=True)
+        color_row.label(text="色")
+        color_row.prop(scene, "tsunfold_notch_color", text="")
 
-        # -------------------------
-        # NUMBER / TEXT
-        # -------------------------
-        # どちらも実装は揃っていたのに、始める手段も設定も
-        # パネルに無く、機能ごと隠れていた。
-        text_box = marking.box()
-        text_box.use_property_split = True
-        text_box.use_property_decorate = False
-        head = text_box.row()
+    def _draw_number_text(self, layout, context, scene, hint):
+        box = layout.box()
+        box.use_property_split = True
+        box.use_property_decorate = False
+        head = box.row()
         head.scale_y = 1.25
         head.label(text="◆ 番号・文字", icon='SMALL_CAPS')
 
-        num_row = text_box.row(align=True)
+        num_row = box.row(align=True)
         num_row.operator(
             "truescale_unfold.place_number",
             text="手動で番号を追加",
@@ -344,23 +544,21 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             text="",
             icon='LOOP_BACK',
         )
-
-        hint = _status.source_required_hint(context)
         if hint:
             num_row.enabled = False
 
-        text_box.prop(scene, "tsunfold_number_start", text="開始番号")
-        text_box.label(text=f"次に置く番号: {scene.tsunfold_next_number}")
-        text_box.prop(scene, "tsunfold_number_size_mm", text="番号の大きさ")
+        box.prop(scene, "tsunfold_number_start", text="開始番号")
+        box.label(text=f"次に置く番号: {scene.tsunfold_next_number}")
+        box.prop(scene, "tsunfold_number_size_mm", text="番号の大きさ")
 
-        color_row = text_box.row(align=True)
+        color_row = box.row(align=True)
         color_row.label(text="番号の色")
         color_row.prop(scene, "tsunfold_number_color", text="")
 
-        text_box.separator()
+        box.separator()
 
-        text_box.prop(scene, "tsunfold_custom_text", text="文字")
-        add_text = text_box.row()
+        box.prop(scene, "tsunfold_custom_text", text="文字")
+        add_text = box.row()
         add_text.operator(
             "truescale_unfold.place_text",
             text="手動で文字を追加",
@@ -369,145 +567,88 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
         # 文字が空のまま始めても、クリックのたびに警告が出るだけ。
         add_text.enabled = bool(scene.tsunfold_custom_text) and not hint
 
-        text_box.prop(scene, "tsunfold_text_size_mm", text="文字の大きさ")
-        color_row = text_box.row(align=True)
+        box.prop(scene, "tsunfold_text_size_mm", text="文字の大きさ")
+        color_row = box.row(align=True)
         color_row.label(text="文字の色")
         color_row.prop(scene, "tsunfold_text_color", text="")
 
         if hint:
-            text_box.label(text=hint, icon='INFO')
+            box.label(text=hint, icon='INFO')
 
-        # -------------------------
-        # PATTERN ID
-        # -------------------------
-        id_box = marking.box()
-        id_box.use_property_split = True
-        id_box.use_property_decorate = False
-        head = id_box.row()
+    def _draw_island_id(self, layout, scene):
+        box = layout.box()
+        box.use_property_split = True
+        box.use_property_decorate = False
+        head = box.row()
         head.scale_y = 1.25
         head.label(text="◆ 型紙ID・接続先", icon='SORTALPHA')
 
-        id_box.prop(
-            scene,
-            "tsunfold_auto_island_ids",
-            text="自動IDを表示",
-        )
+        box.prop(scene, "tsunfold_auto_island_ids", text="自動IDを表示")
 
-        if scene.tsunfold_auto_island_ids:
-            id_box.prop(
-                scene,
-                "tsunfold_island_id_style",
-                text="形式",
-            )
+        if not scene.tsunfold_auto_island_ids:
+            return
 
-            # Size first, color second.
-            id_box.prop(
-                scene,
-                "tsunfold_island_id_size_mm",
-                text="ID文字サイズ",
-            )
+        box.prop(scene, "tsunfold_island_id_style", text="形式")
+        box.prop(scene, "tsunfold_island_id_size_mm", text="ID文字サイズ")
+        box.label(text="各辺には接続先IDを自動表示")
 
-            id_box.label(text="各辺には接続先IDを自動表示")
-
-        # -------------------------
-        # ARROW
-        # -------------------------
-        arrow_box = marking.box()
-        arrow_box.use_property_split = True
-        arrow_box.use_property_decorate = False
-        head = arrow_box.row()
+    def _draw_arrow(self, layout, context, scene, hint):
+        box = layout.box()
+        box.use_property_split = True
+        box.use_property_decorate = False
+        head = box.row()
         head.scale_y = 1.25
         head.label(text="↑ ◆ 上方向矢印")
 
-        arrow_box.prop(
-            scene,
-            "tsunfold_show_direction_arrow",
-            text="水色の方向ガイド",
-        )
+        box.prop(scene, "tsunfold_show_direction_arrow", text="水色の方向ガイド")
+        box.prop(scene, "tsunfold_arrow_mode", text="方式")
 
-        arrow_box.prop(
-            scene,
-            "tsunfold_arrow_mode",
-            text="方式",
-        )
+        if scene.tsunfold_arrow_mode == "NONE":
+            return
 
         # 手動で足す手段は、設定の下ではなく方式のすぐ下に置く。
         # 以前は設定4つの下にあり、あることに気付かれなかった。
-        if scene.tsunfold_arrow_mode != "NONE":
-            add_row = arrow_box.row()
-            add_row.operator(
-                "truescale_unfold.place_arrow",
-                text="手動で矢印を追加（始点→終点）",
-                icon='FORWARD',
-            )
+        add_row = box.row()
+        add_row.operator(
+            "truescale_unfold.place_arrow",
+            text="手動で矢印を追加（始点→終点）",
+            icon='FORWARD',
+        )
+        if hint:
+            add_row.enabled = False
+            box.label(text=hint, icon='INFO')
 
-            hint = _status.source_required_hint(context)
-            if hint:
-                add_row.enabled = False
-                arrow_box.label(text=hint, icon='INFO')
-
-            count = _status.manual_arrow_count(context)
-            if count:
-                arrow_box.label(text=f"手動の矢印 {count} 本")
+        count = _status.manual_arrow_count(context)
+        if count:
+            box.label(text=f"手動の矢印 {count} 本")
 
         if scene.tsunfold_arrow_mode == "AUTO":
-            arrow_box.prop(
-                scene,
-                "tsunfold_arrow_up_axis",
-                text="上方向",
-            )
+            box.prop(scene, "tsunfold_arrow_up_axis", text="上方向")
+            box.prop(scene, "tsunfold_auto_arrow_length_mm", text="矢印の長さ")
 
-            arrow_box.prop(
-                scene,
-                "tsunfold_auto_arrow_length_mm",
-                text="矢印の長さ",
-            )
+        box.prop(scene, "tsunfold_arrow_head_mm", text="矢印ヘッド長さ")
+        box.prop(scene, "tsunfold_arrow_thickness_mm", text="線の太さ")
 
-        if scene.tsunfold_arrow_mode != "NONE":
-            arrow_box.prop(
-                scene,
-                "tsunfold_arrow_head_mm",
-                text="矢印ヘッド長さ",
-            )
-            arrow_box.prop(
-                scene,
-                "tsunfold_arrow_thickness_mm",
-                text="線の太さ",
-            )
+        color_row = box.row(align=True)
+        color_row.label(text="色")
+        color_row.prop(scene, "tsunfold_arrow_color", text="")
 
-            color_row = arrow_box.row(align=True)
-            color_row.label(text="色")
-            color_row.prop(
-                scene,
-                "tsunfold_arrow_color",
-                text="",
-            )
-
-            arrow_box.operator(
-                "truescale_unfold.clear_arrows_all",
-                text="矢印を全削除",
-                icon='TRASH',
-            )
-
-        # -------------------------
-        # COMMON MARKING TOOLS
-        # -------------------------
-        # Common destructive action only.
-        marking.operator(
-            "truescale_unfold.clear_annotations",
-            text="すべてのマーキングをクリア",
+        box.operator(
+            "truescale_unfold.clear_arrows_all",
+            text="矢印を全削除",
             icon='TRASH',
         )
 
-        # Correspondence controls stay close to marking but visually separate.
-        corr_box = marking.box()
-        corr_box.use_property_split = True
-        corr_box.use_property_decorate = False
-        head = corr_box.row()
-        head.scale_y = 1.15
-        head.label(text="◆ 対応確認・メモ", icon='RESTRICT_SELECT_OFF')
+    def _draw_correspondence(self, layout, context, scene):
+        """立体のどこだったかを確かめる。使うときだけ開く。"""
+        box, open_now = _folded(
+            layout, scene, "tsunfold_show_correspondence",
+            "対応を確かめる・メモ（任意）", 'RESTRICT_SELECT_OFF',
+        )
+        if not open_now:
+            return
 
-        corr_box.operator(
+        box.operator(
             "truescale_unfold.pick_corresponding_island",
             text=(
                 "対応確認を終了"
@@ -516,17 +657,18 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             ),
             depress=scene.tsunfold_correspondence_mode,
         )
-        corr_box.operator(
+        box.operator(
             "truescale_unfold.clear_island_highlight",
             text="対応ハイライトをクリア",
         )
 
         if scene.tsunfold_correspondence_mode:
-            corr_box.label(text="型紙を2回クリック → メモ追加")
-            corr_box.label(text="既存メモをクリック → Rで回転")
+            box.label(text="型紙を2回クリック → メモ追加")
+            box.label(text="既存メモをクリック → Rで回転")
 
-        corr_box.separator()
-        memo_row = corr_box.row(align=True)
+        box.separator()
+
+        memo_row = box.row(align=True)
         memo_row.operator(
             "truescale_unfold.place_flat_memo",
             text="型紙にメモを追加",
@@ -536,147 +678,3 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             text="メモ全削除",
             icon='TRASH',
         )
-
-        # ------------------------------------------------------
-        # 3. Unfold / layout / line finish
-        # ------------------------------------------------------
-        output = layout.box()
-        output.label(text="3. レイアウト・印刷")
-
-        unfold_obj = _objects.resolve_unfold_for_layout(context)
-
-        if unfold_obj is None:
-            output.label(text="先に型紙を作成してください")
-        else:
-            size = _build.object_xy_size_mm(context, unfold_obj)
-            if size:
-                output.label(
-                    text=f"実寸: 横 {size[0]:.1f} × 縦 {size[1]:.1f} mm"
-                )
-
-            output.label(text="用紙設定")
-            row = output.row(align=True)
-            row.prop(
-                scene,
-                "tsunfold_paper_size",
-                text="用紙",
-            )
-
-            if scene.tsunfold_paper_size != "CUSTOM":
-                row.prop(
-                    scene,
-                    "tsunfold_orientation",
-                    text="向き",
-                )
-            else:
-                custom = output.box()
-                custom.label(text="カスタム用紙サイズ（mm）")
-                custom_row = custom.row(align=True)
-                custom_row.prop(
-                    scene,
-                    "tsunfold_custom_paper_width_mm",
-                    text="幅",
-                )
-                custom_row.prop(
-                    scene,
-                    "tsunfold_custom_paper_height_mm",
-                    text="高さ",
-                )
-                custom.label(text="入力した幅 × 高さをそのまま使用")
-
-            paper_w_mm, paper_h_mm = _paper.scene_dimensions_mm(scene)
-            output.label(
-                text=f"使用サイズ: {paper_w_mm:.1f} × {paper_h_mm:.1f} mm"
-            )
-
-            output.prop(
-                scene,
-                "tsunfold_show_paper",
-                text="用紙ガイドを表示",
-            )
-
-            output.separator()
-            output.label(text="レイアウト")
-            row = output.row(align=True)
-            row.operator(
-                "truescale_unfold.auto_layout",
-                text="自動レイアウト",
-                icon='NODE_CORNER',
-            )
-            row.operator(
-                "truescale_unfold.layout_edit",
-                text="手動で調整",
-                icon='EDITMODE_HLT',
-            )
-            output.operator(
-                "truescale_unfold.layout_confirm",
-                text="レイアウト確定",
-                icon='CHECKMARK',
-            )
-            if _manual_layout_active(scene):
-                output.label(text="手動調整中：印は島と一緒に動きます")
-            else:
-                output.label(text="面を選択してGで移動 → レイアウト確定")
-
-            output.separator()
-            output.label(text="印刷・書き出し")
-
-            output.operator(
-                "truescale_unfold.toggle_preview",
-                text=(
-                    "印刷プレビューを終了"
-                    if scene.tsunfold_preview
-                    else "印刷プレビュー"
-                ),
-                icon='HIDE_OFF',
-                depress=scene.tsunfold_preview,
-            )
-
-            output.prop(scene, "tsunfold_export_format", text="形式")
-
-            # 押す前に何枚になるかを出す。30枚だと分かれば、
-            # その場で用紙を変えられる。
-            fit = _status.paper_fit_text(context)
-            if fit:
-                for line in fit:
-                    output.label(text=line, icon='INFO')
-
-            output.operator(
-                "truescale_unfold.export_sheets",
-                text="実寸で書き出し（300dpi）",
-                icon='EXPORT',
-            )
-
-            if _status.needs_tiling(context):
-                tile = output.box()
-                tile.label(text="分割の設定", icon='MOD_BUILD')
-                tile.use_property_split = True
-                tile.prop(scene, "tsunfold_tile_margin_mm", text="用紙の余白")
-                tile.prop(scene, "tsunfold_tile_overlap_mm", text="重ねしろ")
-                tile.label(text="切らずに重ねて貼れます")
-                tile.label(text="刷ったら目盛りを定規で確認")
-
-        # 作業の終わり方は2つある。片付ける（消す）だけでは、
-        # 型紙そのものを成果物として残したい人に応えられない。
-        finish = layout.box()
-        finish.label(text="4. 仕上げ")
-
-        finish.operator(
-            "truescale_unfold.finalize_pattern",
-            text="型紙を確定して残す",
-            icon='CHECKMARK',
-        )
-        finish.label(text="アドオンから切り離し、普通のメッシュにします")
-        finish.label(text="マーキングは消えますが、片付けでも消えません")
-
-        finish.separator()
-
-        finish.operator(
-            "truescale_unfold.return_default",
-            text="作業終了・型紙を片付ける",
-            icon='HOME',
-        )
-        finish.label(text="確定していない型紙は消えます")
-
-        info = layout.box()
-        info.label(text="型紙ヘルパー カスタムシーン Beta v1.5.6")
