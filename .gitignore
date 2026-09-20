@@ -3,3 +3,6 @@ __pycache__/
 *.blend1
 *.blend2
 dist/
+
+# ビルド成果物。tools/build.py が dist/ へ作る。
+truescale.zip
