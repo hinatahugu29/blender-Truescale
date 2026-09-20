@@ -468,180 +468,264 @@ def tsdraft_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
             _pkg_debug.swallowed("draft.tsdraft_add_dimension_labels_to_exact_png")
 
 
+def mm_to_px(mm, dpi):
+    """ミリをピクセルへ。シートの組み立てで何度も要る。
+
+    式そのものは短いが、8箇所へ直に書くと読むたびに
+    「これは横か縦か、どの dpi か」を確かめることになる。
+    """
+    return float(mm) / 25.4 * float(dpi)
+
+
+def tsdraft_sheet_view_data(exported, denominator):
+    """撮った3枚を、シートの上のミリへ直す。
+
+    撮った画像はピクセルで、解像度は面ごとに違う。縮尺を掛けた
+    あとのミリに揃えておかないと、三面を並べようがない。
+
+    left / right / top / bottom は、画像の中で箱の外側にある余白。
+    三面の位置を揃えるのに使う。
+    """
+    view_data = {}
+
+    for key, item in exported.items():
+        info = item["info"]
+        src_dpi = max(1.0, float(info["dpi"]))
+        mm_per_px = 25.4 / src_dpi / denominator
+
+        view_data[key] = {
+            "image_w_mm": float(info["image_w_px"]) * mm_per_px,
+            "image_h_mm": float(info["image_h_px"]) * mm_per_px,
+            "frame_w_mm": float(info["bbox_width_mm"]) / denominator,
+            "frame_h_mm": float(info["bbox_height_mm"]) / denominator,
+            "left_mm": float(info.get("bbox_left_px", 0.0)) * mm_per_px,
+            "right_mm": float(info.get("bbox_right_px", 0.0)) * mm_per_px,
+            "top_mm": float(info.get("bbox_top_px", 0.0)) * mm_per_px,
+            "bottom_mm": float(info.get("bbox_bottom_px", 0.0)) * mm_per_px,
+        }
+
+    return view_data
+
+
+def tsdraft_choose_page(view_data, base_w, base_h, orientation):
+    """収まる向きを選ぶ。(向き, 幅, 高さ, 置き場所) を返す。
+
+    どちらの向きでも収まらなければ、置き場所を None にして、幅と
+    高さの位置に必要な大きさの目安を入れて返す。黙って縮めない。
+    縮めた図面は寸法が読めるだけに、間違いに気付けない。
+    """
+    if orientation == "AUTO":
+        candidates = (
+            ("PORTRAIT", min(base_w, base_h), max(base_w, base_h)),
+            ("LANDSCAPE", max(base_w, base_h), min(base_w, base_h)),
+        )
+    elif orientation == "LANDSCAPE":
+        candidates = (("LANDSCAPE", max(base_w, base_h), min(base_w, base_h)),)
+    else:
+        candidates = (("PORTRAIT", min(base_w, base_h), max(base_w, base_h)),)
+
+    needed = (0.0, 0.0)
+
+    for name, page_w, page_h in candidates:
+        positions, needed = tsdraft_sheet_layout_aligned(
+            view_data, page_w, page_h
+        )
+        if positions is not None:
+            return (name, page_w, page_h, positions)
+
+    return (None, needed[0], needed[1], None)
+
+
+# シートの解像度。刷る質を優先して 300dpi まで上げるが、
+# 大きい紙では画素数が爆発するので上限を設ける。
+SHEET_DPI_MAX = 300.0
+SHEET_DPI_MIN = 96.0
+SHEET_PIXEL_BUDGET = 36000000.0
+
+
+def tsdraft_sheet_dpi(page_w_mm, page_h_mm):
+    """その紙で使う解像度。
+
+    元のビューポートの解像度に合わせると、画面が小さい人の手元では
+    そのまま粗い図面になる。刷る質のほうを優先する。
+
+    ただし A1・A0 や大きいカスタム用紙では、300dpi だと画素数が
+    数億になってメモリが尽きる。画素数の上限から逆算して下げる。
+
+    下限まで下げても収まらないほど大きい紙（おおよそ 1m × 2.5m を
+    超える）は断る。そこまで下げると図面として読めないし、黙って
+    メモリ不足で落ちるより、理由を言って止まるほうがよい。
+    """
+    area_in2 = max(1e-6, (page_w_mm / 25.4) * (page_h_mm / 25.4))
+    safe = math.sqrt(SHEET_PIXEL_BUDGET / area_in2)
+
+    if safe < SHEET_DPI_MIN:
+        # 下限まで下げても画素数が収まらない。これ以上下げると
+        # 図面として読めないので、断る。黙って落ちる（メモリ不足）
+        # より、理由を言って止まるほうがよい。
+        raise RuntimeError(
+            f"用紙 {page_w_mm:.0f}×{page_h_mm:.0f}mm は大きすぎます"
+            f"（{SHEET_DPI_MIN:.0f}dpi でも画素数が上限を超えます）。"
+            "用紙を小さくしてください"
+        )
+
+    return min(SHEET_DPI_MAX, safe)
+
+
+def tsdraft_paste_views(np, canvas, exported, view_data, positions,
+                        page_h_mm, sheet_dpi):
+    """撮った3枚を、シートの上の決まった場所へ貼る。
+
+    シートの座標は上からのミリ、画布は下からのピクセル。貼る前に
+    直す。ここを取り違えると図が上下逆の位置に出る。
+    """
+    loaded = []
+
+    try:
+        for key in ("top", "side", "front"):
+            item = exported.get(key)
+            if item is None or key not in positions:
+                continue
+
+            x_mm, y_top_mm = positions[key]
+            w_mm = view_data[key]["image_w_mm"]
+            h_mm = view_data[key]["image_h_mm"]
+
+            dst_w = max(1, int(round(mm_to_px(w_mm, sheet_dpi))))
+            dst_h = max(1, int(round(mm_to_px(h_mm, sheet_dpi))))
+
+            image = bpy.data.images.load(item["path"], check_existing=False)
+            loaded.append(image)
+            image.scale(dst_w, dst_h)
+
+            pixels = np.empty(dst_w * dst_h * 4, dtype=np.float32)
+            image.pixels.foreach_get(pixels)
+
+            tsdraft_sheet_alpha_blit(
+                canvas,
+                pixels.reshape((dst_h, dst_w, 4)),
+                mm_to_px(x_mm, sheet_dpi),
+                mm_to_px(page_h_mm - y_top_mm - h_mm, sheet_dpi),
+            )
+    finally:
+        for image in loaded:
+            try:
+                bpy.data.images.remove(image)
+            except Exception:
+                _pkg_debug.swallowed("draft.tsdraft_paste_views")
+
+
+def tsdraft_save_canvas_png(canvas, filepath, name, dpi):
+    """画布を PNG として保存し、解像度を書き込む。
+
+    save_render ではなく save を使う。save_render はシーンの
+    ビュー変換をもう一度掛けるので、色が変わる。
+    """
+    height, width = canvas.shape[0], canvas.shape[1]
+
+    image = bpy.data.images.new(
+        name=name, width=width, height=height,
+        alpha=False, float_buffer=False,
+    )
+    try:
+        image.pixels.foreach_set(canvas.ravel())
+        image.file_format = "PNG"
+        image.filepath_raw = filepath
+        image.save()
+    finally:
+        bpy.data.images.remove(image)
+
+    if not _capture.tsdraft_patch_png_dpi(filepath, dpi):
+        raise RuntimeError("図面シートPNGへDPI情報を書き込めませんでした")
+
+
 def tsdraft_make_three_view_sheet_png(scene, filepath, exported):
-    """Compose three exact-size PNGs into a clean, aligned, print-scale PNG sheet."""
+    """撮った三面を、1枚の用紙へ実寸の縮尺で並べる。
+
+    段取りは5つ。
+
+      1. 撮った画像をシートの上のミリへ直す
+      2. 収まる向きを選ぶ（収まらなければ断る）
+      3. 紙の大きさから解像度を決める
+      4. 3枚を貼り、寸法と縮尺を書く
+      5. PNG として保存し、解像度を書き込む
+    """
     try:
         import numpy as np
     except Exception as exc:
-        raise RuntimeError("図面シートPNGの作成に必要な NumPy を読み込めませんでした") from exc
+        raise RuntimeError(
+            "図面シートPNGの作成に必要な NumPy を読み込めませんでした"
+        ) from exc
 
     denominator = tsdraft_sheet_scale_denominator(scene)
-    paper = getattr(scene, 'tsdraft_sheet_paper_size', 'A4')
-    orientation = getattr(scene, 'tsdraft_sheet_orientation', 'AUTO')
+    paper = getattr(scene, "tsdraft_sheet_paper_size", "A4")
 
     # 用紙の表は core.paper が持つ。ここにも同じ表があり、A5 と
     # B判が抜けていた。選べる一覧と、実際に使う寸法が別々の表から
     # 出てくると、選べるのに寸法が無い用紙が生まれる。
     base_w, base_h = _paper.base_dimensions_mm(
         scene,
-        size_prop='tsdraft_sheet_paper_size',
-        custom_width_prop='tsdraft_sheet_custom_width_mm',
-        custom_height_prop='tsdraft_sheet_custom_height_mm',
+        size_prop="tsdraft_sheet_paper_size",
+        custom_width_prop="tsdraft_sheet_custom_width_mm",
+        custom_height_prop="tsdraft_sheet_custom_height_mm",
         default_custom=(210.0, 297.0),
     )
 
-    view_data = {}
-    source_effective_dpis = []
-    for key, item in exported.items():
-        info = item['info']
-        src_dpi = max(1.0, float(info['dpi']))
-        mm_per_px = 25.4 / src_dpi / denominator
+    view_data = tsdraft_sheet_view_data(exported, denominator)
 
-        frame_w = float(info['bbox_width_mm']) / denominator
-        frame_h = float(info['bbox_height_mm']) / denominator
-
-        view_data[key] = {
-            'image_w_mm': float(info['image_w_px']) * mm_per_px,
-            'image_h_mm': float(info['image_h_px']) * mm_per_px,
-            'frame_w_mm': frame_w,
-            'frame_h_mm': frame_h,
-            'left_mm': float(info.get('bbox_left_px', 0.0)) * mm_per_px,
-            'right_mm': float(info.get('bbox_right_px', 0.0)) * mm_per_px,
-            'top_mm': float(info.get('bbox_top_px', 0.0)) * mm_per_px,
-            'bottom_mm': float(info.get('bbox_bottom_px', 0.0)) * mm_per_px,
-        }
-        source_effective_dpis.append(src_dpi * denominator)
-
-    if orientation == 'AUTO':
-        candidates = [
-            ('PORTRAIT', min(base_w, base_h), max(base_w, base_h)),
-            ('LANDSCAPE', max(base_w, base_h), min(base_w, base_h)),
-        ]
-    elif orientation == 'LANDSCAPE':
-        candidates = [('LANDSCAPE', max(base_w, base_h), min(base_w, base_h))]
-    else:
-        candidates = [('PORTRAIT', min(base_w, base_h), max(base_w, base_h))]
-
-    chosen = None
-    required = None
-    for orient_name, page_w, page_h in candidates:
-        positions, needed = tsdraft_sheet_layout_aligned(view_data, page_w, page_h)
-        if positions is not None:
-            chosen = (orient_name, page_w, page_h, positions)
-            break
-        required = needed
-
-    if chosen is None:
-        need_w, need_h = required or (0.0, 0.0)
-        raise RuntimeError(
-            f'{paper}・1:{denominator:g} では三面図が収まりませんでした'
-            f'（必要目安 {need_w + 24.0:.1f}×{need_h + 24.0:.1f}mm）。'
-            '用紙を大きくするか、縮尺の N を大きくしてください（1:2 → 1:5 など）'
-        )
-
-    orient_name, page_w, page_h, positions = chosen
-
-    # 図面シートは印刷品質を優先。
-    # 元ビューポートのDPIでページ全体を低解像度化しない。
-    # A4/A3/A2は最大300dpi、A1/A0/巨大カスタムだけ
-    # 約36MPを上限に自動でDPIを下げてメモリを守る。
-    page_area_in2 = max(1e-6, (page_w / 25.4) * (page_h / 25.4))
-    memory_safe_dpi = math.sqrt(36_000_000.0 / page_area_in2)
-    sheet_dpi = max(96.0, min(300.0, memory_safe_dpi))
-
-    page_px_w = max(1, int(round(page_w / 25.4 * sheet_dpi)))
-    page_px_h = max(1, int(round(page_h / 25.4 * sheet_dpi)))
-    canvas = tsdraft_new_background_canvas(
-        np,
-        page_px_h,
-        page_px_w,
-        tsdraft_export_canvas_rgba(scene)
+    orient_name, page_w, page_h, positions = tsdraft_choose_page(
+        view_data, base_w, base_h,
+        getattr(scene, "tsdraft_sheet_orientation", "AUTO"),
     )
 
-    loaded_images = []
-    try:
-        for key in ('top', 'side', 'front'):
-            item = exported[key]
-            x_mm, y_top_mm = positions[key]
-            w_mm = view_data[key]['image_w_mm']
-            h_mm = view_data[key]['image_h_mm']
-
-            dst_w = max(1, int(round(w_mm / 25.4 * sheet_dpi)))
-            dst_h = max(1, int(round(h_mm / 25.4 * sheet_dpi)))
-
-            image = bpy.data.images.load(item['path'], check_existing=False)
-            loaded_images.append(image)
-            image.scale(dst_w, dst_h)
-
-            src = np.empty(dst_w * dst_h * 4, dtype=np.float32)
-            image.pixels.foreach_get(src)
-            src = src.reshape((dst_h, dst_w, 4))
-
-            x0 = int(round(x_mm / 25.4 * sheet_dpi))
-            y0 = int(round((page_h - y_top_mm - h_mm) / 25.4 * sheet_dpi))
-            x1 = min(page_px_w, x0 + dst_w)
-            y1 = min(page_px_h, y0 + dst_h)
-            if x1 <= x0 or y1 <= y0:
-                continue
-
-            src = src[:y1 - y0, :x1 - x0, :]
-            dst = canvas[y0:y1, x0:x1, :]
-            alpha = src[..., 3:4]
-            dst[..., :3] = src[..., :3] * alpha + dst[..., :3] * (1.0 - alpha)
-            dst[..., 3:4] = 1.0
-
-        # Sheet dimensions are drawn here, not baked into the viewport screenshots.
-        tsdraft_sheet_draw_dimension_labels(
-            canvas,
-            scene,
-            positions,
-            view_data,
-            sheet_dpi,
-            page_h
+    if positions is None:
+        raise RuntimeError(
+            f"{paper}・1:{denominator:g} では三面図が収まりませんでした"
+            f"（必要目安 {page_w + 24.0:.1f}×{page_h + 24.0:.1f}mm）。"
+            "用紙を大きくするか、縮尺の N を大きくしてください（1:2 → 1:5 など）"
         )
 
-        # Keep scale notation on the actual sheet.
-        label = f"SCALE 1:{denominator:g}"
-        label_scale = max(2, int(round(sheet_dpi / 100.0)))
-        label_x = int(round(12.0 / 25.4 * sheet_dpi))
-        label_y_top = int(round((page_h - 10.0) / 25.4 * sheet_dpi))
-        tsdraft_draw_bitmap_text(canvas, label, label_x, label_y_top, label_scale)
+    sheet_dpi = tsdraft_sheet_dpi(page_w, page_h)
+    page_px_w = max(1, int(round(mm_to_px(page_w, sheet_dpi))))
+    page_px_h = max(1, int(round(mm_to_px(page_h, sheet_dpi))))
 
-        out_image = bpy.data.images.new(
-            name="TSDRAFT_Three_View_Sheet",
-            width=page_px_w,
-            height=page_px_h,
-            alpha=False,
-            float_buffer=False
-        )
-        try:
-            out_image.pixels.foreach_set(canvas.ravel())
-            out_image.file_format = 'PNG'
-            out_image.filepath_raw = filepath
+    canvas = tsdraft_new_background_canvas(
+        np, page_px_h, page_px_w, tsdraft_export_canvas_rgba(scene)
+    )
 
-            # save(), not save_render(): avoid applying the scene view transform a second time.
-            out_image.save()
-        finally:
-            bpy.data.images.remove(out_image)
+    tsdraft_paste_views(
+        np, canvas, exported, view_data, positions, page_h, sheet_dpi
+    )
 
-        if not _capture.tsdraft_patch_png_dpi(filepath, sheet_dpi):
-            raise RuntimeError("図面シートPNGへDPI情報を書き込めませんでした")
-    finally:
-        for image in loaded_images:
-            try:
-                bpy.data.images.remove(image)
-            except Exception:
-                _pkg_debug.swallowed("draft.tsdraft_make_three_view_sheet_png")
+    # 寸法はここで描く。ビューポートの文字を撮影画像へ焼くと、
+    # 回転と切り抜きが安定しない。
+    tsdraft_sheet_draw_dimension_labels(
+        canvas, scene, positions, view_data, sheet_dpi, page_h
+    )
+
+    # 縮尺は紙の上に必ず残す。刷ったものだけを見る人には、
+    # これが無いと何分の1なのか分かりようがない。
+    tsdraft_draw_bitmap_text(
+        canvas,
+        f"SCALE 1:{denominator:g}",
+        int(round(mm_to_px(12.0, sheet_dpi))),
+        int(round(mm_to_px(page_h - 10.0, sheet_dpi))),
+        max(2, int(round(sheet_dpi / 100.0))),
+    )
+
+    tsdraft_save_canvas_png(
+        canvas, filepath, "TSDRAFT_Three_View_Sheet", sheet_dpi
+    )
 
     return {
-        'paper': paper,
-        'orientation': orient_name,
-        'page_w_mm': page_w,
-        'page_h_mm': page_h,
-        'scale_denominator': denominator,
-        'dpi': sheet_dpi,
-        'pixel_width': page_px_w,
-        'pixel_height': page_px_h,
+        "paper": paper,
+        "orientation": orient_name,
+        "page_w_mm": page_w,
+        "page_h_mm": page_h,
+        "scale_denominator": denominator,
+        "dpi": sheet_dpi,
+        "pixel_width": page_px_w,
+        "pixel_height": page_px_h,
     }
 
 

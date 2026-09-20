@@ -2800,6 +2800,148 @@ def test_pane_measure_holds_its_numbers():
     close(m.dpi / 25.4, m.px_per_mm, 1e-9, "dpi と ピクセル/ミリ が合わない")
 
 
+@test
+def test_sheet_millimetres_become_pixels():
+    """ミリとピクセルの換算が、指定した解像度どおりになる。
+
+    シートの組み立てで8箇所に直に書かれていた。1インチ = 25.4mm
+    なので、300dpi なら 25.4mm が 300 ピクセル。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft.export import sheet as S
+    truescale.register()
+
+    close(S.mm_to_px(25.4, 300.0), 300.0, 1e-6, "300dpi の1インチ")
+    close(S.mm_to_px(210.0, 300.0), 2480.31, 0.01, "A4の幅")
+    close(S.mm_to_px(0.0, 300.0), 0.0, 1e-9, "0mm")
+
+
+@test
+def test_sheet_dpi_drops_for_huge_paper():
+    """大きい紙では解像度を下げて、メモリが尽きないようにする。
+
+    A4 なら刷る質を優先して上限まで上げる。A0 で同じことをすると
+    画素数が数億になる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft.export import sheet as S
+    truescale.register()
+
+    a4 = S.tsdraft_sheet_dpi(210.0, 297.0)
+    a0 = S.tsdraft_sheet_dpi(841.0, 1189.0)
+
+    close(a4, S.SHEET_DPI_MAX, 1e-6, "A4 が上限になっていない")
+    check(a0 < a4, f"A0 で下がっていない: {a0} / {a4}")
+    check(a0 >= S.SHEET_DPI_MIN, f"A0 で下限を割った: {a0}")
+
+    # 受け付ける紙では、画素数が上限を超えない。
+    for w, h in ((210.0, 297.0), (297.0, 420.0), (594.0, 841.0),
+                 (841.0, 1189.0)):
+        dpi = S.tsdraft_sheet_dpi(w, h)
+        pixels = S.mm_to_px(w, dpi) * S.mm_to_px(h, dpi)
+        check(
+            pixels <= S.SHEET_PIXEL_BUDGET * 1.01,
+            f"{w}x{h}mm で画素数が上限を超えた: {pixels:.0f}",
+        )
+
+    # 下限まで下げても収まらない紙は断る。黙ってメモリ不足で
+    # 落ちるより、理由を言って止まるほうがよい。
+    try:
+        S.tsdraft_sheet_dpi(2000.0, 3000.0)
+    except RuntimeError as exc:
+        check("大きすぎます" in str(exc), f"理由が分からない: {exc}")
+    else:
+        raise AssertionError("2m×3m の用紙を受け付けてしまった")
+
+
+def _three_views(size_mm):
+    """試験用の三面。どれも同じ大きさの正方形とする。"""
+    one = {
+        "image_w_mm": size_mm,
+        "image_h_mm": size_mm,
+        "frame_w_mm": size_mm,
+        "frame_h_mm": size_mm,
+        "left_mm": 0.0,
+        "right_mm": 0.0,
+        "top_mm": 0.0,
+        "bottom_mm": 0.0,
+    }
+    return {"top": dict(one), "front": dict(one), "side": dict(one)}
+
+
+@test
+def test_sheet_picks_an_orientation_that_fits():
+    """収まる向きを選び、収まらなければ断る。
+
+    黙って縮めない。縮めた図面は寸法が読めるだけに、間違いに
+    気付けない。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft.export import sheet as S
+    truescale.register()
+
+    name, w, h, positions = S.tsdraft_choose_page(
+        _three_views(60.0), 210.0, 297.0, "AUTO"
+    )
+    check(positions is not None, "60mm 角の三面が A4 に収まらない")
+    check(name in {"PORTRAIT", "LANDSCAPE"}, f"向きが変: {name}")
+    check(set(positions) == {"top", "front", "side"}, "三面が揃っていない")
+
+    # 指定した向きは守る。
+    name, w, h, positions = S.tsdraft_choose_page(
+        _three_views(60.0), 210.0, 297.0, "LANDSCAPE"
+    )
+    check(name == "LANDSCAPE", f"横向きの指定が守られていない: {name}")
+    check(w > h, f"横向きなのに縦長: {w}x{h}")
+
+    # 収まらないときは、必要な大きさの目安を返す。
+    name, need_w, need_h, positions = S.tsdraft_choose_page(
+        _three_views(400.0), 210.0, 297.0, "AUTO"
+    )
+    check(positions is None, "収まらないのに収まったことにしている")
+    check(need_w > 210.0 or need_h > 297.0, f"目安が小さすぎる: {need_w}x{need_h}")
+
+
+@test
+def test_sheet_view_data_applies_the_scale():
+    """縮尺どおりに、撮った画像がシートの上のミリになる。
+
+    面ごとに解像度が違うので、揃えないと三面を並べようがない。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft.export import sheet as S
+    truescale.register()
+
+    exported = {
+        "front": {
+            "info": {
+                "dpi": 300.0,
+                "image_w_px": 300.0,
+                "image_h_px": 600.0,
+                "bbox_width_mm": 100.0,
+                "bbox_height_mm": 200.0,
+                "bbox_left_px": 30.0,
+            },
+        },
+    }
+
+    # 1:1 なら、300dpi の 300px は 25.4mm。
+    plain = S.tsdraft_sheet_view_data(exported, 1.0)["front"]
+    close(plain["image_w_mm"], 25.4, 1e-6, "1:1 の横幅")
+    close(plain["frame_w_mm"], 100.0, 1e-6, "1:1 の箱の幅")
+    close(plain["left_mm"], 2.54, 1e-6, "1:1 の左余白")
+
+    # 1:2 なら、すべて半分。
+    half = S.tsdraft_sheet_view_data(exported, 2.0)["front"]
+    close(half["image_w_mm"], 12.7, 1e-6, "1:2 の横幅")
+    close(half["frame_w_mm"], 50.0, 1e-6, "1:2 の箱の幅")
+    close(half["left_mm"], 1.27, 1e-6, "1:2 の左余白")
+
+
 def main():
     print()
     print("=" * 72)
