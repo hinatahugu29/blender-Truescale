@@ -29,7 +29,6 @@ pHYs チャンクに 300dpi を入れる。入れないと、印刷側が原寸�
 import os
 
 from pathlib import Path
-import blf
 import mathutils
 from mathutils import Vector
 from bpy_extras import view3d_utils
@@ -41,6 +40,7 @@ from ...export import png as _png
 from .. import bbox as _bbox
 from .. import dimension as _dimension
 from .. import keys as _keys
+from .. import labels as _labels
 from .. import viewstate as _viewstate
 
 
@@ -757,233 +757,31 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
         crop_min_y = bbox_min_y
         crop_max_y = bbox_max_y
 
-        data = bpy.app.driver_namespace.get(_keys.DATA_KEY, [])
-        suppress_sheet_dim_text = bool(
-            bpy.app.driver_namespace.get("TSDRAFT_SHEET_SUPPRESS_DIM_TEXT", False)
-        )
-        visible_axes = set() if (is_user_view or suppress_sheet_dim_text) else {
-            axis for axis in _dimension.tsdraft_svg_dimension_axes(view_key)
-            if _dimension.tsdraft_dimension_axis_enabled(scene, view_key, axis)
-        }
+        # 切り抜きの範囲は、寸法の文字まで含める。文字が入る場所は
+        # draft.labels が決める。画面へ描く側と同じ計算なので、
+        # 画面で見えている文字が PNG で切れることはない。
+        #
+        # 以前はここに overlay の計算を手で写していた。写した時点で
+        # すでにずれていて（安全余白の出し方と、出す軸の選び方）、
+        # ずれると刷ってみるまで分からない。
+        suppress_sheet_dim_text = _labels.text_suppressed()
 
-        # Export crop must use the SAME automatic label layout as the viewport.
-        # Otherwise the PNG can crop labels that are correctly visible on screen.
-        sheet_layout_mode = bool(
-            bpy.app.driver_namespace.get("TSDRAFT_SHEET_LAYOUT_MODE", False)
-        )
-        if sheet_layout_mode:
-            auto_axis_layout = {
-                "top": {
-                    "X": "TOP",
-                    "Y": "LEFT",
-                },
-                "front": {
-                    "X": "BOTTOM",
-                    "Z": "RIGHT",
-                },
-                "side": {
-                    "Y": "BOTTOM",
-                    "Z": "LEFT",
-                },
-            }
+        if is_user_view or suppress_sheet_dim_text:
+            data = []
         else:
-            auto_axis_layout = {
-                "top": {
-                    "X": "TOP",
-                    "Y": "LEFT",
-                },
-                "front": {
-                    "X": "TOP",
-                    "Z": "LEFT",
-                },
-                "side": {
-                    "Y": "TOP",
-                    "Z": "LEFT",
-                },
-            }
+            data = _labels.label_data()
 
-        requested_font_size = max(1, int(scene.tsdraft_font_size))
+        _, view_dir = _viewstate.get_view_key_from_rv3d(target_rv3d)
 
-        # text_heightは各ラベルを測るまで存在しないため、
-        # ここでは文字サイズから安全余白の初期値を作る。
-        base_margin_x = max(
-            20.0,
-            float(requested_font_size) * 0.75
-        )
-        base_margin_y = max(
-            32.0,
-            float(requested_font_size) * 1.15
-        )
-
-        available_w = max(
-            1.0,
-            float(target_region.width) - base_margin_x * 2.0
-        )
-        available_h = max(
-            1.0,
-            float(target_region.height) - base_margin_y * 2.0
-        )
-
-        for item in data:
-            axis = item.get("axis", "X")
-            if axis not in visible_axes:
-                continue
-
-            label = _dimension.get_dimension_text(scene, item)
-
-            # Mirror _overlay.draw_size_labels() font fitting exactly.
-            blf.size(0, requested_font_size)
-            text_width, text_height = blf.dimensions(0, label)
-
-            if text_width > available_w or text_height > available_h:
-                fit_scale = min(
-                    available_w / max(1.0, float(text_width)),
-                    available_h / max(1.0, float(text_height)),
-                    1.0
-                )
-                effective_size = max(
-                    8,
-                    int(requested_font_size * fit_scale)
-                )
-                blf.size(0, effective_size)
-                text_width, text_height = blf.dimensions(0, label)
-
-            axis_lower = axis.lower()
-            off_x_mm = getattr(
-                scene,
-                f"tsdraft_{view_key}_{axis_lower}_offset_x_mm",
-                0.0
-            )
-            off_y_mm = getattr(
-                scene,
-                f"tsdraft_{view_key}_{axis_lower}_offset_y_mm",
-                0.0
-            )
-
-            off_x_px = off_x_mm * px_per_mm
-            off_y_px = off_y_mm * px_per_mm
-
-            layout_type = auto_axis_layout.get(view_key, {}).get(axis)
-
-            rotate_vertical_text = layout_type in {"LEFT", "RIGHT"}
-
-            if layout_type == "TOP":
-                gap = max(10.0, float(text_height) * 0.35)
-                text_x = (
-                    (bbox_min_x + bbox_max_x) * 0.5
-                    - float(text_width) * 0.5
-                    + off_x_px
-                )
-                text_y = bbox_max_y + gap + off_y_px
-
-            elif layout_type == "BOTTOM":
-                gap = max(10.0, float(text_height) * 0.35)
-                text_x = (
-                    (bbox_min_x + bbox_max_x) * 0.5
-                    - float(text_width) * 0.5
-                    + off_x_px
-                )
-                text_y = (
-                    bbox_min_y
-                    - gap
-                    - float(text_height)
-                    + off_y_px
-                )
-
-            elif layout_type == "RIGHT":
-                gap = max(10.0, float(text_height) * 0.35)
-                text_x = bbox_max_x + gap + off_x_px
-                text_y = (
-                    (bbox_min_y + bbox_max_y) * 0.5
-                    - float(text_width) * 0.5
-                    + off_y_px
-                )
-
-            elif layout_type == "LEFT":
-                gap = max(10.0, float(text_height) * 0.35)
-                text_x = (
-                    bbox_min_x
-                    - gap
-                    - float(text_height)
-                    + off_x_px
-                )
-                text_y = (
-                    (bbox_min_y + bbox_max_y) * 0.5
-                    - float(text_width) * 0.5
-                    + off_y_px
-                )
-
-            else:
-                # Fallback for unusual layouts.
-                loc = item.get("location")
-                if loc is None:
-                    continue
-
-                p2 = view3d_utils.location_3d_to_region_2d(
-                    target_region,
-                    target_rv3d,
-                    loc
-                )
-                if p2 is None:
-                    continue
-
-                text_x = (
-                    float(p2.x)
-                    - float(text_width) * 0.5
-                    + off_x_px
-                )
-                text_y = (
-                    float(p2.y)
-                    - float(text_height) * 0.5
-                    + off_y_px
-                )
-
-            # Mirror viewport clamping as well.
-            # ここでは実際に測定済みのtext_heightから余白を決める。
-            safe_margin_x = max(
-                base_margin_x,
-                float(text_height) * 0.75
-            )
-            safe_margin_y = max(
-                base_margin_y,
-                float(text_height) * 1.15
-            )
-
-            visual_w = float(text_height) if rotate_vertical_text else float(text_width)
-            visual_h = float(text_width) if rotate_vertical_text else float(text_height)
-
-            max_text_x = max(
-                safe_margin_x,
-                float(target_region.width)
-                - visual_w
-                - safe_margin_x
-            )
-            max_text_y = max(
-                safe_margin_y,
-                float(target_region.height)
-                - visual_h
-                - safe_margin_y
-            )
-
-            text_x = min(
-                max(text_x, safe_margin_x),
-                max_text_x
-            )
-            text_y = min(
-                max(text_y, safe_margin_y),
-                max_text_y
-            )
-
-            crop_min_x = min(crop_min_x, text_x)
-            crop_max_x = max(
-                crop_max_x,
-                text_x + visual_w
-            )
-            crop_min_y = min(crop_min_y, text_y)
-            crop_max_y = max(
-                crop_max_y,
-                text_y + visual_h
-            )
+        for item in _labels.layout(
+            scene, target_region, target_rv3d, bbox_obj, data,
+            view_key, view_dir,
+        ):
+            left, bottom, right, top = item.bounds()
+            crop_min_x = min(crop_min_x, left)
+            crop_max_x = max(crop_max_x, right)
+            crop_min_y = min(crop_min_y, bottom)
+            crop_max_y = max(crop_max_y, top)
 
         # Small breathing room around the real rendered bounds.
         # If dimension text is suppressed (sheet / batch source capture),

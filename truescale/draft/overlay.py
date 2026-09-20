@@ -26,7 +26,6 @@ Blender がモジュールを読み直したときに失われ、外せない描
 """
 
 import blf
-import math
 import mathutils
 import bpy
 import gpu
@@ -35,9 +34,8 @@ from mathutils import Vector
 from bpy_extras import view3d_utils
 
 from .. import debug as _debug
-from ..core import units as _units
 from . import bbox as _bbox
-from . import dimension as _dimension
+from . import labels as _labels
 from . import keys as _keys
 from . import viewstate as _viewstate
 
@@ -495,51 +493,14 @@ def remove_view_label_handler():
     namespace[_keys.VIEW_LABEL_HANDLER_KEY] = None
 
 
-def tsdraft_view_px_per_mm(region, rv3d, bbox_obj, view_key, unit_scale):
-    if bbox_obj is None:
-        return 1.0
-
-    corners = [bbox_obj.matrix_world @ v.co for v in bbox_obj.data.vertices]
-    projected = []
-    for co in corners:
-        p2 = view3d_utils.location_3d_to_region_2d(region, rv3d, co)
-        if p2 is not None:
-            projected.append((float(p2.x), float(p2.y)))
-
-    if len(projected) < 4:
-        return 1.0
-
-    xs = [p[0] for p in projected]
-    ys = [p[1] for p in projected]
-    px_w = max(xs) - min(xs)
-    px_h = max(ys) - min(ys)
-
-    if view_key == "top":
-        vals_u = [co.x for co in corners]
-        vals_v = [co.y for co in corners]
-    elif view_key == "front":
-        vals_u = [co.x for co in corners]
-        vals_v = [co.z for co in corners]
-    elif view_key == "side":
-        vals_u = [co.y for co in corners]
-        vals_v = [co.z for co in corners]
-    else:
-        vals_u = [co.x for co in corners]
-        vals_v = [co.z for co in corners]
-
-    mm_w = (max(vals_u) - min(vals_u)) * unit_scale * 1000.0
-    mm_h = (max(vals_v) - min(vals_v)) * unit_scale * 1000.0
-
-    vals = []
-    if mm_w > 1e-9 and px_w > 1:
-        vals.append(px_w / mm_w)
-    if mm_h > 1e-9 and px_h > 1:
-        vals.append(px_h / mm_h)
-
-    return sum(vals) / len(vals) if vals else 1.0
-
-
 def draw_size_labels():
+    """寸法の文字を描く。
+
+    どこへ置くかは draft.labels が決める。書き出しの切り抜き範囲も
+    同じ計算から出すので、画面で見えている文字が PNG で切れる
+    ことはない。以前はここと capture に同じ計算が2つあり、
+    手で揃え続ける前提になっていた（そして揃っていなかった）。
+    """
     _bbox.tsdraft_import_legacy_state()
     context = bpy.context
 
@@ -548,315 +509,47 @@ def draw_size_labels():
 
     region = context.region
     rv3d = context.region_data
-
     if region is None or rv3d is None:
         return
 
     scene = context.scene
-
     if not scene.tsdraft_show_dimensions:
         return
 
-    namespace = bpy.app.driver_namespace
-
-    # 三面図シートでは、寸法文字を最終シート上で直接描画する。
-    # ビューポートの文字を撮影画像へ焼くと、回転と切り抜きが安定しないので、
-    # シート用一時PNGでは文字だけ抑止する。
-    if namespace.get("TSDRAFT_SHEET_SUPPRESS_DIM_TEXT", False):
+    # 三面図シートでは、寸法をシートの上で直接描く。ビューポートの
+    # 文字を撮影画像へ焼くと、回転と切り抜きが安定しない。
+    if _labels.text_suppressed():
         return
 
+    namespace = bpy.app.driver_namespace
     source_name = namespace.get(_keys.SOURCE_KEY)
-    data = namespace.get(_keys.DATA_KEY, [])
-
     if source_name and bpy.data.objects.get(source_name) is None:
         return
 
     bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
+    data = _labels.label_data()
     if bbox_obj is None or not data:
         return
 
     font_id = 0
-    font_size = scene.tsdraft_font_size
-    font_color = scene.tsdraft_font_color
-
     if getattr(scene, "tsdraft_dark_place", False):
-        draw_color = _keys.DARK_TEXT
+        color = _keys.DARK_TEXT
     else:
-        draw_color = font_color
+        color = scene.tsdraft_font_color
 
-    blf.size(font_id, font_size)
-    blf.color(
-        font_id,
-        draw_color[0],
-        draw_color[1],
-        draw_color[2],
-        draw_color[3]
+    blf.color(font_id, color[0], color[1], color[2], color[3])
+
+    view_key, view_dir, explicit = _labels.current_view_key(scene, rv3d)
+
+    _labels.draw(
+        _labels.layout(
+            scene, region, rv3d, bbox_obj, data,
+            view_key, view_dir,
+            explicit_user_mode=explicit,
+            font_id=font_id,
+        ),
+        font_id=font_id,
     )
-
-    # Blenderの現在ビュー方向（画面から奥へ向かう方向）
-    view_key, view_dir = _viewstate.get_view_key_from_rv3d(rv3d)
-
-    explicit_user_mode = bool(
-        getattr(scene, "tsdraft_user_view_mode", False)
-    )
-
-    # 「任意」ボタンを押した時だけuser個別設定を使用。
-    # 通常の斜めデフォルトビューはグローバル寸法表示を使う。
-    if explicit_user_mode:
-        view_key = "user"
-
-    axis_vectors = {
-        "X": Vector((1.0, 0.0, 0.0)),
-        "Y": Vector((0.0, 1.0, 0.0)),
-        "Z": Vector((0.0, 0.0, 1.0)),
-    }
-
-    # -----------------------------------------------------
-    # 三面図では、BBoxを毎回画面へ投影して寸法文字の基準位置を作る。
-    # これにより、オブジェクト寸法変更・BBox追従・ビュー倍率変更があっても
-    # 「上中央」「左中央」という画面上の関係を維持できる。
-    # -----------------------------------------------------
-    projected_bbox = []
-    if view_key in {"top", "front", "side"}:
-        try:
-            bbox_world = [
-                bbox_obj.matrix_world @ Vector(corner)
-                for corner in bbox_obj.bound_box
-            ]
-            for world_co in bbox_world:
-                p = view3d_utils.location_3d_to_region_2d(
-                    region,
-                    rv3d,
-                    world_co
-                )
-                if p is not None:
-                    projected_bbox.append(p)
-        except Exception:
-            projected_bbox = []
-
-    bbox_screen = None
-    if projected_bbox:
-        bx = [p.x for p in projected_bbox]
-        by = [p.y for p in projected_bbox]
-        bbox_screen = (
-            min(bx),
-            max(bx),
-            min(by),
-            max(by),
-        )
-
-    # 各三面図で、画面横方向 / 縦方向に対応する寸法軸。
-    # 横寸法はBOX上中央、縦寸法はBOX左中央へ自動配置。
-    sheet_layout_mode = bool(
-        bpy.app.driver_namespace.get("TSDRAFT_SHEET_LAYOUT_MODE", False)
-    )
-
-    if sheet_layout_mode:
-        # 三面図シートでは、寸法を図同士の隙間ではなく外周側へ逃がす。
-        auto_axis_layout = {
-            "top": {
-                "X": "TOP",
-                "Y": "LEFT",
-            },
-            "front": {
-                "X": "BOTTOM",
-                "Z": "RIGHT",
-            },
-            "side": {
-                "Y": "BOTTOM",
-                "Z": "LEFT",
-            },
-        }
-    else:
-        # 単体ビューは従来どおり上＋左。
-        auto_axis_layout = {
-            "top": {
-                "X": "TOP",
-                "Y": "LEFT",
-            },
-            "front": {
-                "X": "TOP",
-                "Z": "LEFT",
-            },
-            "side": {
-                "Y": "TOP",
-                "Z": "LEFT",
-            },
-        }
-
-    for item in data:
-        axis_name = item.get("axis", "X")
-
-        if axis_name in axis_vectors:
-            axis_world = bbox_obj.matrix_world.to_3x3() @ axis_vectors[axis_name]
-            if axis_world.length > 0:
-                axis_world.normalize()
-
-                # ビュー方向と寸法軸がほぼ平行なら、その寸法は奥行きなので隠す。
-                if abs(axis_world.dot(view_dir)) >= 0.965:
-                    continue
-
-        axis = axis_name.lower()
-
-        # ビューごとの寸法表示ON/OFF。
-        # 明示的な任意ビューだけ user 個別設定を使う。
-        # 普通の斜めデフォルトビューはグローバル表示を優先する。
-        if explicit_user_mode:
-            if not getattr(scene, "tsdraft_show_dimensions_user", True):
-                continue
-        elif view_key != "user":
-            if not getattr(
-                scene,
-                f"tsdraft_show_dimensions_{view_key}",
-                True
-            ):
-                continue
-            if not _dimension.tsdraft_dimension_axis_enabled(scene, view_key, axis_name):
-                continue
-
-        # 1 BU が何メートルか。シーンの Unit Scale を直に読んではいけない。
-        # このアドオンには「シーンを見ず、アドオンの中だけで基準を決める」
-        # モードがある。直読みすると、型紙側が 1 BU = 40mm で計算して
-        # いるのに、こちらは 1000mm で測る、ということが起きる。
-        # 実際にそうなっていた（同じファイルで 25 倍の食い違い）。
-        unit_scale = _units.scene_scale_to_meters(scene)
-        px_per_mm = tsdraft_view_px_per_mm(
-            region, rv3d, bbox_obj, view_key, unit_scale
-        )
-
-        # 既存の細かい位置調整は「自動配置位置からの追加オフセット」として残す。
-        vx_mm = getattr(scene, f"tsdraft_{view_key}_{axis}_offset_x_mm", 0.0)
-        vy_mm = getattr(scene, f"tsdraft_{view_key}_{axis}_offset_y_mm", 0.0)
-        vx = vx_mm * px_per_mm
-        vy = vy_mm * px_per_mm
-
-        display_text = _dimension.get_dimension_text(scene, item)
-
-        requested_font_size = max(1, int(font_size))
-        blf.size(font_id, requested_font_size)
-        text_width, text_height = blf.dimensions(font_id, display_text)
-
-        # pane端やBlender UI帯へ文字が食い込まないよう、
-        # 実際の文字高さに応じて安全余白を広げる。
-        safe_margin_x = max(
-            20.0,
-            float(text_height) * 0.75
-        )
-        safe_margin_y = max(
-            32.0,
-            float(text_height) * 1.15
-        )
-
-        available_w = max(
-            1.0,
-            float(region.width) - safe_margin_x * 2.0
-        )
-        available_h = max(
-            1.0,
-            float(region.height) - safe_margin_y * 2.0
-        )
-
-        # 極端な文字サイズだけ、paneに収まる範囲まで自動縮小。
-        if text_width > available_w or text_height > available_h:
-            scale = min(
-                available_w / max(1.0, float(text_width)),
-                available_h / max(1.0, float(text_height)),
-                1.0
-            )
-            effective_size = max(8, int(requested_font_size * scale))
-            blf.size(font_id, effective_size)
-            text_width, text_height = blf.dimensions(font_id, display_text)
-
-        layout_type = auto_axis_layout.get(view_key, {}).get(axis_name)
-
-        rotate_vertical_text = layout_type in {"LEFT", "RIGHT"}
-
-        if bbox_screen is not None and layout_type in {"TOP", "BOTTOM", "LEFT", "RIGHT"}:
-            bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y = bbox_screen
-
-            # 文字サイズに応じてBOXから少し離す。
-            gap = max(10.0, float(text_height) * 0.35)
-
-            if layout_type == "TOP":
-                text_x = ((bbox_min_x + bbox_max_x) * 0.5) - (text_width * 0.5)
-                text_y = bbox_max_y + gap
-
-            elif layout_type == "BOTTOM":
-                text_x = ((bbox_min_x + bbox_max_x) * 0.5) - (text_width * 0.5)
-                text_y = bbox_min_y - gap - text_height
-
-            elif layout_type == "RIGHT":
-                # 90°回転後の見た目:
-                # 横幅=text_height / 高さ=text_width
-                text_x = bbox_max_x + gap
-                text_y = ((bbox_min_y + bbox_max_y) * 0.5) - (text_width * 0.5)
-
-            else:  # LEFT
-                # 90°回転後の横幅は text_height。
-                text_x = bbox_min_x - gap - text_height
-                text_y = ((bbox_min_y + bbox_max_y) * 0.5) - (text_width * 0.5)
-
-            text_x += vx
-            text_y += vy
-
-        else:
-            # 任意ビューなどは従来の3Dアンカー方式を維持。
-            pos_2d = view3d_utils.location_3d_to_region_2d(
-                region,
-                rv3d,
-                item["location"]
-            )
-
-            if pos_2d is None:
-                continue
-
-            text_x = pos_2d.x - (text_width * 0.5) + vx
-            text_y = pos_2d.y - (text_height * 0.5) + vy
-
-        # 最後に画面内へクランプ。
-        # 縦寸法は90°回転後の見た目サイズで判定する。
-        visual_w = float(text_height) if rotate_vertical_text else float(text_width)
-        visual_h = float(text_width) if rotate_vertical_text else float(text_height)
-
-        max_x = max(
-            safe_margin_x,
-            float(region.width) - visual_w - safe_margin_x
-        )
-        max_y = max(
-            safe_margin_y,
-            float(region.height) - visual_h - safe_margin_y
-        )
-
-        text_x = min(max(text_x, safe_margin_x), max_x)
-        text_y = min(max(text_y, safe_margin_y), max_y)
-
-        if rotate_vertical_text:
-            # BLFは指定位置を基準に反時計回りへ回転するため、
-            # 見た目の左下が text_x/text_y に来るようXを右へずらす。
-            try:
-                blf.enable(font_id, blf.ROTATION)
-                blf.rotation(font_id, math.radians(90.0))
-                blf.position(
-                    font_id,
-                    text_x + float(text_height),
-                    text_y,
-                    0
-                )
-                blf.draw(font_id, display_text)
-            finally:
-                try:
-                    blf.rotation(font_id, 0.0)
-                    blf.disable(font_id, blf.ROTATION)
-                except Exception:
-                    _debug.swallowed("draft.draw_size_labels")
-        else:
-            blf.position(
-                font_id,
-                text_x,
-                text_y,
-                0
-            )
-            blf.draw(font_id, display_text)
 
 
 def tsdraft_remove_legacy_draw_handlers():

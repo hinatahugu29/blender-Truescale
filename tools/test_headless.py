@@ -1873,6 +1873,7 @@ def test_modules_import_without_error():
     import importlib
 
     names = (
+        "truescale.core.flatshape",
         "truescale.core.geometry", "truescale.core.mapping",
         "truescale.core.objects", "truescale.core.paper",
         "truescale.core.session", "truescale.core.solve",
@@ -1884,13 +1885,15 @@ def test_modules_import_without_error():
         "truescale.marking.tools",
         "truescale.marking.placement", "truescale.marking.seams",
         "truescale.marking.source", "truescale.marking.storage",
+        "truescale.export.allowance", "truescale.export.linestyle",
         "truescale.export.collect", "truescale.export.outline",
         "truescale.export.pdf", "truescale.export.png",
         "truescale.export.render", "truescale.export.sheets",
         "truescale.export.tiling",
         "truescale.overlay",
         "truescale.draft.bbox", "truescale.draft.dimension",
-        "truescale.draft.keys", "truescale.draft.overlay",
+        "truescale.draft.keys", "truescale.draft.labels",
+        "truescale.draft.overlay",
         "truescale.draft.views", "truescale.draft.export.capture",
         "truescale.draft.export.sheet", "truescale.draft.ops",
         "truescale.draft.panel", "truescale.draft.prefs",
@@ -2494,6 +2497,109 @@ def test_draft_resolves_every_paper_it_offers():
         default_custom=(210.0, 297.0),
     )
     check(got == (123.0, 456.0), f"カスタムが入力どおりでない: {got}")
+
+
+@test
+def test_label_tables_cover_every_axis_each_view_shows():
+    """置き場所の表が、その面図が出す軸を全部持っている。
+
+    表に無い軸は「どこにも置けない」ことになり、3Dの位置を
+    そのまま画面へ落とす予備の経路へ落ちる。図の真ん中に寸法が
+    重なって出る。表が2つに分かれたままなので、突き合わせる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft import dimension as DM
+    from truescale.draft import labels as L
+    truescale.register()
+
+    for name, table in (("三面図シート", L.SHEET_LAYOUT),
+                        ("単体ビュー", L.SINGLE_LAYOUT)):
+        for view_key in ("top", "front", "side"):
+            wanted = DM.tsdraft_svg_dimension_axes(view_key)
+            got = set(table.get(view_key, {}))
+            check(
+                got == wanted,
+                f"{name} の {view_key}: 表 {sorted(got)} / "
+                f"出す軸 {sorted(wanted)}",
+            )
+
+
+@test
+def test_depth_axis_is_hidden_in_each_view():
+    """真正面から見た奥行きの寸法は出さない。
+
+    線が点になるので、書いても読めない。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft import labels as L
+    from mathutils import Vector
+    truescale.register()
+
+    bpy.ops.mesh.primitive_cube_add(size=1.0)
+    obj = bpy.context.active_object
+
+    # 正面図（-Y を向く）では Y が奥行き。
+    front = Vector((0.0, 1.0, 0.0))
+    check(L._edge_on(obj, "Y", front), "正面図で Y を隠していない")
+    check(not L._edge_on(obj, "X", front), "正面図で X まで隠している")
+    check(not L._edge_on(obj, "Z", front), "正面図で Z まで隠している")
+
+    # 上面図（-Z を向く）では Z が奥行き。
+    top = Vector((0.0, 0.0, 1.0))
+    check(L._edge_on(obj, "Z", top), "上面図で Z を隠していない")
+    check(not L._edge_on(obj, "X", top), "上面図で X まで隠している")
+
+
+@test
+def test_label_anchors_go_where_they_say():
+    """TOP は上、BOTTOM は下、LEFT は左、RIGHT は右へ置く。
+
+    回すもの（LEFT / RIGHT）は、回した後の横幅が文字の高さに
+    なる。ここを取り違えると、左へ置いたつもりの文字が図に
+    重なる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft import labels as L
+    truescale.register()
+
+    box = (100.0, 200.0, 50.0, 150.0)   # min_x, max_x, min_y, max_y
+    width, height = 40.0, 12.0
+
+    x, y = L._anchor("TOP", box, width, height)
+    check(y > box[3], f"TOP が箱の上に無い: {y} <= {box[3]}")
+    close(x + width * 0.5, 150.0, 1e-6, "TOP が横中央でない")
+
+    x, y = L._anchor("BOTTOM", box, width, height)
+    check(y + height < box[2], f"BOTTOM が箱の下に無い: {y + height}")
+
+    x, y = L._anchor("RIGHT", box, width, height)
+    check(x > box[1], f"RIGHT が箱の右に無い: {x} <= {box[1]}")
+
+    x, y = L._anchor("LEFT", box, width, height)
+    # 回した後の横幅は文字の高さ。
+    check(x + height < box[0], f"LEFT が箱の左に無い: {x + height}")
+
+
+@test
+def test_placed_bounds_account_for_rotation():
+    """回した文字の占める範囲が、回した後の形で出る。
+
+    切り抜きの範囲はこれで決まる。回転を見落とすと、縦書きの
+    寸法が PNG の端で切れる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft import labels as L
+    truescale.register()
+
+    flat = L.Placed("100 mm", 10.0, 20.0, 40.0, 12.0, False, 16)
+    check(flat.bounds() == (10.0, 20.0, 50.0, 32.0), f"横書き: {flat.bounds()}")
+
+    turned = L.Placed("100 mm", 10.0, 20.0, 40.0, 12.0, True, 16)
+    check(turned.bounds() == (10.0, 20.0, 22.0, 60.0), f"縦書き: {turned.bounds()}")
 
 
 def main():
