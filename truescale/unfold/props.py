@@ -448,6 +448,36 @@ def register():
         update=_pattern_setting_updated,
     )
 
+    # 画面での色。刷るときは黒のままにする。紙の上では実線と破線で
+    # 見分けられるし、色刷りを前提にすると、白黒で刷った人の手元で
+    # 区別が付かなくなる。シームの赤線が画面用の目印で、印刷される
+    # 合印とは別物なのと同じ考え方。
+    #
+    # 既定は、背景が暗くても明るくても見えて、かつ他の表示と
+    # 紛れない色にする。赤はシーム、橙はハイライト、緑は編集中の
+    # 輪郭が既に使っている。
+    bpy.types.Scene.tsunfold_allowance_cut_color = FloatVectorProperty(
+        name="裁断線の色（画面）",
+        description="縫い代・糊代の切る線。刷るときは黒になります",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(0.0, 0.8, 0.85),
+        update=_pattern_redraw_only_updated,
+    )
+
+    bpy.types.Scene.tsunfold_allowance_fold_color = FloatVectorProperty(
+        name="折り線の色（画面）",
+        description="糊代の根元と、縫い代の縫い線。刷るときは黒の破線になります",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(1.0, 0.4, 0.75),
+        update=_pattern_redraw_only_updated,
+    )
+
     bpy.types.Scene.tsunfold_seam_enable = BoolProperty(
         name="縫い代",
         description=(

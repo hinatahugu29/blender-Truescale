@@ -496,6 +496,18 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             note.scale_y = 0.8
             note.label(text="外側の実線が裁断線、内側の破線が縫い線")
 
+        if (getattr(scene, "tsunfold_tab_enable", False)
+                or getattr(scene, "tsunfold_seam_enable", False)):
+            shown = box.box()
+            shown.label(text="画面での色（刷ると黒になります）")
+            row = shown.row(align=True)
+            row.prop(
+                scene, "tsunfold_allowance_cut_color", text="裁断線",
+            )
+            row.prop(
+                scene, "tsunfold_allowance_fold_color", text="折り線",
+            )
+
     def _draw_marking(self, layout, context, scene):
         """印をつける。必要に応じてやるものなので畳んでおく。"""
         box, open_now = _folded(

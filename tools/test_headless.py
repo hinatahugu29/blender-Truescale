@@ -2269,6 +2269,63 @@ def test_pattern_inset_keeps_the_export_consistent():
     )
 
 
+@test
+def test_allowance_color_follows_the_setting():
+    """縫い代・糊代の画面の色が、設定どおりになる。
+
+    描く側が2通りある（ふつうの描画と、並べている最中のずらした
+    描画）。それぞれで設定を読むと、片方だけ追従しなくなる。
+    手で置いた印の色が追従しなかったのと同じ形の間違い。
+    """
+    reset_scene()
+    import truescale
+    from truescale import overlay as OV
+    truescale.register()
+
+    scene = bpy.context.scene
+    scene.tsunfold_allowance_cut_color = (0.2, 0.4, 0.6)
+    scene.tsunfold_allowance_fold_color = (0.9, 0.1, 0.3)
+
+    cut, fold = OV.allowance_colors(scene)
+
+    close(cut[0], 0.2, 1e-5, "裁断線の赤が違う")
+    close(cut[2], 0.6, 1e-5, "裁断線の青が違う")
+    close(fold[0], 0.9, 1e-5, "折り線の赤が違う")
+    close(fold[2], 0.3, 1e-5, "折り線の青が違う")
+
+
+@test
+def test_printed_allowance_stays_black():
+    """刷るときは色を付けない。
+
+    紙の上では実線と破線で見分けられる。色刷りを前提にすると、
+    白黒で刷った人の手元で区別が付かなくなる。画面の色は
+    ビューポート確認用であって、刷るものとは別物。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import collect as C
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_tab_enable = True
+    scene.tsunfold_seam_enable = True
+    scene.tsunfold_allowance_cut_color = (1.0, 0.0, 0.0)
+    scene.tsunfold_allowance_fold_color = (0.0, 1.0, 0.0)
+
+    drawing = C.pattern_lines(bpy.context)
+    check(drawing is not None, "線が集まらない")
+
+    colors = {tuple(round(v, 3) for v in row[4]) for row in drawing.lines}
+    check(
+        colors == {(0.0, 0.0, 0.0)},
+        f"刷る線に黒以外が混ざっている: {sorted(colors)}",
+    )
+
+
 def main():
     print()
     print("=" * 72)

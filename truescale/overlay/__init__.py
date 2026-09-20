@@ -831,25 +831,58 @@ def dragging_marks(context):
     return (unfold, segments or [], texts or [])
 
 
-# 切る線と折る線の色。紙の上では太さで区別するが、画面では
-# 太さの差が見えないので色で分ける。
-ALLOWANCE_CUT = (0.10, 0.10, 0.10, 0.95)
-ALLOWANCE_FOLD = (0.35, 0.45, 0.85, 0.95)
+# 画面での色の既定。設定で変えられる。
+#
+# 以前は切る線を黒に近い色にしていたが、背景が暗いビューポートでは
+# 見えなかった。紙の上では実線と破線で見分けるので色は要らないが、
+# 画面では線の太さの差が出ないので、色でしか分けられない。
+ALLOWANCE_CUT = (0.0, 0.8, 0.85)
+ALLOWANCE_FOLD = (1.0, 0.4, 0.75)
+
+# 画面の線の濃さ。型紙の面に対して浮いて見える程度。
+ALLOWANCE_ALPHA = 0.95
 
 
-def paint_allowance(shader, cut_verts, fold_verts):
+def allowance_colors(scene):
+    """縫い代・糊代の画面での色。(切る線, 折る線)。
+
+    設定を読む場所をここ1つにする。描く側が2通りあるので、
+    それぞれで読むと片方だけ設定に追従しなくなる。手で置いた印の
+    色が追従しなかったのと同じ形の間違い。
+    """
+    def pick(name, fallback):
+        value = getattr(scene, name, None)
+        if value is None:
+            return tuple(fallback) + (ALLOWANCE_ALPHA,)
+        return (
+            float(value[0]), float(value[1]), float(value[2]),
+            ALLOWANCE_ALPHA,
+        )
+
+    return (
+        pick("tsunfold_allowance_cut_color", ALLOWANCE_CUT),
+        pick("tsunfold_allowance_fold_color", ALLOWANCE_FOLD),
+    )
+
+
+def paint_allowance(shader, cut_verts, fold_verts, scene=None):
     """縫い代・糊代を描く。頂点はワールド座標で、2つで1本。
 
     ふつうの描画と、手動レイアウト中のずらした描画の両方から
     呼ぶ。色と描き方をここに1つだけ置く。2箇所に書くと、片方だけ
     直して画面の中で食い違う。
     """
+    if scene is None:
+        scene = bpy.context.scene
+
+    cut_color, fold_color = allowance_colors(scene)
+
     shader.bind()
     gpu.state.blend_set('ALPHA')
 
     for verts, color in (
-        (cut_verts, ALLOWANCE_CUT),
-        (fold_verts, ALLOWANCE_FOLD),
+        (cut_verts, cut_color),
+        (fold_verts, fold_color),
     ):
         if not verts:
             continue
@@ -906,7 +939,9 @@ def draw_allowance_3d(context, shader):
             _linestyle.dashed(ax, ay, bx, by, dash_bu, gap_bu)
         )
 
-    paint_allowance(shader, to_world(made.cut), to_world(chopped))
+    paint_allowance(
+        shader, to_world(made.cut), to_world(chopped), scene
+    )
 
 
 def draw_marks_3d():
@@ -947,6 +982,7 @@ def draw_marks_3d():
                         shader,
                         [p for pair in (cut or []) for p in pair],
                         [p for pair in (fold or []) for p in pair],
+                        context.scene,
                     )
 
                 gpu.state.depth_test_set('NONE')
