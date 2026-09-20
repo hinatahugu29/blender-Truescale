@@ -537,6 +537,125 @@ def test_tiled_sheets_come_in_reading_order():
     )
 
 
+def _marks_in_pattern_space(plan, col, row):
+    """そのタイルの合わせ印を、型紙の座標へ戻した集合。
+
+    紙の上の位置ではなく型紙の位置で比べる。隣同士で同じ点を
+    指していれば、重ねたときに一致する。
+    """
+    x0, y0, _, _ = plan.window(col, row)
+    ox, oy = plan.page_origin()
+    return {
+        (round(x - ox + x0, 6), round(y - oy + y0, 6))
+        for x, y in sheets.registration_points(plan, col, row)
+    }
+
+
+@test
+def test_neighbours_share_the_same_marks():
+    """隣り合う紙の合わせ印が、型紙の同じ位置を指す。
+
+    これが貼り合わせの根拠。以前は受け持ち範囲の四隅に置いていて、
+    隣の紙とは別の位置を指していた。重ねるとちょうど重ねしろの
+    ぶんだけずれる。合わせるための印が、合わせると狂う印だった。
+    """
+    for shape in ((400.0, 200.0), (600.0, 800.0), (250.0, 900.0)):
+        plan = tiling.plan(shape[0], shape[1], 210.0, 297.0)
+        check(plan is not None, f"{shape} で計画が立たない")
+
+        # 横の隣
+        for row in range(plan.rows):
+            for col in range(plan.cols - 1):
+                left = _marks_in_pattern_space(plan, col, row)
+                right = _marks_in_pattern_space(plan, col + 1, row)
+                shared = left & right
+                check(
+                    len(shared) >= 3,
+                    f"{shape} の {col}-{col+1} 列で共通の印が "
+                    f"{len(shared)} 個しかない",
+                )
+
+        # 縦の隣
+        for row in range(plan.rows - 1):
+            for col in range(plan.cols):
+                lower = _marks_in_pattern_space(plan, col, row)
+                upper = _marks_in_pattern_space(plan, col, row + 1)
+                shared = lower & upper
+                check(
+                    len(shared) >= 3,
+                    f"{shape} の {row}-{row+1} 段で共通の印が "
+                    f"{len(shared)} 個しかない",
+                )
+
+
+@test
+def test_marks_line_up_when_sheets_are_overlapped():
+    """紙を重ねると、印がぴたり合う位置関係になっている。
+
+    同じ印の、紙の上での位置の差が、ちょうどずらし幅であること。
+    そのぶんずらして重ねれば一致する、という意味。
+    """
+    plan = tiling.plan(600.0, 800.0, 210.0, 297.0)
+    check(plan.cols >= 2 and plan.rows >= 2, "2×2以上で確かめる")
+
+    left = dict(
+        zip(
+            sorted(_marks_in_pattern_space(plan, 0, 0)),
+            sorted(sheets.registration_points(plan, 0, 0)),
+        )
+    )
+    right = dict(
+        zip(
+            sorted(_marks_in_pattern_space(plan, 1, 0)),
+            sorted(sheets.registration_points(plan, 1, 0)),
+        )
+    )
+
+    shared = set(left) & set(right)
+    check(shared, "共通の印が無い")
+
+    for point in shared:
+        dx = left[point][0] - right[point][0]
+        check(
+            abs(dx - plan.step_w) < 1e-6,
+            f"紙の上のずれ {dx:.3f} がずらし幅 {plan.step_w:.3f} と違う",
+        )
+
+
+@test
+def test_a_single_sheet_needs_no_marks():
+    """1枚で済むなら、合わせの印は要らない。
+
+    貼り合わせないのに印だけ出ると、何をする印か分からない。
+    """
+    plan = tiling.plan(150.0, 200.0, 210.0, 297.0)
+    check(plan.count == 1, "1枚に収まる想定")
+    check(
+        not sheets.registration_points(plan, 0, 0),
+        "1枚なのに合わせの印が出ている",
+    )
+
+
+@test
+def test_marks_sit_inside_the_overlap():
+    """合わせの印は、隣と重なっている帯の中にある。
+
+    帯の外に置くと、片方の紙にしか写らない。
+    """
+    plan = tiling.plan(600.0, 800.0, 210.0, 297.0)
+
+    for row in range(plan.rows):
+        for col in range(plan.cols):
+            x0, y0, x1, y1 = plan.window(col, row)
+            for point in _marks_in_pattern_space(plan, col, row):
+                x, y = point
+                check(
+                    x0 - 1e-6 <= x <= x1 + 1e-6
+                    and y0 - 1e-6 <= y <= y1 + 1e-6,
+                    f"印 {point} が受け持ち範囲の外にある",
+                )
+
+
 @test
 def test_nothing_is_drawn_in_the_unprintable_margin():
     """余白の中には何も描かない。
@@ -598,18 +717,12 @@ def test_the_ruler_sits_inside_the_printable_area():
 
 
 def _ruler_length(sheet):
-    """その紙に描かれた目盛りの実際の長さ。無ければ 0。
+    """その紙に描かれた目盛りの長さ。無ければ 0。
 
-    目盛りの軸は太さ 0.3 の水平線。枠（0.2）や型紙の線（0.4）と
-    区別する。
+    線の太さから推測しない。合わせ印の腕も同じ太さの水平線なので、
+    推測すると混ざる（実際に混ざった）。描いた側が覚えている。
     """
-    lengths = [
-        abs(x1 - x0)
-        for x0, y0, x1, y1, _, width in sheet.lines
-        if abs(width - 0.3) < 1e-9 and abs(y1 - y0) < 1e-9
-        and abs(x1 - x0) > 5.0
-    ]
-    return max(lengths) if lengths else 0.0
+    return sheet.ruler_mm
 
 
 @test

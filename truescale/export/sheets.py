@@ -6,11 +6,25 @@
 
 ■ 足す目印は3つだけ
 
-  位置合わせの十字 … 受け持ち範囲の四隅。隣の紙と重ねて合わせる
-  実寸の目盛り     … 100mm。刷ったものを定規で測るため
-  タイル名         … 1-A、2-A…。紙を並べるときの手掛かり
+  合わせの印 … 重なった帯の中。隣の紙の同じ印と重ねる
+  実寸の目盛り … 刷ったものを定規で測るため
+  タイル名     … 1-A、2-A…。紙を並べるときの手掛かり
 
 多くしても読めない。貼るのに要るものだけにする。
+
+■ 合わせの印は「両方の紙に写っている場所」に置く
+
+以前は受け持ち範囲の四隅に十字を置いていたが、これは誤り。
+隣の紙の四隅とは、型紙の上で別の位置を指す。
+
+    1枚目の右端の十字 → 型紙の 194mm
+    2枚目の左端の十字 → 型紙の 179mm
+
+重ねると、ちょうど重ねしろのぶんずれる。合わせるための印が、
+合わせると狂う印になっていた。
+
+両方の紙に写っているのは重なった帯だけ。その中央に印を置けば、
+重ねたときに必ず一致する。
 
 ■ 目印は必ず刷れる場所へ置く
 
@@ -54,6 +68,9 @@ class Sheet:
         self.paper_h = paper_h
         self.label = label
         self.lines = []
+        # 実際に描いた目盛りの長さ（ミリ）。描いていなければ 0。
+        # 線から推測すると、同じ太さの別の印と混ざる。
+        self.ruler_mm = 0.0
         # 刷れる範囲。None なら切らない。
         self.printable = (
             None
@@ -122,8 +139,66 @@ def _clip(x0, y0, x1, y1, box):
 
 
 def _cross(sheet, x, y):
-    sheet.add(x - CROSS_MM, y, x + CROSS_MM, y, GUIDE, 0.25)
-    sheet.add(x, y - CROSS_MM, x, y + CROSS_MM, GUIDE, 0.25)
+    """合わせの印。十字と菱形。
+
+    枠線や型紙の線と見分けが付くように、丸（菱形）を添える。
+    重ねたとき、隣の紙の同じ印とぴたり重なる。
+    """
+    sheet.add(x - CROSS_MM, y, x + CROSS_MM, y, BLACK, 0.3)
+    sheet.add(x, y - CROSS_MM, x, y + CROSS_MM, BLACK, 0.3)
+
+    r = CROSS_MM * 0.55
+    sheet.add(x - r, y, x, y + r, BLACK, 0.3)
+    sheet.add(x, y + r, x + r, y, BLACK, 0.3)
+    sheet.add(x + r, y, x, y - r, BLACK, 0.3)
+    sheet.add(x, y - r, x - r, y, BLACK, 0.3)
+
+
+def registration_points(plan_obj, col, row):
+    """そのタイルに置く合わせの印の位置（紙の上のミリ）。
+
+    隣との重なりの中央に置く。そこは両方の紙に写っているので、
+    重ねれば必ず一致する。受け持ち範囲の四隅ではいけない。隣の
+    紙の四隅とは、型紙の上で別の位置を指すため。
+
+    1本の継ぎ目につき3点。1点だけだと、その点を中心に回してしまう。
+    """
+    if plan_obj is None or plan_obj.count <= 1:
+        return []
+
+    x0, y0, x1, y1 = plan_obj.window(col, row)
+    origin_x, origin_y = plan_obj.page_origin()
+    half = plan_obj.overlap * 0.5
+
+    # 継ぎ目の位置（型紙の座標）。列の境目と行の境目。
+    seam_x = [
+        (index + 1) * plan_obj.step_w + half
+        for index in range(plan_obj.cols - 1)
+    ]
+    seam_y = [
+        (index + 1) * plan_obj.step_h + half
+        for index in range(plan_obj.rows - 1)
+    ]
+
+    points = []
+
+    def spread(low, high):
+        span = high - low
+        return [low + span * ratio for ratio in (0.2, 0.5, 0.8)]
+
+    for x in seam_x:
+        if not (x0 - 1e-9 <= x <= x1 + 1e-9):
+            continue
+        for y in spread(y0, y1):
+            points.append((x - x0 + origin_x, y - y0 + origin_y))
+
+    for y in seam_y:
+        if not (y0 - 1e-9 <= y <= y1 + 1e-9):
+            continue
+        for x in spread(x0, x1):
+            points.append((x - x0 + origin_x, y - y0 + origin_y))
+
+    return points
 
 
 # 目盛りに使う長さの候補。大きいものから試して、紙に入るものを選ぶ。
@@ -155,6 +230,7 @@ def _ruler(sheet, x, y, available_mm):
     if length is None:
         return
 
+    sheet.ruler_mm = length
     sheet.add(x, y, x + length, y, BLACK, 0.3)
 
     step = 10.0
@@ -332,7 +408,8 @@ def _decorate(sheet, plan_obj, col, row):
     sheet.add(right, top, left, top, GUIDE, 0.2)
     sheet.add(left, top, left, bottom, GUIDE, 0.2)
 
-    for x, y in ((left, bottom), (right, bottom), (left, top), (right, top)):
+    # 合わせの印は、隣と重なっている帯の中。四隅ではない。
+    for x, y in registration_points(plan_obj, col, row):
         _cross(sheet, x, y)
 
     # タイル名は左上。紙をめくりながら探せる位置。
