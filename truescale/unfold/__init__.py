@@ -2,8 +2,10 @@ import bpy
 
 from .. import debug as _debug
 from ..core import paper as _paper
+from ..core import geometry as _geometry
 from ..core import session as _session
 from ..core import state as _state
+from ..marking import storage as _storage
 from ..core import units as _units
 from ..export import png as _png
 import traceback
@@ -29,6 +31,22 @@ import blf
 
 # 用紙サイズと印刷解像度の定義は共通モジュールが持つ。
 # 既存の参照をそのまま動かすために別名を置いている。
+
+
+# 平面の幾何処理は truescale.core.geometry にある。
+# 既存の呼び出しをそのまま動かすための別名。
+_get_face_islands = _geometry.face_islands
+_island_bbox = _geometry.island_bbox
+_rotate_vertices_90 = _geometry.rotate_vertices_90
+_move_island_to = _geometry.move_island_to
+_pattern_flat_polygons_2d = _geometry.flat_polygons_2d
+_pattern_point_in_polys_2d = _geometry.point_in_polys_2d
+_pattern_point_in_island_2d = _geometry.point_in_island_2d
+_pattern_island_boundary_segments = _geometry.island_boundary_segments
+_pattern_boundary_as_floats = _geometry.boundary_as_floats
+_pattern_any_point_too_close = _geometry.any_point_too_close
+_pattern_min_clearance = _geometry.min_clearance
+
 PAPER_SIZES_MM = _paper.SIZES_MM
 PRINT_DPI = _png.PRINT_DPI
 UNFOLD_SUFFIX = "_展開図"
@@ -281,43 +299,6 @@ def _build_flat_mesh(context, src_obj, mesh, uv_layer, scale_bu_per_uv):
     return new_obj
 
 
-def _get_face_islands(mesh):
-    """Return disconnected face islands as lists of vertex indices."""
-    if not mesh.polygons:
-        return []
-
-    vert_to_polys = {i: [] for i in range(len(mesh.vertices))}
-    for poly in mesh.polygons:
-        for vi in poly.vertices:
-            vert_to_polys[vi].append(poly.index)
-
-    unvisited = set(range(len(mesh.polygons)))
-    islands = []
-
-    while unvisited:
-        start = unvisited.pop()
-        stack = [start]
-        poly_ids = [start]
-
-        while stack:
-            pi = stack.pop()
-            poly = mesh.polygons[pi]
-
-            for vi in poly.vertices:
-                for neighbor in vert_to_polys[vi]:
-                    if neighbor in unvisited:
-                        unvisited.remove(neighbor)
-                        stack.append(neighbor)
-                        poly_ids.append(neighbor)
-
-        vert_ids = set()
-        for pi in poly_ids:
-            vert_ids.update(mesh.polygons[pi].vertices)
-
-        if vert_ids:
-            islands.append(sorted(vert_ids))
-
-    return islands
 
 
 def _pack_islands(context, obj, spacing_mm):
@@ -1009,35 +990,10 @@ def _show_generated_from_top(context, obj):
 
 
 
-def _rotate_vertices_90(mesh, vert_ids):
-    """Rotate one disconnected island +90 degrees around its local bbox center."""
-    xs = [mesh.vertices[i].co.x for i in vert_ids]
-    ys = [mesh.vertices[i].co.y for i in vert_ids]
-    cx = (min(xs) + max(xs)) * 0.5
-    cy = (min(ys) + max(ys)) * 0.5
-
-    for vi in vert_ids:
-        v = mesh.vertices[vi].co
-        x = v.x - cx
-        y = v.y - cy
-        v.x = cx - y
-        v.y = cy + x
 
 
-def _island_bbox(mesh, vert_ids):
-    xs = [mesh.vertices[i].co.x for i in vert_ids]
-    ys = [mesh.vertices[i].co.y for i in vert_ids]
-    return min(xs), min(ys), max(xs), max(ys)
 
 
-def _move_island_to(mesh, vert_ids, target_min_x, target_min_y):
-    min_x, min_y, max_x, max_y = _island_bbox(mesh, vert_ids)
-    dx = target_min_x - min_x
-    dy = target_min_y - min_y
-
-    for vi in vert_ids:
-        mesh.vertices[vi].co.x += dx
-        mesh.vertices[vi].co.y += dy
 
 
 def _try_shelf_layout(context, obj, allow_rotate=True):
@@ -3433,7 +3389,8 @@ class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
 # 3D pattern annotation system
 # ------------------------------------------------------------
 
-_PATTERN_ANNOTATION_PROP = "tsunfold_annotations_json"
+# 注記の保存先は truescale.marking.storage が持つ。
+_PATTERN_ANNOTATION_PROP = _storage.ANNOTATION_PROP
 
 
 _PATTERN_FLAT_MEMO_PROP = "tsunfold_flat_memos_json"
@@ -3842,31 +3799,21 @@ def _pattern_unfold_for_source(source_obj):
 
 
 def _pattern_get_annotations(source_obj):
-    if source_obj is None:
-        return []
-
-    raw = source_obj.get(_PATTERN_ANNOTATION_PROP, "[]")
-    try:
-        data = json.loads(raw)
-    except Exception:
-        return []
-
-    return data if isinstance(data, list) else []
+    """注記の一覧。実装は truescale.marking.storage。"""
+    return _storage.load(source_obj)
 
 
 def _pattern_set_annotations(source_obj, annotations):
-    source_obj[_PATTERN_ANNOTATION_PROP] = json.dumps(
+    """注記を書き込み、キャッシュを捨てる。
+
+    保存の実装は truescale.marking.storage。
+    キャッシュ破棄は描画側の都合なので、ここで渡す。
+    """
+    _storage.save(
+        source_obj,
         annotations,
-        ensure_ascii=False,
-        separators=(",", ":"),
+        on_changed=_pattern_invalidate_layout_cache,
     )
-
-    try:
-        source_obj.data.update()
-    except Exception:
-        _debug.swallowed("unfold._pattern_set_annotations")
-
-    _pattern_invalidate_layout_cache()
 
 
 def _pattern_anchor_point_source_local(source_obj, anchor):
@@ -4045,33 +3992,16 @@ def _pattern_source_seam_segments(source_obj):
 
 
 def _pattern_item_color(item, scene=None):
-    """注記の色を返す。
+    """注記1件の色。実装は truescale.marking.storage。
 
-    オート合印は個別の色を持たず、常に現在のシーン設定に従う。
-    以前は生成時の色をアノテーションへ焼き込んでいたため、色を変える
-    たびに全アノテーションを書き直す必要があり、カラーピッカーの
-    ドラッグ中に毎フレーム JSON の全書き出しが走っていた。
-
-    手動で置いた合印は個別の色を持てるので、保存値をそのまま使う。
+    オート合印は保存値を持たず、常に現在のシーン設定に従う。
+    保存すると色を変えるたびに全件の書き直しが必要になり、
+    カラーピッカーのドラッグ中に毎フレーム走ってしまう。
     """
-    if (
-        scene is not None
-        and item.get("type") == "notch_edge"
-        and bool(item.get("auto", False))
-    ):
-        return _pattern_color_value(
-            getattr(scene, "tsunfold_notch_color", (0.0, 0.0, 0.0))
-        )
-
-    value = item.get("color", [0.0, 0.0, 0.0])
-    try:
-        return (
-            max(0.0, min(1.0, float(value[0]))),
-            max(0.0, min(1.0, float(value[1]))),
-            max(0.0, min(1.0, float(value[2]))),
-        )
-    except Exception:
-        return (0.0, 0.0, 0.0)
+    auto_color = None
+    if scene is not None:
+        auto_color = getattr(scene, "tsunfold_notch_color", None)
+    return _storage.item_color(item, auto_color)
 
 
 def _pattern_edge_adjacent_polygons(mesh, edge):
@@ -4223,207 +4153,18 @@ def _pattern_island_label(scene, index):
 
 
 
-def _pattern_flat_polygons_2d(mesh):
-    """面ごとの2D座標を、素のPythonタプルで返す。
-
-    戻り値は面インデックス順の [(minx, miny, maxx, maxy, [(x, y), ...]), ...]。
-
-    内外判定は配置探索から数万回呼ばれる。毎回 mesh.polygons[i] や
-    mesh.vertices[vi].co を辿ると、そのたびにBlenderのRNAアクセスが
-    発生して支配的なコストになる。座標は探索中に変わらないので、
-    一度だけ素のタプルへ展開して使い回す。
-
-    バウンディングボックスも一緒に持つ。ほとんどの点はほとんどの面の
-    外側にあるので、多角形の走査に入る前に弾ける。
-    """
-    key = (
-        mesh.name,
-        len(mesh.vertices),
-        len(mesh.polygons),
-        int(_state.epoch),
-    )
-    if _state.flat_poly_cache["key"] == key:
-        return _state.flat_poly_cache["polys"]
-
-    coords = [(float(v.co.x), float(v.co.y)) for v in mesh.vertices]
-
-    polys = []
-    for poly in mesh.polygons:
-        points = [coords[int(vi)] for vi in poly.vertices]
-        if len(points) < 3:
-            polys.append(None)
-            continue
-        xs = [p[0] for p in points]
-        ys = [p[1] for p in points]
-        polys.append((min(xs), min(ys), max(xs), max(ys), points))
-
-    _state.flat_poly_cache["key"] = key
-    _state.flat_poly_cache["polys"] = polys
-    return polys
 
 
-def _pattern_point_in_polys_2d(polys, face_indices, x, y):
-    """内外判定の本体。座標は素のfloatで受け取る。
-
-    探索ループから数万回呼ばれるので、呼び出し側で polys を一度だけ
-    取得して渡す。毎回 _pattern_flat_polygons_2d を引くと、
-    キャッシュのキーを組み立てるだけで無視できないコストになる。
-    """
-    count = len(polys)
-
-    for face_index in face_indices:
-        index = int(face_index)
-        if not (0 <= index < count):
-            continue
-
-        entry = polys[index]
-        if entry is None:
-            continue
-
-        min_x, min_y, max_x, max_y, points = entry
-        # 面の外接矩形の外なら、多角形を走査するまでもない
-        if x < min_x or x > max_x or y < min_y or y > max_y:
-            continue
-
-        inside = False
-        j = len(points) - 1
-
-        for i in range(len(points)):
-            xi, yi = points[i]
-            xj, yj = points[j]
-
-            if (yi > y) != (yj > y):
-                denominator = yj - yi
-                if abs(denominator) <= 1.0e-12:
-                    denominator = 1.0e-12
-                if x < (xj - xi) * (y - yi) / denominator + xi:
-                    inside = not inside
-
-            j = i
-
-        if inside:
-            return True
-
-    return False
 
 
-def _pattern_point_in_island_2d(mesh, face_indices, point):
-    """2D point-in-island test using the flattened mesh polygons."""
-    return _pattern_point_in_polys_2d(
-        _pattern_flat_polygons_2d(mesh),
-        face_indices,
-        float(point.x),
-        float(point.y),
-    )
 
 
-def _pattern_boundary_as_floats(boundary):
-    """境界セグメントを素のfloatへ展開する。
-
-    (ax, ay, dx, dy, denom) の並び。denom は線分長の2乗で、
-    射影パラメータの計算に使う。毎回 Vector の属性を読み直すより速い。
-    """
-    result = []
-    for a, b in boundary:
-        ax = float(a.x)
-        ay = float(a.y)
-        dx = float(b.x) - ax
-        dy = float(b.y) - ay
-        result.append((ax, ay, dx, dy, dx * dx + dy * dy))
-    return result
 
 
-def _pattern_any_point_too_close(points_xy, boundary_flat, margin):
-    """境界からの距離が margin 未満の点が1つでもあるか。
-
-    以前は全セグメントとの距離の最小値を求めてから比較していたが、
-    1つでも近い点が見つかればそこで打ち切れる。
-    平方距離で比較して平方根の計算も省く。
-    """
-    if margin <= 0.0 or not boundary_flat:
-        return False
-
-    margin_sq = margin * margin
-
-    for px, py in points_xy:
-        for ax, ay, dx, dy, denom in boundary_flat:
-            if denom <= 1.0e-20:
-                ox = px - ax
-                oy = py - ay
-            else:
-                t = ((px - ax) * dx + (py - ay) * dy) / denom
-                if t < 0.0:
-                    t = 0.0
-                elif t > 1.0:
-                    t = 1.0
-                ox = px - (ax + dx * t)
-                oy = py - (ay + dy * t)
-
-            if ox * ox + oy * oy < margin_sq:
-                return True
-
-    return False
 
 
-def _pattern_min_clearance(px, py, boundary_flat):
-    """点から境界までの最短距離。
-
-    候補の良さを測るので最小値そのものが必要。打ち切れない代わりに、
-    平方距離で回して最後に一度だけ平方根を取る。
-    """
-    if not boundary_flat:
-        return 0.0
-
-    best = None
-    for ax, ay, dx, dy, denom in boundary_flat:
-        if denom <= 1.0e-20:
-            ox = px - ax
-            oy = py - ay
-        else:
-            t = ((px - ax) * dx + (py - ay) * dy) / denom
-            if t < 0.0:
-                t = 0.0
-            elif t > 1.0:
-                t = 1.0
-            ox = px - (ax + dx * t)
-            oy = py - (ay + dy * t)
-
-        distance_sq = ox * ox + oy * oy
-        if best is None or distance_sq < best:
-            best = distance_sq
-
-    return math.sqrt(best) if best is not None else 0.0
 
 
-def _pattern_island_boundary_segments(mesh, face_indices):
-    """Collect only the visible boundary segments of one flat island."""
-    edge_counts = {}
-    edge_points = {}
-
-    valid_faces = {
-        int(fi)
-        for fi in face_indices
-        if 0 <= int(fi) < len(mesh.polygons)
-    }
-
-    for fi in valid_faces:
-        poly = mesh.polygons[fi]
-        verts = [int(v) for v in poly.vertices]
-
-        for i, va in enumerate(verts):
-            vb = verts[(i + 1) % len(verts)]
-            key = tuple(sorted((va, vb)))
-            edge_counts[key] = edge_counts.get(key, 0) + 1
-            edge_points[key] = (
-                mesh.vertices[va].co.copy(),
-                mesh.vertices[vb].co.copy(),
-            )
-
-    return [
-        edge_points[key]
-        for key, count in edge_counts.items()
-        if count == 1
-    ]
 
 
 def _pattern_id_footprint_inside(
@@ -7493,11 +7234,8 @@ def _pattern_nearest_seam_edge(context, source_obj, local_hit):
 
 
 def _pattern_color_value(value):
-    return [
-        round(float(value[0]), 5),
-        round(float(value[1]), 5),
-        round(float(value[2]), 5),
-    ]
+    """保存用に色を整える。実装は truescale.marking.storage。"""
+    return _storage.normalize_color(value)
 
 
 def _pattern_current_color(scene, mode=None):

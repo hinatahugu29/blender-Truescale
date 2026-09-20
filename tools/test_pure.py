@@ -21,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from truescale.core import paper, session, state, units
 from truescale.export import png
+from truescale.marking import storage
 
 _tests = []
 
@@ -230,6 +231,69 @@ def test_session_reset_covers_work_state():
         session.PREVIEW_SOURCE_NAME not in reset,
         "プレビューの退避情報まで初期化している",
     )
+
+
+# ============================================================
+# marking.storage
+# ============================================================
+
+@test
+def test_item_color_clamps():
+    """描画用の色は 0.0〜1.0 に収まる。"""
+    result = storage.item_color({"type": "text", "color": [2.0, -1.0, 0.5]})
+    check(result == (1.0, 0.0, 0.5), f"クランプされていない: {result}")
+
+
+@test
+def test_item_color_survives_broken_data():
+    """保存値が壊れていても描画を止めない。"""
+    for broken in ({"color": None}, {"color": []}, {"color": "赤"}, {}):
+        result = storage.item_color(broken)
+        check(len(result) == 3, f"3要素で返らない: {result}")
+
+
+@test
+def test_auto_notch_uses_scene_color():
+    """オート合印はシーンの色に従い、手動は保存値を使う。"""
+    auto = {"type": storage.NOTCH, "auto": True, "color": [1.0, 0.0, 0.0]}
+    manual = {"type": storage.NOTCH, "auto": False, "color": [1.0, 0.0, 0.0]}
+
+    scene_color = (0.0, 0.0, 1.0)
+    check(
+        storage.item_color(auto, scene_color) == (0.0, 0.0, 1.0),
+        "オートがシーンの色に従っていない",
+    )
+    check(
+        storage.item_color(manual, scene_color) == (1.0, 0.0, 0.0),
+        "手動の色が上書きされている",
+    )
+
+
+@test
+def test_normalize_color_rounds():
+    """保存用の色は桁を丸める。
+
+    同じ色なのに文字列が変わってキャッシュキーがずれるのを避ける。
+    """
+    result = storage.normalize_color([0.1234567891, 0.5, 1.0])
+    check(result == [0.12346, 0.5, 1.0], f"丸められていない: {result}")
+
+
+@test
+def test_without_notches():
+    """合印だけを取り除ける。オートのみも選べる。"""
+    items = [
+        {"type": storage.NOTCH, "auto": True},
+        {"type": storage.NOTCH, "auto": False},
+        {"type": "text", "value": "残る"},
+    ]
+
+    all_removed = storage.without_notches(items)
+    check(len(all_removed) == 1, f"合印が残っている: {all_removed}")
+    check(all_removed[0]["type"] == "text", "他の注記まで消えた")
+
+    auto_only = storage.without_notches(items, auto_only=True)
+    check(len(auto_only) == 2, f"手動まで消えている: {auto_only}")
 
 
 # ============================================================
