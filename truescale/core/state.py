@@ -39,6 +39,9 @@ island_cache = {
 # 面の2D座標を素のタプルへ展開したもの。内外判定から数万回引かれる。
 flat_poly_cache = {"key": None, "polys": None}
 
+# 辺 -> その辺に接する面の一覧。合印を描くたびに使う。
+flat_edge_face_cache = {"key": None, "faces": None}
+
 # draw_cache の上限。超えたら古い順に捨てる。
 DRAW_CACHE_LIMIT = 64
 
@@ -50,6 +53,7 @@ def invalidate():
     呼び出し側で別途行うこと。
     """
     global epoch, draw_cache, island_cache, flat_poly_cache
+    global flat_edge_face_cache
 
     epoch += 1
     draw_cache = {}
@@ -60,6 +64,7 @@ def invalidate():
         "adjacency": None,
     }
     flat_poly_cache = {"key": None, "polys": None}
+    flat_edge_face_cache = {"key": None, "faces": None}
 
 
 def store(key, value):
@@ -92,4 +97,5 @@ def stats():
         "draw_cache": len(draw_cache),
         "island_cached": island_cache["key"] is not None,
         "flat_poly_cached": flat_poly_cache["key"] is not None,
+        "flat_edge_face_cached": flat_edge_face_cache["key"] is not None,
     }

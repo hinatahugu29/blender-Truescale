@@ -14,6 +14,8 @@ JSON で持たせている。ここはその読み出し担当。
 一覧はインデックスの配列で、型紙側の番号が添字になる。
 """
 
+from . import state as _state
+
 import json
 
 from .. import debug as _debug
@@ -64,7 +66,27 @@ def flat_face_to_source(unfold_obj):
 
 
 def flat_edge_faces(unfold_obj):
+    """辺インデックス -> その辺に接する面インデックスの一覧。
+
+    合印を描くとき、その辺が型紙の外周かどうか（接する面が1つか）を
+    見るのに使う。
+
+    以前は合印1つごとに全体を組み直していた。合印が384個ある型紙
+    では385回組み直すことになり、それだけで 0.5 秒かかっていた。
+    形が変わらない限り表も変わらないので、一度作って使い回す。
+    """
     mesh = unfold_obj.data
+
+    key = (
+        mesh.name,
+        len(mesh.vertices),
+        len(mesh.edges),
+        len(mesh.polygons),
+        int(_state.epoch),
+    )
+    if _state.flat_edge_face_cache["key"] == key:
+        return _state.flat_edge_face_cache["faces"]
+
     lookup = {
         tuple(sorted((int(e.vertices[0]), int(e.vertices[1])))): int(e.index)
         for e in mesh.edges
@@ -72,9 +94,13 @@ def flat_edge_faces(unfold_obj):
     result = {int(e.index): [] for e in mesh.edges}
 
     for poly in mesh.polygons:
-        for key in poly.edge_keys:
-            idx = lookup.get(tuple(sorted(key)))
+        # ループ変数に key を使わないこと。キャッシュのキーを
+        # 上書きしてしまい、毎回作り直しになる（実際にやった）。
+        for pair in poly.edge_keys:
+            idx = lookup.get(tuple(sorted(pair)))
             if idx is not None:
                 result[idx].append(int(poly.index))
 
+    _state.flat_edge_face_cache["key"] = key
+    _state.flat_edge_face_cache["faces"] = result
     return result

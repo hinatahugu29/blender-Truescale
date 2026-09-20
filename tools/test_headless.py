@@ -1057,6 +1057,94 @@ def test_arrow_head_never_exceeds_shaft():
 
 
 # ============================================================
+# 島を動かしたときの追従
+# ============================================================
+
+@test
+def test_marks_follow_moved_island():
+    """島を動かすと、IDと合印も一緒に動く。
+
+    位置は島の頂点から毎回計算しているが、結果のキャッシュが
+    頂点の座標をキーに持っていない。頂点数も面数も変わらないので、
+    動かしただけではキーが変わらず、注記が元の位置に取り残されて
+    いた。形が変わったことは depsgraph が教えてくれる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.marking import compute as C
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    def label_x():
+        return sorted(
+            (str(r[0]), round(r[1].x, 4))
+            for r in C.text_items(bpy.context, obj, unfold)
+        )
+
+    def segment_x():
+        return sorted(
+            round(row[0].x, 4)
+            for row in C.colored_segments(bpy.context, obj, unfold)
+        )
+
+    before_labels = label_x()
+    before_segments = segment_x()
+    check(before_labels, "IDが1つも出ていない")
+
+    # 島ひとつ分の頂点をまとめて動かす
+    moved = set(unfold.data.polygons[0].vertices)
+    for index in moved:
+        unfold.data.vertices[index].co.x += 4.0
+    unfold.data.update()
+    bpy.context.view_layer.update()
+
+    check(
+        label_x() != before_labels,
+        "島を動かしてもIDが元の位置に残っている",
+    )
+    check(
+        segment_x() != before_segments,
+        "島を動かしても合印が元の位置に残っている",
+    )
+
+
+@test
+def test_object_move_keeps_the_cache():
+    """オブジェクトごと動かしても、重い解析はやり直さない。
+
+    ワールド変換はキャッシュの外で掛けているので、移動では
+    作り直す必要がない。ここで作り直すと、G で動かすあいだ
+    毎フレーム島の解析と配置探索が走る。以前直した「移動した
+    ときだけ極端に重い」がそのまま戻る。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import state as S
+    from truescale.marking import compute as C
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    C.text_items(bpy.context, obj, unfold)
+
+    before = int(S.epoch)
+    for _ in range(5):
+        unfold.location.x += 0.1
+        bpy.context.view_layer.update()
+
+    check(
+        int(S.epoch) == before,
+        f"移動でキャッシュを捨てている: {before} -> {int(S.epoch)}",
+    )
+
+    # それでも描かれる位置は追従していること
+    rows = C.text_items(bpy.context, obj, unfold)
+    check(rows, "移動後にIDが消えた")
+
+
+# ============================================================
 # 番号と文字
 # ============================================================
 

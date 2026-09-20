@@ -31,6 +31,7 @@ from bpy.app.handlers import persistent
 from .. import debug as _debug
 from .. import overlay as _overlay
 from ..core import session as _session
+from ..marking import interact as _interact
 from . import ops as _ops
 from . import props as _props
 from .panel import TSUNFOLD_PT_main
@@ -103,6 +104,16 @@ classes = _ops.classes + (
 # @persistent が要る。付けないと、Blender はファイルを読み込む
 # ときにこのハンドラを一覧から外す。初期化が事実上1回しか
 # 走らず、2つ目のファイルを開くと前の作業状態が残る。
+# 型紙の形が変わったら注記の位置を計算し直す。中身は
+# truescale.marking.interact にある。
+#
+# @persistent が要る。付けないと、ファイルを開いた時点で Blender が
+# ハンドラ一覧から外し、以後まったく追従しなくなる。
+@persistent
+def _on_geometry_changed(scene, depsgraph):
+    _interact.on_geometry_changed(scene, depsgraph)
+
+
 @persistent
 def _tsunfold_reset_overlays_on_load(_dummy=None):
     # Runs only after a .blend has loaded, when bpy.data is available.
@@ -178,11 +189,17 @@ def register():
     if _tsunfold_reset_overlays_on_load not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(_tsunfold_reset_overlays_on_load)
 
+    if _on_geometry_changed not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(_on_geometry_changed)
+
 
 def unregister():
 
     if _tsunfold_reset_overlays_on_load in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_tsunfold_reset_overlays_on_load)
+
+    if _on_geometry_changed in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(_on_geometry_changed)
     global _draw_handle, _pattern_draw_handle, _pattern_text_handle
 
     if _draw_handle is not None:

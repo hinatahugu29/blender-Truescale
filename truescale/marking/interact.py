@@ -748,3 +748,63 @@ def save_annotations(source_obj, annotations):
         annotations,
         on_changed=invalidate_layout_cache,
     )
+
+
+def _is_watched(obj, scene):
+    """形の変化を見張る対象か。
+
+    型紙そのものと、いま読み込んでいる元モデル。元モデルを見るのは、
+    シームを外したら合印も消えるべきだから。
+    """
+    if obj is None or getattr(obj, "type", None) != 'MESH':
+        return False
+    if bool(obj.get(_objects.GENERATED_PROP, False)):
+        return True
+    if scene is None:
+        return False
+    return obj.name == str(scene.get(_session.SEAM_SOURCE, ""))
+
+
+def on_geometry_changed(scene, depsgraph):
+    """型紙か元モデルの形が変わったら、描画キャッシュを捨てる。
+
+    島を手で動かしても注記が元の位置に残る、という不具合があった。
+    位置は頂点から毎回計算しているのに、結果のキャッシュが頂点の
+    座標をキーに持っていないため。頂点数も面数も変わらないので、
+    動かしただけではキーが変わらない。
+
+    座標をキーに入れる手もあるが、頂点を1つ動かすたびに全頂点を
+    読んでハッシュすることになり、そちらの方が高くつく。形が
+    変わったことは depsgraph が教えてくれるので、それを使う。
+
+    ■ 移動だけのときは何もしない
+
+    is_updated_geometry だけを見る。オブジェクトごとの移動
+    （is_updated_transform）でキャッシュを捨てると、G で動かす
+    あいだ毎フレーム島の解析と配置探索が走る。以前直した
+    「移動したときだけ極端に重い」がそのまま戻る。
+
+    ワールド変換はキャッシュの外で掛けているので、移動では
+    捨てる必要がない。
+    """
+    for update in depsgraph.updates:
+        if not update.is_updated_geometry:
+            continue
+
+        id_block = getattr(update, "id", None)
+        obj = getattr(id_block, "original", id_block)
+
+        if not _is_watched(obj, scene):
+            continue
+
+        # 編集モード中は見送る。
+        #
+        # 編集中の形は BMesh 側にあり、obj.data へは反映されない。
+        # ここで作り直しても古い形を読むだけで、頂点を動かすたびに
+        # 島の解析と配置探索が走る（大きな型紙で1回 0.6 秒）。
+        # モードを抜けるときにも更新が来るので、そこで1回だけ直す。
+        if getattr(obj, "mode", "OBJECT") == 'EDIT':
+            continue
+
+        invalidate_layout_cache()
+        return
