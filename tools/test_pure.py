@@ -12,6 +12,8 @@ Blender を起動せずに検証できる。ヘッドレステストより桁違
 """
 
 import math
+import re
+import zlib
 import sys
 import traceback
 from pathlib import Path
@@ -22,6 +24,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from truescale.core import paper, session, state, units
 from truescale.export import png
+from truescale.export import pdf
 from truescale.export import tiling
 from truescale.marking import storage
 
@@ -467,6 +470,148 @@ def test_draw_line_color():
     buf = png.new_buffer(4, 4)
     png.draw_line(buf, 4, 4, 0, 0, 3, 0, 1, (1.0, 0.0, 0.0))
     check(buf[0:3] == b"\xff\x00\x00", f"赤で描かれていない: {bytes(buf[0:3])}")
+
+
+# ============================================================
+# export.pdf
+# ============================================================
+
+def _pdf_streams(data):
+    """PDF から内容ストリームの中身を取り出す。
+
+    正規表現を使わないのは、改行の扱いで壊れやすいから。
+    """
+    newline = chr(10).encode("ascii")
+    results = []
+    at = 0
+    while True:
+        head = data.find(b"stream", at)
+        if head < 0:
+            break
+        tail = data.find(b"endstream", head)
+        if tail < 0:
+            break
+        body = data[data.index(newline, head) + 1:tail]
+        results.append(body.strip(b"\r\n"))
+        at = tail + 1
+    return results
+
+
+def _a4_pdf():
+    page = pdf.Page(210.0, 297.0)
+    page.line(10.0, 10.0, 110.0, 10.0, 0.4)          # ちょうど100mm
+    page.rect(10.0, 20.0, 50.0, 30.0, 0.2)
+    page.polyline([(10.0, 60.0), (60.0, 80.0), (110.0, 60.0)], 0.5)
+    second = pdf.Page(210.0, 297.0)
+    second.line(0.0, 0.0, 10.0, 10.0)
+    return pdf.build([page, second], title="test")
+
+
+@test
+def test_pdf_object_offsets_are_correct():
+    """参照表の位置が、実際のオブジェクトを指している。
+
+    ここがずれると、読み手によっては開けない。位置は組み立てながら
+    数えるので、内容を足してもずれないはず。
+    """
+    data = _a4_pdf()
+    check(data.startswith(b"%PDF-1.4"), "先頭が PDF ではない")
+    check(data.rstrip().endswith(b"%%EOF"), "末尾が %%EOF ではない")
+
+    found = re.search(rb"startxref\s+(\d+)\s+%%EOF", data)
+    check(found is not None, "startxref が無い")
+
+    xref_at = int(found.group(1))
+    check(data[xref_at:xref_at + 4] == b"xref", "startxref が xref を指さない")
+
+    head = re.match(rb"xref\s+0\s+(\d+)\s+", data[xref_at:])
+    total = int(head.group(1))
+    body = data[xref_at + head.end():]
+    entries = re.findall(rb"(\d{10}) (\d{5}) ([nf])", body[:total * 20])
+    check(len(entries) == total, f"参照表の件数が合わない: {len(entries)}")
+
+    for index, (offset, _, kind) in enumerate(entries):
+        if kind == b"f":
+            continue
+        at = int(offset)
+        expected = f"{index} 0 obj".encode("ascii")
+        check(
+            data[at:at + len(expected)] == expected,
+            f"{index} 番の位置が違う（{data[at:at + 16]!r}）",
+        )
+
+
+@test
+def test_pdf_page_is_exactly_the_paper_size():
+    """ページの大きさが、指定した用紙の実寸になる。
+
+    PDF の長さは 1/72 インチ。A4 は 595.276 × 841.890 pt。
+    ここがずれると、原寸で刷っても合わない。
+    """
+    data = _a4_pdf()
+    boxes = re.findall(rb"/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]", data)
+    check(len(boxes) == 2, f"ページ数が違う: {len(boxes)}")
+
+    width = float(boxes[0][0])
+    height = float(boxes[0][1])
+    check(abs(width - 595.2756) < 0.01, f"幅が A4 でない: {width} pt")
+    check(abs(height - 841.8898) < 0.01, f"高さが A4 でない: {height} pt")
+
+    # ミリへ戻して 0.01mm 未満
+    check(abs(width / 72.0 * 25.4 - 210.0) < 0.01, "幅がミリへ戻らない")
+    check(abs(height / 72.0 * 25.4 - 297.0) < 0.01, "高さがミリへ戻らない")
+
+
+@test
+def test_pdf_keeps_lengths_in_real_size():
+    """100mm と書いた線が、PDF の中でも 100mm になる。
+
+    刷ったものを定規で測る前に、ここで確かめられる。
+    """
+    data = _a4_pdf()
+    streams = _pdf_streams(data)
+    check(streams, "内容ストリームが無い")
+
+    text = zlib.decompress(streams[0]).decode("ascii")
+    check(text.startswith("1 J 1 j"), "線端の指定が先頭に無い")
+
+    horizontal = [
+        abs(float(x1) - float(x0))
+        for x0, y0, x1, y1 in re.findall(
+            r"([\d.]+) ([\d.]+) m ([\d.]+) ([\d.]+) l S", text
+        )
+        if abs(float(y1) - float(y0)) < 0.01
+    ]
+    expected = 100.0 * 72.0 / 25.4
+    check(
+        any(abs(value - expected) < 0.01 for value in horizontal),
+        f"100mm の線が見つからない: {horizontal}",
+    )
+
+
+@test
+def test_pdf_does_not_repeat_the_same_color():
+    """同じ色と太さが続くとき、命令を繰り返さない。
+
+    線1本ごとに書くと、30枚の型紙で内容が数倍に膨らむ。
+    """
+    page = pdf.Page(210.0, 297.0)
+    for i in range(50):
+        page.line(0.0, float(i), 10.0, float(i), 0.4, (0.0, 0.0, 0.0))
+
+    text = page.content().decode("ascii")
+    check(text.count(" RG") == 1, f"色の指定が {text.count(' RG')} 回")
+    check(text.count(" w") == 1, f"太さの指定が {text.count(' w')} 回")
+
+
+@test
+def test_pdf_refuses_an_empty_document():
+    """ページが1枚も無ければ、壊れたファイルを作らずに断る。"""
+    try:
+        pdf.build([])
+    except ValueError:
+        return
+    check(False, "ページ0枚でも PDF を作ってしまった")
 
 
 # ============================================================
