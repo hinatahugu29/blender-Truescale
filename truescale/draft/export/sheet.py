@@ -444,7 +444,7 @@ def tsdraft_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
 
         # Expanding the canvas must not change the BBox's physical scale.
         if not _capture.tsdraft_patch_png_dpi(filepath, float(info["dpi"])):
-            raise RuntimeError("まとめ書き出しPNGへDPI情報を書き戻せんかったンゴ")
+            raise RuntimeError("まとめ書き出しPNGへDPI情報を書き戻せませんでした")
 
     finally:
         try:
@@ -458,7 +458,7 @@ def tsdraft_make_three_view_sheet_png(scene, filepath, exported):
     try:
         import numpy as np
     except Exception as exc:
-        raise RuntimeError("図面シートPNGの作成に必要なNumPyを読み込めんかったンゴ") from exc
+        raise RuntimeError("図面シートPNGの作成に必要な NumPy を読み込めませんでした") from exc
 
     denominator = tsdraft_sheet_scale_denominator(scene)
     paper = getattr(scene, 'tsdraft_sheet_paper_size', 'A4')
@@ -521,9 +521,9 @@ def tsdraft_make_three_view_sheet_png(scene, filepath, exported):
     if chosen is None:
         need_w, need_h = required or (0.0, 0.0)
         raise RuntimeError(
-            f'{paper}・1:{denominator:g}では三面図が収まらんかったンゴ '
+            f'{paper}・1:{denominator:g} では三面図が収まりませんでした'
             f'（必要目安 {need_w + 24.0:.1f}×{need_h + 24.0:.1f}mm）。'
-            '用紙を大きくするか縮率を下げてクレメンス'
+            '用紙を大きくするか縮率を下げてください'
         )
 
     orient_name, page_w, page_h, positions = chosen
@@ -612,7 +612,7 @@ def tsdraft_make_three_view_sheet_png(scene, filepath, exported):
             bpy.data.images.remove(out_image)
 
         if not _capture.tsdraft_patch_png_dpi(filepath, sheet_dpi):
-            raise RuntimeError("図面シートPNGへDPI情報を書き込めんかったンゴ")
+            raise RuntimeError("図面シートPNGへDPI情報を書き込めませんでした")
     finally:
         for image in loaded_images:
             try:
@@ -636,9 +636,9 @@ def tsdraft_build_three_view_sheet(context, filepath):
     """Shared builder for preview and final export."""
     source_obj = _bbox.tsdraft_resolve_source_object(context)
     if source_obj is None:
-        raise RuntimeError('元オブジェクトを選択してクレメンス')
+        raise RuntimeError('元オブジェクトを選択してください')
     if bpy.data.objects.get(_keys.BBOX_NAME) is None:
-        raise RuntimeError('先にBOX＋寸法を作成してクレメンス')
+        raise RuntimeError('先にBOX＋寸法を作成してください')
 
     out_dir = os.path.dirname(filepath) or os.getcwd()
     os.makedirs(out_dir, exist_ok=True)

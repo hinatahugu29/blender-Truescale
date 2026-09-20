@@ -28,7 +28,7 @@ class TSDRAFT_OT_toggle_size_overlay(bpy.types.Operator):
         bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
 
         if bbox_obj is None:
-            self.report({'WARNING'}, "先にBOX＋寸法を作成してクレメンス")
+            self.report({'WARNING'}, "先にBOX＋寸法を作成してください")
             return {'CANCELLED'}
 
         # 両方表示中なら隠す。それ以外ならまとめて表示。
@@ -73,26 +73,26 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
 
         # 選択オブジェクトが無い、または既に削除済みなら安全に中止
         if src is None:
-            self.report({'ERROR'}, "オブジェクトを選択してクレメンス")
+            self.report({'ERROR'}, "オブジェクトを選択してください")
             return {'CANCELLED'}
 
         # Blender側の参照が途中で無効化されていないかも確認
         if bpy.data.objects.get(src.name) is None:
-            self.report({'ERROR'}, "選択オブジェクトが見つからんかったンゴ")
+            self.report({'ERROR'}, "選択オブジェクトが見つかりませんでした")
             return {'CANCELLED'}
 
         if src.type != 'MESH':
-            self.report({'ERROR'}, "メッシュオブジェクトを選択してクレメンス")
+            self.report({'ERROR'}, "メッシュオブジェクトを選択してください")
             return {'CANCELLED'}
 
         if src.name == _keys.BBOX_NAME:
-            self.report({'ERROR'}, "元オブジェクトを選択してクレメンス")
+            self.report({'ERROR'}, "元オブジェクトを選択してください")
             return {'CANCELLED'}
 
         # mode属性へ触る前に参照を再確認
         src = bpy.data.objects.get(src.name)
         if src is None:
-            self.report({'ERROR'}, "選択オブジェクトが途中で消えたンゴ")
+            self.report({'ERROR'}, "選択オブジェクトが途中で消えました")
             return {'CANCELLED'}
 
         src_mode = getattr(src, "mode", 'OBJECT')
@@ -100,7 +100,7 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
             try:
                 bpy.ops.object.mode_set(mode='OBJECT')
             except RuntimeError:
-                self.report({'ERROR'}, "Object Modeへ切り替えられんかったンゴ")
+                self.report({'ERROR'}, "Object Mode へ切り替えられませんでした")
                 return {'CANCELLED'}
 
         namespace = bpy.app.driver_namespace
@@ -205,7 +205,7 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
         neighbor_indices = list(dict.fromkeys(neighbor_indices))
 
         if len(neighbor_indices) != 3:
-            self.report({'ERROR'}, "隣接頂点が3個にならんかったンゴ")
+            self.report({'ERROR'}, "隣接頂点が3個になりませんでした")
             return {'CANCELLED'}
 
         dimension_data = []

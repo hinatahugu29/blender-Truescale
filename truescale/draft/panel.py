@@ -308,5 +308,5 @@ class TSDRAFT_PT_main(bpy.types.Panel):
             box = layout.box()
             box.operator(
                 "truescale_draft.dark_place",
-                text="なんかずっと暗いとこ"
+                text="暗所表示"
             )

@@ -164,7 +164,7 @@ class TSDRAFT_OT_restore_view(bpy.types.Operator):
 
 class TSDRAFT_OT_dark_place(bpy.types.Operator):
     bl_idname = "truescale_draft.dark_place"
-    bl_label = "なんかずっと暗いとこ"
+    bl_label = "暗所表示"
     bl_description = "押すたびに暗所表示のON/OFFを切り替えます"
 
     def execute(self, context):

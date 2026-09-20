@@ -36,12 +36,12 @@ class TSDRAFT_Preferences(bpy.types.AddonPreferences):
     bl_idname = ADDON_PACKAGE
 
     show_dark_place_button: bpy.props.BoolProperty(
-        name="「なんかずっと暗いとこ」を表示",
-        description="お遊び機能のボタンを造形ヘルパーに表示します",
+        name="暗所表示のボタンを出す",
+        description="暗所表示の切り替えボタンをパネルに出します",
         default=True
     )
 
     def draw(self, context):
         layout = self.layout
-        layout.label(text="お遊び")
+        layout.label(text="表示")
         layout.prop(self, "show_dark_place_button")

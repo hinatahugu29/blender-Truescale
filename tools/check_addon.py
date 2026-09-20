@@ -14,6 +14,7 @@ Blenderを起動せずに、以下のズレを検出する。
   9. ローカル変数が同名の関数を隠している（UnboundLocalError）
  10. @persistent が付いていないハンドラ
  11. return などの後ろに置かれて実行されないコード
+ 12. くだけた言い回し（利用者が読む文章に混ざったもの）
 
 使い方:
     python tools/check_addon.py truescale/unfold/__init__.py
@@ -469,6 +470,41 @@ def unreachable_code(path):
     return sorted(set(found))
 
 
+# 利用者に見せる文章に混ざってはいけない言い回し。
+#
+# 元の作者が入れたものが33箇所あった。エラーが出た人が読む文章に
+# 「〜してクレメンス」「〜んかったンゴ」が並んでいた。一度直しても、
+# 書き足すときに混ざる。
+CASUAL_WORDS = (
+    "クレメンス",
+    "ンゴ",
+    "ですぞ",
+    "でござ",
+    "なんかずっと",
+    "お遊び",
+    "スクショ",
+    "めっちゃ",
+    "やばい",
+)
+
+
+def casual_wording(path):
+    """くだけた言い回しを含む文字列とコメントを返す。"""
+    try:
+        source = path.read_text(encoding="utf-8")
+    except Exception:
+        return []
+
+    found = []
+    for number, line in enumerate(source.split(chr(10)), 1):
+        stripped = line.strip()
+        for word in CASUAL_WORDS:
+            if word in line:
+                found.append(f"行 {number}: {stripped[:60]}  ← {word}")
+                break
+    return found
+
+
 def collect_references(paths):
     """複数ファイルから、名前とプロパティの参照だけを集める。
 
@@ -663,6 +699,12 @@ def analyze(path: Path, extra=None):
             ("どこからも呼ばれていないモジュール直下の関数", dead_functions)
         )
 
+    casual = casual_wording(path)
+    if casual:
+        problems.append(
+            ("くだけた言い回し（利用者が読む文章）", casual)
+        )
+
     dead = unreachable_code(path)
     if dead:
         problems.append(
@@ -736,6 +778,8 @@ def main(argv):
         for item in shadowed_functions(p):
             stray.append(f"{p}: {item}")
         for item in unreachable_code(p):
+            stray.append(f"{p}: {item}")
+        for item in casual_wording(p):
             stray.append(f"{p}: {item}")
     if stray:
         print("=" * 72)

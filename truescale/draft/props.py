@@ -367,7 +367,7 @@ def register():
     )
 
     bpy.types.Scene.tsdraft_dark_place = bpy.props.BoolProperty(
-        name="なんかずっと暗いとこ",
+        name="暗所表示",
         default=False,
         update=_bbox.redraw_viewports
     )

@@ -190,7 +190,7 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
     def execute(self, context):
         source_obj = _bbox.tsdraft_resolve_source_object(context)
         if source_obj is None:
-            self.report({'ERROR'}, "元オブジェクトを選択してクレメンス")
+            self.report({'ERROR'}, "元オブジェクトを選択してください")
             return {'CANCELLED'}
 
         chosen_path = bpy.path.abspath(self.filepath)
@@ -229,7 +229,7 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
         # 上面・前面・側面を内部で1面ずつ切り替え、個別フィットして出力する。
         view_ctx = _capture.tsdraft_get_export_view_context(context)
         if view_ctx is None:
-            self.report({'ERROR'}, "書き出し元の3Dビューが見つからんかったンゴ")
+            self.report({'ERROR'}, "書き出し元の3Dビューが見つかりませんでした")
             return {'CANCELLED'}
 
         for view_key, view_label in views:

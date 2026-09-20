@@ -494,7 +494,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
     """
     view_ctx = tsdraft_get_export_view_context(context)
     if view_ctx is None:
-        raise RuntimeError("書き出し元の3Dビューが見つからんかったンゴ")
+        raise RuntimeError("書き出し元の3Dビューが見つかりませんでした")
 
     export_window, export_screen, area, _ = view_ctx
     space = area.spaces.active
@@ -550,9 +550,9 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
     bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
 
     if source_obj is None:
-        raise RuntimeError("元オブジェクトを選択してクレメンス")
+        raise RuntimeError("元オブジェクトを選択してください")
     if bbox_obj is None:
-        raise RuntimeError("先にBOX＋寸法を作成してクレメンス")
+        raise RuntimeError("先にBOX＋寸法を作成してください")
 
     scene = context.scene
     unit_scale = scene.unit_settings.scale_length or 1.0
@@ -603,11 +603,11 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
             # Single-view or unusual layout fallback: switch the main view.
             main_region = next((r for r in area.regions if r.type == 'WINDOW'), None)
             if main_region is None:
-                raise RuntimeError("3DビューのWINDOW領域が見つからんかったンゴ")
+                raise RuntimeError("3DビューのWINDOW領域が見つかりませんでした")
 
             target_rv3d = space.region_3d
             if target_rv3d is None:
-                raise RuntimeError("3Dビュー情報が取れんかったンゴ")
+                raise RuntimeError("3Dビューの情報を取得できませんでした")
 
             override = {
                 "window": export_window,
@@ -686,7 +686,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
 
         tsdraft_force_view_redraw(context, area)
 
-        # 最終スクショ直前でも倍率を検証。
+        # 撮影の直前でも倍率を確かめる。
         # 初期画面が極端なズーム状態でも、ここで必ず一定のBBox占有率へ戻す。
         if not is_user_view:
             for _verify in range(3):
@@ -731,7 +731,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
                 projected.append((float(p2.x), float(p2.y)))
 
         if len(projected) < 4:
-            raise RuntimeError(f"{_dimension.tsdraft_svg_view_label(view_key)}のBounding Boxを投影できんかったンゴ")
+            raise RuntimeError(f"{_dimension.tsdraft_svg_view_label(view_key)}のBounding Boxを投影できませんでした")
 
         xs = [p[0] for p in projected]
         ys = [p[1] for p in projected]
@@ -744,7 +744,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
         bbox_px_h = bbox_max_y - bbox_min_y
 
         if is_user_view:
-            # 任意ビューは実寸を保証しない普通のスクショPNG。
+            # 任意ビューは実寸を保証しない、ただの画面撮影。
             bbox_mm_w = 0.0
             bbox_mm_h = 0.0
             px_per_mm = 1.0
@@ -764,7 +764,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
             bbox_mm_h = (max(vals_v) - min(vals_v)) * unit_scale * 1000.0
 
             if bbox_px_w <= 1 or bbox_px_h <= 1 or bbox_mm_w <= 0 or bbox_mm_h <= 0:
-                raise RuntimeError(f"{_dimension.tsdraft_svg_view_label(view_key)}の実寸対応が取れんかったンゴ")
+                raise RuntimeError(f"{_dimension.tsdraft_svg_view_label(view_key)}の実寸対応を取得できませんでした")
 
             px_per_mm_x = bbox_px_w / bbox_mm_w
             px_per_mm_y = bbox_px_h / bbox_mm_h
@@ -1065,7 +1065,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
         crop_max_y = min(float(target_region.height) - safe_top, crop_max_y)
 
         if crop_max_x <= crop_min_x or crop_max_y <= crop_min_y:
-            raise RuntimeError("書き出し範囲を計算できんかったンゴ")
+            raise RuntimeError("書き出し範囲を計算できませんでした")
 
         if is_user_view:
             # 任意ビューは図面クロップではなく、任意ペインそのものを普通の画像として保存。
@@ -1119,7 +1119,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
             tsdraft_force_view_redraw(context, area)
 
         if not Path(temp_full).exists():
-            raise RuntimeError("画面スクショを書き出せんかったンゴ")
+            raise RuntimeError("画面のスクリーンショットを書き出せませんでした")
 
         region_offset_x = target_region.x - area.x
         region_offset_y = target_region.y - area.y
@@ -1139,10 +1139,10 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
         )
 
         if not Path(filepath).exists():
-            raise RuntimeError("クロップ済みPNGを書き出せんかったンゴ")
+            raise RuntimeError("切り抜いたPNGを書き出せませんでした")
 
         if not tsdraft_patch_png_dpi(filepath, dpi):
-            raise RuntimeError("PNGへ実寸dpi情報を書き込めんかったンゴ")
+            raise RuntimeError("PNGへ実寸のdpi情報を書き込めませんでした")
 
         return {
             "bbox_width_mm": bbox_mm_w,

@@ -109,7 +109,7 @@ def draw_bbox_overlay():
         gpu.state.line_width_set(scene.tsdraft_frame_width)
 
     # -----------------------------------------------------
-    # お遊び：「なんかずっと暗いとこ」檻表示
+    # 暗所表示。背景を暗くして、箱の枠を目立たせる。
     # -----------------------------------------------------
     if dark_place:
         verts_local = [v.co.copy() for v in bbox_obj.data.vertices]
@@ -559,7 +559,7 @@ def draw_size_labels():
     namespace = bpy.app.driver_namespace
 
     # 三面図シートでは、寸法文字を最終シート上で直接描画する。
-    # ビューポート文字をスクショへ焼くと回転・クロップが不安定なので、
+    # ビューポートの文字を撮影画像へ焼くと、回転と切り抜きが安定しないので、
     # シート用一時PNGでは文字だけ抑止する。
     if namespace.get("TSDRAFT_SHEET_SUPPRESS_DIM_TEXT", False):
         return
