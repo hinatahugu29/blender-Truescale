@@ -35,6 +35,7 @@ from mathutils import Vector
 from bpy_extras import view3d_utils
 
 from .. import debug as _debug
+from ..core import units as _units
 from . import bbox as _bbox
 from . import dimension as _dimension
 from . import keys as _keys
@@ -713,7 +714,12 @@ def draw_size_labels():
             if not _dimension.tsdraft_dimension_axis_enabled(scene, view_key, axis_name):
                 continue
 
-        unit_scale = scene.unit_settings.scale_length or 1.0
+        # 1 BU が何メートルか。シーンの Unit Scale を直に読んではいけない。
+        # このアドオンには「シーンを見ず、アドオンの中だけで基準を決める」
+        # モードがある。直読みすると、型紙側が 1 BU = 40mm で計算して
+        # いるのに、こちらは 1000mm で測る、ということが起きる。
+        # 実際にそうなっていた（同じファイルで 25 倍の食い違い）。
+        unit_scale = _units.scene_scale_to_meters(scene)
         px_per_mm = tsdraft_view_px_per_mm(
             region, rv3d, bbox_obj, view_key, unit_scale
         )

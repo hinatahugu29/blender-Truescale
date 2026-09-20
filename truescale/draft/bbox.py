@@ -29,6 +29,7 @@ import bpy
 from bpy.app.handlers import persistent
 
 from .. import debug as _debug
+from ..core import units as _units
 from . import overlay as _overlay
 from . import keys as _keys
 
@@ -244,7 +245,12 @@ def tsdraft_update_bbox_from_source(scene, depsgraph, force=False, request_redra
         bbox_obj.matrix_world = src.matrix_world.copy()
         bbox_obj["tsdraft_source_name"] = src.name
 
-        unit_scale = scene.unit_settings.scale_length or 1.0
+        # 1 BU が何メートルか。シーンの Unit Scale を直に読んではいけない。
+        # このアドオンには「シーンを見ず、アドオンの中だけで基準を決める」
+        # モードがある。直読みすると、型紙側が 1 BU = 40mm で計算して
+        # いるのに、こちらは 1000mm で測る、ということが起きる。
+        # 実際にそうなっていた（同じファイルで 25 倍の食い違い）。
+        unit_scale = _units.scene_scale_to_meters(scene)
 
         # Match the original anchor convention:
         # min X, max Y, max Z

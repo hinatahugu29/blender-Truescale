@@ -2326,6 +2326,96 @@ def test_printed_allowance_stays_black():
     )
 
 
+@test
+def test_draft_and_unfold_agree_on_the_scale():
+    """三面図側と型紙側が、同じ実寸の基準で測る。
+
+    「このアドオンで指定」を使うと、以前は三面図側がそれを素通り
+    して、シーンの Unit Scale で測っていた。同じファイルの同じ
+    瞬間に、型紙が 1 BU = 40mm、三面図が 1000mm という 25 倍の
+    食い違いが起きていた。既定の設定では一致するので、基準を
+    変えた人の手元でだけ起きる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import units as U
+    from truescale.draft import bbox as DB
+    truescale.register()
+
+    scene = bpy.context.scene
+    scene.unit_settings.scale_length = 1.0
+    scene.tsunfold_scale_mode = 'MANUAL'
+    scene.tsunfold_manual_mm_per_bu = 40.0
+
+    # 型紙側の基準
+    close(U.scene_bu_to_mm(scene, 1.0), 40.0, 1e-6, "型紙側が 40mm でない")
+
+    # 三面図側が使う値（1 BU が何メートルか）
+    meters = U.scene_scale_to_meters(scene)
+    close(meters * 1000.0, 40.0, 1e-6, "三面図側が 40mm でない")
+
+    # シーンの設定は書き換えていないこと。書き換えると物理演算や
+    # 他のアドオンにまで波及する。
+    close(
+        scene.unit_settings.scale_length, 1.0, 1e-9,
+        "シーンの Unit Scale を書き換えている",
+    )
+
+    # 既定（シーンに従う）へ戻せば、シーンの値と一致する。
+    scene.tsunfold_scale_mode = 'SCENE'
+    scene.unit_settings.scale_length = 0.01
+    close(
+        U.scene_scale_to_meters(scene), 0.01, 1e-9,
+        "シーンに従うモードでシーンの値を見ていない",
+    )
+
+    check(DB is not None, "三面図側の箱を読み込めない")
+
+
+@test
+def test_draft_dimensions_use_the_addon_basis():
+    """三面図の寸法が、アドオンで決めた実寸の基準どおりに出る。
+
+    1 BU の立方体を、1 BU = 40mm の基準で測れば 40mm と出るべき。
+    以前はシーンの Unit Scale だけを見ていたので、1000mm と出て
+    いた。上の test_draft_and_unfold_agree_on_the_scale は換算の
+    入口を見るが、こちらは実際にボタンを押して出る数字を見る。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft import dimension as D
+    from truescale.draft import keys as K
+    truescale.register()
+
+    def measure(mode):
+        reset_scene()
+        scene = bpy.context.scene
+        scene.unit_settings.scale_length = 1.0
+        scene.tsunfold_scale_mode = mode
+        scene.tsunfold_manual_mm_per_bu = 40.0
+
+        bpy.ops.mesh.primitive_cube_add(size=1.0)   # 1 BU 角
+        obj = bpy.context.active_object
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+
+        try:
+            bpy.ops.truescale_draft.make_size_bbox()
+        except RuntimeError as exc:
+            raise Skip(f"ヘッドレスで箱を作れません: {exc}")
+
+        items = bpy.app.driver_namespace.get(K.DATA_KEY) or []
+        return sorted({
+            round(D.dimension_length_mm(row), 2) for row in items
+        })
+
+    scene_side = measure('SCENE')
+    check(scene_side == [1000.0], f"シーン基準が 1000mm でない: {scene_side}")
+
+    addon_side = measure('MANUAL')
+    check(addon_side == [40.0], f"アドオン基準が 40mm でない: {addon_side}")
+
+
 def main():
     print()
     print("=" * 72)

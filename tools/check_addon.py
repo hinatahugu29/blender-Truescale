@@ -17,6 +17,7 @@ Blenderを起動せずに、以下のズレを検出する。
  12. くだけた言い回し（利用者が読む文章に混ざったもの）
  13. 用語の揺れ（縮率 → 縮尺 など）
  14. ミリの値に unit='LENGTH'（画面には「8 m」と出る）
+ 15. シーンの Unit Scale の直読み（core.units を通していない）
 
 使い方:
     python tools/check_addon.py truescale/unfold/__init__.py
@@ -555,6 +556,44 @@ def millimetre_props_with_length_unit(path):
     return sorted(set(found))
 
 
+# 単位換算の唯一の入口。ここ以外でシーンの Unit Scale を読んではいけない。
+UNITS_MODULE = "units.py"
+
+
+def raw_unit_scale_reads(path):
+    """シーンの Unit Scale を直に読んでいる行を返す。
+
+    このアドオンには「シーンを見ず、アドオンの中だけで基準を決める」
+    モードがある。scene.unit_settings.scale_length を直に読むと、その
+    モードを素通りする。
+
+    実際、三面図側の4箇所がそうなっていた。型紙側が 1 BU = 40mm で
+    計算しているのに、三面図側は 1000mm で測っていた。同じファイルの
+    同じ瞬間に 25 倍ずれる。しかも既定の設定では一致するので、
+    基準を変えた人の手元でだけ起きる。
+
+    core/units.py は換算の入口そのものなので、ここだけは読んでよい。
+    """
+    if path.name == UNITS_MODULE and path.parent.name == "core":
+        return []
+
+    try:
+        source = path.read_text(encoding="utf-8")
+    except Exception:
+        return []
+
+    found = []
+    for number, line in enumerate(source.split(chr(10)), 1):
+        if "unit_settings.scale_length" not in line:
+            continue
+        if line.strip().startswith("#"):
+            continue
+        found.append(
+            f"行 {number}: core.units を通すこと  {line.strip()[:60]}"
+        )
+    return found
+
+
 def wrong_terms(path):
     """使うべきでない用語を含む行を返す。"""
     try:
@@ -795,6 +834,12 @@ def analyze(path: Path, extra=None):
             ("ミリの値に unit='LENGTH'（画面の単位が嘘になる）", wrong_unit)
         )
 
+    raw_scale = raw_unit_scale_reads(path)
+    if raw_scale:
+        problems.append(
+            ("Unit Scale の直読み（アドオンの基準を素通りする）", raw_scale)
+        )
+
     casual = casual_wording(path)
     if casual:
         problems.append(
@@ -876,6 +921,8 @@ def main(argv):
         for item in unreachable_code(p):
             stray.append(f"{p}: {item}")
         for item in millimetre_props_with_length_unit(p):
+            stray.append(f"{p}: {item}")
+        for item in raw_unit_scale_reads(p):
             stray.append(f"{p}: {item}")
         for item in casual_wording(p):
             stray.append(f"{p}: {item}")

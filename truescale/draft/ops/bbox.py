@@ -8,6 +8,7 @@ import bpy
 from bpy_extras.io_utils import ExportHelper
 
 from ... import debug as _pkg_debug
+from ...core import units as _units
 from .. import bbox as _bbox
 from .. import dimension as _dimension
 from .. import keys as _keys
@@ -211,9 +212,12 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
         dimension_data = []
         anchor_co = mesh.vertices[anchor.index].co.copy()
 
-        unit_scale = context.scene.unit_settings.scale_length
-        if unit_scale == 0:
-            unit_scale = 1.0
+        # 1 BU が何メートルか。シーンの Unit Scale を直に読んではいけない。
+        # このアドオンには「シーンを見ず、アドオンの中だけで基準を決める」
+        # モードがある。直読みすると、型紙側が 1 BU = 40mm で計算して
+        # いるのに、こちらは 1000mm で測る、ということが起きる。
+        # 実際にそうなっていた（同じファイルで 25 倍の食い違い）。
+        unit_scale = _units.scene_scale_to_meters(context.scene)
 
         for index in neighbor_indices:
             other_co = mesh.vertices[index].co.copy()

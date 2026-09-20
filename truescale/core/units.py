@@ -23,9 +23,13 @@ Blender に依存しないので単体でテストできる。
 scene_ が付くものはシーンから換算値を解決する。
 """
 
-# プロパティ名はアドオン全体で共有する。
-# いまは unfold が register しているが、基準はアドオン全体のものなので、
-# 将来 draft 側も同じ値を使えるようにここへ集約しておく。
+# プロパティ名はアドオン全体で共有する。register するのは unfold だが、
+# 基準はアドオン全体のものなので、三面図側もここを通す。
+#
+# 以前は三面図側が scene.unit_settings.scale_length を直に読んでいた。
+# アドオンで基準を決めるモードを無視するので、型紙側が 1 BU = 40mm で
+# 計算しているのに三面図側は 1000mm で測る、ということが起きていた。
+# 同じファイルの同じ瞬間に 25 倍ずれる。
 SCALE_MODE_PROP = "tsunfold_scale_mode"
 MANUAL_MM_PER_BU_PROP = "tsunfold_manual_mm_per_bu"
 

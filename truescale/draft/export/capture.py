@@ -38,6 +38,7 @@ from bpy_extras import view3d_utils
 import bpy
 
 from ... import debug as _pkg_debug
+from ...core import units as _units
 from .. import bbox as _bbox
 from .. import dimension as _dimension
 from .. import keys as _keys
@@ -555,7 +556,12 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
         raise RuntimeError("先にBOX＋寸法を作成してください")
 
     scene = context.scene
-    unit_scale = scene.unit_settings.scale_length or 1.0
+    # 1 BU が何メートルか。シーンの Unit Scale を直に読んではいけない。
+    # このアドオンには「シーンを見ず、アドオンの中だけで基準を決める」
+    # モードがある。直読みすると、型紙側が 1 BU = 40mm で計算して
+    # いるのに、こちらは 1000mm で測る、ということが起きる。
+    # 実際にそうなっていた（同じファイルで 25 倍の食い違い）。
+    unit_scale = _units.scene_scale_to_meters(scene)
     is_user_view = (view_key == "user")
 
     # 三面図はグローバル/ビュー単位の寸法表示を撮影中だけ有効化。
