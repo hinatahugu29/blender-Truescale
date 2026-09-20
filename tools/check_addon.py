@@ -220,10 +220,15 @@ def collect_references(paths):
 
     分割後は、あるファイルで register したプロパティを
     別のファイルが参照する。1ファイルだけ見ていると誤検出する。
+
+    パネルを別ファイルへ出すと、オペレータの呼び出し元
+    （layout.operator("ns.name")）もそちらへ移る。これも集めないと
+    「実装されているが呼ばれていない」が全件誤検出になる。
     """
     props = set()
     patterns = set()
     names = set()
+    operators = set()
 
     for path in paths:
         try:
@@ -235,8 +240,10 @@ def collect_references(paths):
         props.update(analyzer.referenced_props)
         patterns.update(analyzer.dynamic_prop_patterns)
         names.update(analyzer.name_loads)
+        operators.update(analyzer.referenced_operators)
+        operators.update(analyzer.called_operators)
 
-    return props, patterns, names
+    return props, patterns, names, operators
 
 
 def analyze(path: Path, extra=None):
@@ -247,7 +254,7 @@ def analyze(path: Path, extra=None):
 
     # 他のファイルからの参照も合わせる
     if extra is not None:
-        extra_props, extra_patterns, extra_names = extra
+        extra_props, extra_patterns, extra_names, extra_ops = extra
         for name in extra_props:
             analyzer.referenced_props.setdefault(name, [])
         analyzer.dynamic_prop_patterns.update(extra_patterns)
@@ -297,7 +304,10 @@ def analyze(path: Path, extra=None):
         ]))
 
     # 2. 実装されているが呼ばれていないオペレータ
+    # 呼び出し元は他のファイル（パネルなど）にもある。
     used = set(analyzer.referenced_operators) | set(analyzer.called_operators)
+    if extra is not None:
+        used |= extra[3]
     unused = sorted(
         f"{idname}  ({defined_operators[idname]})"
         for idname in defined_operators
@@ -385,13 +395,15 @@ def main(argv):
 
     paths = [Path(a) for a in argv[1:]]
 
-    # 同じパッケージの他のファイルも参照元として数える
+    # 同じパッケージの他のファイルも参照元として数える。
+    #
+    # パッケージの外へは出ないこと。以前は __init__.py を持つ限り
+    # 上へ辿っていたため、リポジトリ直下に置いた古い計測スクリプトまで
+    # 参照元に数え、旧プレフィクスの呼び出しを誤って報告していた。
     package_files = []
     for path in paths:
         root = path.parent
-        while root.name and (root / "__init__.py").exists():
-            if root.parent == root:
-                break
+        while (root.parent / "__init__.py").exists() and root.parent != root:
             root = root.parent
         package_files.extend(root.rglob("*.py"))
 
