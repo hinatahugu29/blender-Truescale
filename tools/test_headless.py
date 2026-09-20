@@ -1911,6 +1911,177 @@ def test_modules_import_without_error():
 # 実行
 # ============================================================
 
+@test
+def test_glue_tab_is_placed_on_one_side_only():
+    """1本のシームに糊代は1枚だけ。両側に付くと二重で貼れない。"""
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_tab_enable = True
+    scene.tsunfold_tab_width_mm = 6.0
+
+    result = A.build(bpy.context, obj, unfold)
+    check(result.fold, "糊代が1枚も作られていない")
+
+    # 根元として外周から外した辺は、シーム1本につき高々1つ。
+    check(
+        len(result.suppress) == len(result.fold),
+        f"根元 {len(result.suppress)} と折り線 {len(result.fold)} が合わない",
+    )
+
+    seams = {int(e.index) for e in obj.data.edges if e.use_seam}
+    check(
+        len(result.fold) <= len(seams),
+        f"シーム {len(seams)} 本に対して糊代 {len(result.fold)} 枚は多すぎる",
+    )
+
+
+@test
+def test_glue_tab_base_is_not_also_a_cut_line():
+    """糊代の根元が実線で残っていないか。
+
+    残っていると、そこで切られて糊代が落ちる。折るための線を
+    切る線として刷るのは、糊代が無いより悪い。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    from truescale.export import collect as C
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_tab_enable = True
+
+    result = A.build(bpy.context, obj, unfold)
+    check(result.suppress, "外周から外した辺が無い")
+
+    from truescale.core import objects as O
+
+    kept = O.boundary_segments_world_xy(unfold, skip=result.suppress)
+    whole = O.boundary_segments_world_xy(unfold)
+
+    check(
+        len(whole) - len(kept) == len(result.suppress),
+        f"外した本数が合わない: {len(whole)} - {len(kept)} "
+        f"≠ {len(result.suppress)}",
+    )
+
+    drawing = C.pattern_lines(bpy.context)
+    check(drawing is not None, "書き出す線が集まらない")
+
+
+@test
+def test_fold_lines_are_broken_into_dashes():
+    """折り線が破線として刷られるか。
+
+    実線のままだと、切る線と区別が付かない。線種の属性を持たせず、
+    線分そのものを刻む方式なので、本数が増えることで確かめられる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import collect as C
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    scene = bpy.context.scene
+
+    scene.tsunfold_tab_enable = False
+    before = C.pattern_lines(bpy.context)
+    check(before is not None, "糊代なしで線が集まらない")
+
+    scene.tsunfold_tab_enable = True
+    after = C.pattern_lines(bpy.context)
+    check(after is not None, "糊代ありで線が集まらない")
+
+    check(
+        after.count > before.count,
+        f"糊代を足しても線が増えていない: {before.count} -> {after.count}",
+    )
+
+
+@test
+def test_seam_allowance_makes_the_pattern_bigger():
+    """縫い代を付けたら、用紙の見積もりも大きくなる。
+
+    大きさを2箇所で別々に出すと、用紙ガイドが「収まる」と言った
+    ものが刷ると収まらない。同じ設定から同じ向きへ動くこと。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import collect as C
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_seam_enable = False
+    before = C.pattern_extent(bpy.context)
+    check(before is not None, "大きさが取れない")
+
+    scene.tsunfold_seam_enable = True
+    scene.tsunfold_seam_width_mm = 10.0
+    after = C.pattern_extent(bpy.context)
+    check(after is not None, "縫い代ありで大きさが取れない")
+
+    check(
+        after[0] > before[0] and after[1] > before[1],
+        f"縫い代を付けても大きくなっていない: {before} -> {after}",
+    )
+
+
+@test
+def test_disabled_tab_survives_a_rebuild():
+    """手で消した糊代は、型紙を作り直しても消えたまま。
+
+    展開後の辺番号で覚えると、作り直した瞬間に全部戻ってしまう。
+    元メッシュの辺番号で覚えているので、シームと一緒に生き残る。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_tab_enable = True
+
+    first = A.build(bpy.context, obj, unfold)
+    check(first.fold, "糊代が作られていない")
+
+    # 1本消す
+    seams = sorted(int(e.index) for e in obj.data.edges if e.use_seam)
+    A.toggle_disabled(obj, seams[0], off=True)
+    check(seams[0] in A.disabled_edges(obj), "消した記録が残っていない")
+
+    # 作り直す
+    rebuilt = build_pattern_for(obj)
+    check(
+        seams[0] in A.disabled_edges(obj),
+        "作り直したら、消した記録が失われた",
+    )
+
+    second = A.build(bpy.context, obj, rebuilt)
+    check(
+        len(second.fold) < len(first.fold),
+        f"消したのに糊代が減っていない: {len(first.fold)} -> "
+        f"{len(second.fold)}",
+    )
+
+
 def main():
     print()
     print("=" * 72)

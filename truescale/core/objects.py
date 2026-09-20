@@ -167,7 +167,12 @@ def edge_adjacent_polygons(mesh, edge):
     return result
 
 
-def boundary_segments_world_xy(obj):
+def boundary_segments_world_xy(obj, skip=None):
+    """外周の線分。skip に頂点番号の組を渡すと、その辺は返さない。
+
+    糊代のタブが付いた辺は、根元が折り線になる。元の実線が
+    残っていると、そこで切られてタブが落ちる。
+    """
     mesh = obj.data
     edge_key_count = {}
 
@@ -184,6 +189,9 @@ def boundary_segments_world_xy(obj):
     segments = []
     for key, count in edge_key_count.items():
         if count != 1:
+            continue
+
+        if skip and key in skip:
             continue
 
         a, b = key

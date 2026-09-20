@@ -109,6 +109,7 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
 
         self._draw_load(layout, context, scene)
         self._draw_build(layout, context, scene, loaded_obj, unfold_obj)
+        self._draw_allowance(layout, context, scene)
         self._draw_layout(layout, context, scene, unfold_obj)
         self._draw_output(layout, context, scene, unfold_obj)
 
@@ -441,6 +442,55 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
     # ------------------------------------------------------------
     # 任意
     # ------------------------------------------------------------
+
+    def _draw_allowance(self, layout, context, scene):
+        """縫い代と糊代。
+
+        並べるより前に置く。どちらも型紙を大きくするので、あとから
+        足すと用紙の計算が合わなくなる。必要な人だけが開けばよいので
+        畳んでおくが、順番としてはここにある。
+        """
+        box, open_now = _folded(
+            layout, scene, "tsunfold_show_allowance",
+            "縫い代・糊代（任意）", 'MOD_SOLIDIFY',
+        )
+        if not open_now:
+            return
+
+        glue = box.box()
+        glue.prop(scene, "tsunfold_tab_enable")
+        if getattr(scene, "tsunfold_tab_enable", False):
+            glue.prop(scene, "tsunfold_tab_width_mm", text="幅 (mm)")
+            note = glue.column(align=True)
+            note.scale_y = 0.8
+            note.label(text="シームの辺すべてに片側だけ付きます")
+            note.label(text="根元の破線は折り線。切らないでください")
+
+            # 要らない辺は消せる。元メッシュを編集モードにして
+            # 辺を選び、ボタンを押す。シーム指定と同じ手順。
+            picked = glue.column(align=True)
+            picked.label(text="要らない辺（元メッシュで辺を選択）")
+            row = picked.row(align=True)
+            row.operator(
+                "truescale_unfold.toggle_tab_edges",
+                text="消す", icon='X',
+            ).off = True
+            row.operator(
+                "truescale_unfold.toggle_tab_edges",
+                text="戻す", icon='CHECKMARK',
+            ).off = False
+            picked.operator(
+                "truescale_unfold.reset_tab_edges",
+                text="全部戻す", icon='LOOP_BACK',
+            )
+
+        sew = box.box()
+        sew.prop(scene, "tsunfold_seam_enable")
+        if getattr(scene, "tsunfold_seam_enable", False):
+            sew.prop(scene, "tsunfold_seam_width_mm", text="幅 (mm)")
+            note = sew.column(align=True)
+            note.scale_y = 0.8
+            note.label(text="外側の実線が裁断線、内側の破線が縫い線")
 
     def _draw_marking(self, layout, context, scene):
         """印をつける。必要に応じてやるものなので畳んでおく。"""

@@ -77,8 +77,13 @@ def paper_dimensions(scene, shape_w_mm, shape_h_mm):
     return min((portrait, landscape), key=overflow)
 
 
-def current_finish_segments(context):
-    """Return outline segments for the currently displayed finish."""
+def current_finish_segments(context, skip=None):
+    """いま表示している仕上がりの外周線。
+
+    skip は外周から外す辺（頂点番号の組）。糊代のタブが付いた辺は
+    根元が折り線になるので、元の実線を残すと切られてしまう。
+    なめらか仕上げ（カーブ）にはメッシュの辺が無いので効かない。
+    """
     mode = context.scene.get(_session.DISPLAY_MODE, "POLY")
     obj = context.active_object
 
@@ -110,7 +115,7 @@ def current_finish_segments(context):
         and obj.type == 'MESH'
         and bool(obj.get("tsunfold_generated", False))
     ):
-        return _objects().boundary_segments_world_xy(obj)
+        return _objects().boundary_segments_world_xy(obj, skip=skip)
 
     for candidate in bpy.data.objects:
         if (
@@ -118,7 +123,7 @@ def current_finish_segments(context):
             and bool(candidate.get("tsunfold_generated", False))
             and not candidate.hide_viewport
         ):
-            return _objects().boundary_segments_world_xy(candidate)
+            return _objects().boundary_segments_world_xy(candidate, skip=skip)
 
     return []
 

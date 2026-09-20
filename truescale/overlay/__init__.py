@@ -831,6 +831,69 @@ def dragging_marks(context):
     return (unfold, segments or [], texts or [])
 
 
+def draw_allowance_3d(context, shader):
+    """縫い代と糊代を画面にも出す。
+
+    刷るまで形が分からないのでは、幅を決めようがない。書き出しと
+    同じ計算（export.allowance）から描くので、画面で見たものが
+    そのまま刷られる。
+
+    折り線は破線で描く。実線のままだと切る線と区別が付かず、
+    紙の上でも画面でも同じ誤解をする。刻みは書き出しと同じ
+    export.linestyle を使う。ここで別に刻むと、画面と紙で
+    見た目が食い違う。
+    """
+    from ..export import allowance as _allowance
+    from ..export import linestyle as _linestyle
+
+    scene = context.scene
+    if not _allowance.enabled(scene):
+        return
+
+    source = _objects.source_from_context(context)
+    unfold = _objects.unfold_for_source(source) if source else None
+    if source is None or unfold is None:
+        return
+    if bool(unfold.hide_get()) or bool(unfold.hide_viewport):
+        return
+
+    made = _allowance.build(context, source, unfold)
+    if not made:
+        return
+
+    matrix = unfold.matrix_world
+    dash_bu = _units.scene_mm_to_bu(scene, _linestyle.FOLD_DASH_MM)
+    gap_bu = _units.scene_mm_to_bu(scene, _linestyle.FOLD_GAP_MM)
+
+    def to_world(items):
+        verts = []
+        for ax, ay, bx, by in items:
+            verts.append(matrix @ Vector((ax, ay, 0.0)))
+            verts.append(matrix @ Vector((bx, by, 0.0)))
+        return verts
+
+    chopped = []
+    for ax, ay, bx, by in made.fold:
+        chopped.extend(
+            _linestyle.dashed(ax, ay, bx, by, dash_bu, gap_bu)
+        )
+
+    shader.bind()
+    gpu.state.blend_set('ALPHA')
+
+    for items, color in (
+        (made.cut, (0.10, 0.10, 0.10, 0.95)),
+        (chopped, (0.35, 0.45, 0.85, 0.95)),
+    ):
+        if not items:
+            continue
+        verts = to_world(items)
+        shader.uniform_float("color", color)
+        batch_for_shader(shader, 'LINES', {"pos": verts}).draw(shader)
+
+    gpu.state.blend_set('NONE')
+
+
 def draw_marks_3d():
     context = bpy.context
     if context is None:
@@ -854,6 +917,11 @@ def draw_marks_3d():
     try:
         shader = gpu.shader.from_builtin('UNIFORM_COLOR')
         gpu.state.depth_test_set('LESS_EQUAL')
+
+        try:
+            draw_allowance_3d(context, shader)
+        except Exception:
+            _debug.swallowed("overlay.draw_allowance_3d")
 
         source = _objects.source_from_context(context)
 

@@ -172,6 +172,12 @@ def register():
         default=False,
     )
 
+    bpy.types.Scene.tsunfold_show_allowance = BoolProperty(
+        name="縫い代・糊代",
+        default=False,
+        options={'HIDDEN'},
+    )
+
     bpy.types.Scene.tsunfold_show_correspondence = BoolProperty(
         name="対応を確かめるを開く",
         description="平面のどこが立体のどこだったかの確認と、型紙へのメモ",
@@ -390,6 +396,58 @@ def register():
         name="対応確認",
         default=False,
         options={'HIDDEN'},
+    )
+
+    # --- 縫い代と糊代 -------------------------------------------------
+    #
+    # 2つに分けてあるのは、形も付く側も違うため。縫い代は輪郭全体を
+    # 外へ広げ、両方の型紙に付く。糊代は辺ごとの台形で、片側にしか
+    # 付かない。1つの設定にまとめると、どちらかが必ず狂う。
+    #
+    # 幅がミリなのは、型紙を必ず実寸で刷るから。紙の上のミリと
+    # 実物のミリが同じ値になるので、換算は要らない。
+
+    bpy.types.Scene.tsunfold_tab_enable = BoolProperty(
+        name="糊代（のりしろ）",
+        description=(
+            "貼り合わせる辺に、折って糊を付けるための台形を出します。"
+            "シームの辺すべてに付き、相手のいない辺には付きません"
+        ),
+        default=False,
+        update=_pattern_setting_updated,
+    )
+
+    bpy.types.Scene.tsunfold_tab_width_mm = FloatProperty(
+        name="糊代の幅 (mm)",
+        description=(
+            "紙の上での幅。置けない辺では自動で細くし、"
+            "それでも入らなければその辺には付けません"
+        ),
+        default=6.0,
+        min=1.0,
+        soft_max=20.0,
+        precision=1,
+        update=_pattern_setting_updated,
+    )
+
+    bpy.types.Scene.tsunfold_seam_enable = BoolProperty(
+        name="縫い代",
+        description=(
+            "輪郭の外側へ一定量ひろげた裁断線を出します。"
+            "元の輪郭は縫い線として破線になります"
+        ),
+        default=False,
+        update=_pattern_setting_updated,
+    )
+
+    bpy.types.Scene.tsunfold_seam_width_mm = FloatProperty(
+        name="縫い代の幅 (mm)",
+        description="輪郭から外側へひろげる量",
+        default=10.0,
+        min=0.5,
+        soft_max=50.0,
+        precision=1,
+        update=_pattern_setting_updated,
     )
 
     bpy.types.Scene.tsunfold_auto_island_ids = BoolProperty(

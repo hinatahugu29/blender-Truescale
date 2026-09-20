@@ -22,7 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from truescale.core import paper, session, state, units
+from truescale.core import flatshape, paper, session, state, units
+from truescale.export import linestyle
 from truescale.export import png
 from truescale.export import pdf
 from truescale.export import sheets
@@ -1301,6 +1302,134 @@ def test_tile_labels_read_like_the_printed_sheets():
 # ============================================================
 # 実行
 # ============================================================
+
+@test
+def test_dashes_start_and_end_with_a_line():
+    """破線の両端が線で終わる。
+
+    折り線の両端はたいてい角である。そこが隙間で終わると、
+    どこで折るのかが分からない。刻みを伸び縮みさせて合わせる。
+    """
+    for length in (12.0, 37.0, 100.0, 250.0):
+        parts = linestyle.dashed(0.0, 0.0, length, 0.0)
+        close(parts[0][0], 0.0, 1e-9, f"{length}mm の始点が線でない")
+        close(parts[-1][2], length, 1e-9, f"{length}mm の終点が線でない")
+        check(len(parts) >= 2, f"{length}mm が刻まれていない")
+
+
+@test
+def test_short_lines_are_not_dashed():
+    """短い線は刻まない。点になって、実線と見分けが付かなくなる。"""
+    parts = linestyle.dashed(0.0, 0.0, 2.0, 0.0)
+    check(len(parts) == 1, f"2mm が {len(parts)} 本に刻まれた")
+
+
+@test
+def test_dashes_stay_on_the_line():
+    """斜めの線を刻んでも、元の線の上から外れない。"""
+    parts = linestyle.dashed(0.0, 0.0, 30.0, 40.0)
+    for x0, y0, x1, y1 in parts:
+        for x, y in ((x0, y0), (x1, y1)):
+            close(y, x * 4.0 / 3.0, 1e-6, "刻んだ点が元の線の上にない")
+
+
+@test
+def test_holes_turn_the_other_way():
+    """穴の輪は外周と逆向きに揃う。
+
+    どちらも「進行方向の右が材料の外」になる。揃え損ねると
+    縫い代が材料の側へ広がり、切ると型紙が壊れる。
+    """
+    outer = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    hole = [(3, 3), (7, 3), (7, 7), (3, 7)]
+
+    windings = flatshape.loop_windings([hole, outer])
+    check(windings == [False, True], f"向きの判断が違う: {windings}")
+
+    turned = list(reversed(hole))  # 時計回りにする
+    grown = flatshape.offset_loop(turned, 1.0)
+    xs = [p[0] for p in grown]
+    check(
+        min(xs) > 3.0 and max(xs) < 7.0,
+        f"穴が縮んでいない: {min(xs)}..{max(xs)}",
+    )
+
+
+@test
+def test_separate_islands_are_both_outlines():
+    """離れた輪は、どちらも外周として扱う。片方を穴にしない。"""
+    left = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    right = [(50, 0), (55, 0), (55, 5), (50, 5)]
+    check(
+        flatshape.loop_windings([left, right]) == [True, True],
+        "離れた輪の片方が穴にされた",
+    )
+
+
+@test
+def test_seam_allowance_grows_evenly():
+    """縫い代は四方へ同じだけ広がる。"""
+    square = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    grown = flatshape.offset_loop(square, 2.0)
+    xs = [p[0] for p in grown]
+    ys = [p[1] for p in grown]
+    close(min(xs), -2.0, 1e-9, "左へ広がっていない")
+    close(min(ys), -2.0, 1e-9, "下へ広がっていない")
+    close(max(xs), 12.0, 1e-9, "右へ広がっていない")
+    close(max(ys), 12.0, 1e-9, "上へ広がっていない")
+
+
+@test
+def test_sharp_corners_do_not_spike():
+    """鋭い角で、尖りが際限なく伸びない。
+
+    切り落とさないと紙からはみ出し、裁断線としての意味を失う。
+    """
+    sliver = [(0, 0), (40, 0), (20, 1.5)]
+    grown = flatshape.offset_loop(sliver, 3.0)
+    xs = [p[0] for p in grown]
+    width = max(xs) - min(xs)
+    check(width < 60.0, f"尖りが伸びすぎている: 幅 {width:.1f}mm")
+
+
+@test
+def test_tab_points_outward():
+    """タブは型紙の外側へ出る。内側へ出たら型紙に重なる。"""
+    quad = flatshape.tab_quad(0.0, 0.0, 10.0, 0.0, 5.0)
+    check(quad is not None, "タブが作れない")
+    check(
+        quad[1][1] < 0.0 and quad[2][1] < 0.0,
+        f"外向きになっていない: {quad}",
+    )
+
+
+@test
+def test_tab_gives_up_when_there_is_no_room():
+    """場所が無ければタブを置かない。
+
+    無理に置いたタブは、切ると型紙自体を切ってしまう。
+    細くして入るなら細くし、下限まで細くしても駄目なら諦める。
+    """
+    room = flatshape.fit_tab(0.0, 0.0, 10.0, 0.0, 5.0, [(0, -3, 10, -3)])
+    check(room is not None, "細くすれば入るのに諦めた")
+
+    # ちょうど接するところまでは許す。重なっていなければ、切って
+    # 型紙を傷めることはない。
+    check(-room[1][1] <= 3.0 + 1e-9, "障害より外へはみ出している")
+
+    none = flatshape.fit_tab(0.0, 0.0, 10.0, 0.0, 5.0, [(0, -1, 10, -1)])
+    check(none is None, "入らないのに置いた")
+
+
+@test
+def test_tab_base_is_shorter_than_the_edge():
+    """タブの根元は辺より短い。角で隣のタブと触れないため。"""
+    quad = flatshape.tab_quad(0.0, 0.0, 10.0, 0.0, 5.0)
+    fold = flatshape.tab_fold_edge(quad)
+    length = abs(fold[2] - fold[0])
+    check(length < 10.0, f"根元が辺と同じ長さ: {length}")
+    check(length > 5.0, f"根元が短すぎる: {length}")
+
 
 def main():
     print("=" * 66)

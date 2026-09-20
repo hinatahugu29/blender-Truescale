@@ -36,6 +36,9 @@ PDFにフォントを埋め込まなくてよいのはこのため。
 """
 
 
+from mathutils import Vector
+
+
 # 外周と文字の線の太さ（ミリ）。設定にはしていない。
 # 細すぎると切る線が見えず、太すぎると切る位置が曖昧になる。
 # 型紙として実用になる範囲は狭いので、決め打ちでよい。
@@ -71,12 +74,43 @@ def pattern_lines(context):
     from ..core import objects as _objects
     from ..core import units as _units
     from ..marking import compute as _compute
+    from . import allowance as _allowance
+    from . import linestyle as _linestyle
     from . import outline as _outline
 
     scene = context.scene
 
-    segments = _outline.current_finish_segments(context)
+    source = _objects.source_from_context(context)
+    unfold = _objects.unfold_for_source(source) if source else None
+
+    # 縫い代と糊代は、外周より先に求める。タブが付いた辺は外周から
+    # 外さなければならず、外周を集めるときに渡す必要があるため。
+    allow = _allowance.build(context, source, unfold)
+    extra = _world_allowance(unfold, allow)
+
+    segments = _outline.current_finish_segments(
+        context, skip=allow.suppress
+    )
     box = _outline.bbox(segments)
+
+    if extra["cut"] or extra["fold"]:
+        points = [
+            (v[0], v[1]) for v in extra["cut"] + extra["fold"]
+        ] + [
+            (v[2], v[3]) for v in extra["cut"] + extra["fold"]
+        ]
+        if box is None:
+            xs = [p[0] for p in points]
+            ys = [p[1] for p in points]
+            box = (min(xs), min(ys), max(xs), max(ys))
+        else:
+            box = (
+                min(box[0], min(p[0] for p in points)),
+                min(box[1], min(p[1] for p in points)),
+                max(box[2], max(p[0] for p in points)),
+                max(box[3], max(p[1] for p in points)),
+            )
+
     if box is None:
         return None
 
@@ -90,16 +124,36 @@ def pattern_lines(context):
         )
 
     lines = []
+    BLACK = (0.0, 0.0, 0.0)
 
     # 1. 外周。型紙の形そのものなので、常に黒。
+    #
+    #    縫い代を付けたときだけ、ここは裁断線ではなく縫い線になる。
+    #    切る線は外側へずれた輪のほうなので、元の輪は破線にする。
+    #    実線のままだと、どちらを切るのか区別が付かない。
     outline_mm = OUTLINE_MM
     for (ax, ay), (bx, by) in segments:
         x0, y0 = point(ax, ay)
         x1, y1 = point(bx, by)
-        lines.append((x0, y0, x1, y1, (0.0, 0.0, 0.0), outline_mm))
+        if allow.stitched:
+            lines.extend(
+                _linestyle.dashed_line(x0, y0, x1, y1, BLACK, outline_mm)
+            )
+        else:
+            lines.append((x0, y0, x1, y1, BLACK, outline_mm))
 
-    source = _objects.source_from_context(context)
-    unfold = _objects.unfold_for_source(source) if source else None
+    # 1b. 縫い代・糊代。切る線は実線、折る線は破線。
+    for ax, ay, bx, by in extra["cut"]:
+        x0, y0 = point(ax, ay)
+        x1, y1 = point(bx, by)
+        lines.append((x0, y0, x1, y1, BLACK, outline_mm))
+
+    for ax, ay, bx, by in extra["fold"]:
+        x0, y0 = point(ax, ay)
+        x1, y1 = point(bx, by)
+        lines.extend(
+            _linestyle.dashed_line(x0, y0, x1, y1, BLACK, outline_mm)
+        )
 
     if source is not None and unfold is not None:
         # 2. 合印と矢印。太さは設定どおり（実寸）。
@@ -128,6 +182,29 @@ def pattern_lines(context):
     height_mm = max(max(line[1], line[3]) for line in lines)
 
     return Drawing(lines, width_mm, height_mm)
+
+
+def _world_allowance(unfold, allow):
+    """縫い代・糊代の線を、型紙のローカルからワールドへ直す。
+
+    幾何はローカルで計算している。型紙を動かしても形は変わらない
+    ので、そのほうが使い回しが効く。ここで一度だけ変換する。
+    """
+    empty = {"cut": [], "fold": []}
+    if unfold is None or not allow:
+        return empty
+
+    matrix = unfold.matrix_world
+
+    def move(items):
+        out = []
+        for ax, ay, bx, by in items:
+            pa = matrix @ Vector((ax, ay, 0.0))
+            pb = matrix @ Vector((bx, by, 0.0))
+            out.append((pa.x, pa.y, pb.x, pb.y))
+        return out
+
+    return {"cut": move(allow.cut), "fold": move(allow.fold)}
 
 
 def _text_sources(context, source, unfold):
@@ -184,6 +261,26 @@ def pattern_bounds(context):
         return None
 
     min_x, min_y, max_x, max_y = box
+
+    # 縫い代と糊代のぶん。実際に形を起こすと重いので、四方へ
+    # 一番大きい幅だけ広げて見積もる。少し大きめに見るので、
+    # 実際より枚数が減ることはない。減るほうへ間違えると、
+    # 用紙ガイドが「収まる」と言ったものが刷ると収まらない。
+    from . import allowance as _allowance
+
+    conf = _allowance.settings(scene)
+    pad_mm = 0.0
+    if conf["tab"]:
+        pad_mm = max(pad_mm, conf["tab_mm"])
+    if conf["seam"]:
+        pad_mm = max(pad_mm, conf["seam_mm"])
+
+    if pad_mm > 0.0:
+        pad = _units.scene_mm_to_bu(scene, pad_mm)
+        min_x -= pad
+        min_y -= pad
+        max_x += pad
+        max_y += pad
 
     source = _objects.source_from_context(context)
     unfold = _objects.unfold_for_source(source) if source else None

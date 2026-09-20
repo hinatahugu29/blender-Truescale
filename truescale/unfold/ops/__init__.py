@@ -11,11 +11,13 @@
   marking  印を置く道具と、置いた印の削除
   memo     型紙に直接書く文字、島の対応付け
   export   実寸PNGの書き出し
+  allowance 糊代を辺ごとに消す／戻す
 
 クラス名と bl_idname は分割前のまま。パネルや保存済みのキーマップが
 名前で参照しているので、置き場所だけを変えている。
 """
 
+from . import allowance
 from . import export
 from . import layout
 from . import marking
@@ -33,4 +35,5 @@ classes = (
     + marking.classes
     + memo.classes
     + export.classes
+    + allowance.classes
 )
