@@ -6,6 +6,16 @@ Blenderを起動せずに単体でテストできる。
 実寸で印刷するために pHYs チャンクへ解像度を書き込む。
 これが無いと、画像ビューアや印刷ソフトが「1ピクセル=1/72インチ」
 などと勝手に解釈して、出力される物理サイズが変わってしまう。
+
+書き込む口は2つある。
+
+  encode_rgb  ピクセルの並びから PNG を作る（型紙側）
+  patch_dpi   すでにある PNG を書き換える（三面図側）
+
+三面図側は Blender にビューポートを撮らせるので、出来上がった
+ファイルへ後から入れるしかない。用途は違うが、dpi から
+「メートルあたりのピクセル数」を出すところは同じなので、
+そこは共有する。以前は両側に別々に書かれていた。
 """
 
 import binascii
@@ -17,6 +27,9 @@ PRINT_DPI = 300
 
 # 1インチ = 25.4 mm
 MM_PER_INCH = 25.4
+
+# PNG の先頭8バイト。これで PNG かどうかを見分ける。
+SIGNATURE = bytes([137, 80, 78, 71, 13, 10, 26, 10])
 
 
 def mm_to_pixels(mm, dpi=PRINT_DPI):
@@ -103,17 +116,66 @@ def _chunk(chunk_type, data):
     return struct.pack(">I", len(data)) + chunk_type + data + struct.pack(">I", crc)
 
 
+def _phys_chunk(dpi):
+    """pHYs チャンク。単位は「メートルあたりのピクセル数」。
+
+    dpi から換算する式をここ1つに置く。2箇所に書くと、片方だけ
+    直したときに同じ画像が違う大きさで刷られる。
+    """
+    pixels_per_meter = int(round(float(dpi) / 0.0254))
+    return _chunk(b"pHYs", struct.pack(">IIB",
+                                       pixels_per_meter,
+                                       pixels_per_meter,
+                                       1))
+
+
+def patch_dpi(data, dpi):
+    """すでにある PNG のバイト列へ、解像度を入れ直す。
+
+    Blender に撮らせた PNG には解像度が入っていない（あるいは
+    意図と違う）。入っていなければ IHDR の直後へ入れ、入っていれば
+    差し替える。PNG でなければ None。
+
+    ファイルではなくバイト列を受けるのは、Blender を起動せずに
+    試せるようにするため。
+    """
+    if not data.startswith(SIGNATURE):
+        return None
+
+    out = bytearray(data[:8])
+    pos = 8
+    done = False
+
+    while pos + 8 <= len(data):
+        length = struct.unpack(">I", data[pos:pos + 4])[0]
+        kind = data[pos + 4:pos + 8]
+        end = pos + 12 + length
+        if end > len(data):
+            break
+
+        if kind == b"pHYs":
+            # 古いものは捨てる。1つだけ入れ直す。
+            if not done:
+                out += _phys_chunk(dpi)
+                done = True
+        else:
+            out += data[pos:end]
+            if kind == b"IHDR" and not done:
+                out += _phys_chunk(dpi)
+                done = True
+
+        pos = end
+
+    return bytes(out) if done else None
+
+
 def encode_rgb(width, height, rgb_buffer, dpi=PRINT_DPI):
     """RGBバッファを PNG のバイト列にする。
 
     pHYs チャンクに解像度を入れる。単位は「メートルあたりのピクセル数」
     なので、dpi から換算する。
     """
-    signature = b"\x89PNG\r\n\x1a\n"
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-
-    pixels_per_meter = int(round(dpi / 0.0254))
-    phys = struct.pack(">IIB", pixels_per_meter, pixels_per_meter, 1)
 
     stride = width * 3
     raw = bytearray()
@@ -126,9 +188,9 @@ def encode_rgb(width, height, rgb_buffer, dpi=PRINT_DPI):
     compressed = zlib.compress(bytes(raw), 6)
 
     return (
-        signature
+        SIGNATURE
         + _chunk(b"IHDR", ihdr)
-        + _chunk(b"pHYs", phys)
+        + _phys_chunk(dpi)
         + _chunk(b"IDAT", compressed)
         + _chunk(b"IEND", b"")
     )

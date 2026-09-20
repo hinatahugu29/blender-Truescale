@@ -12,6 +12,7 @@ Blender を起動せずに検証できる。ヘッドレステストより桁違
 """
 
 import math
+import struct
 import re
 import zlib
 import sys
@@ -1429,6 +1430,59 @@ def test_tab_base_is_shorter_than_the_edge():
     length = abs(fold[2] - fold[0])
     check(length < 10.0, f"根元が辺と同じ長さ: {length}")
     check(length > 5.0, f"根元が短すぎる: {length}")
+
+
+@test
+def test_dpi_can_be_put_into_an_existing_png():
+    """すでにある PNG へ解像度を入れ直せる。
+
+    三面図側は Blender にビューポートを撮らせるので、出来上がった
+    ファイルへ後から入れるしかない。以前はその処理が三面図側に
+    別に書かれていて、dpi から換算する式が2箇所にあった。
+    片方だけ直せば、同じ画像が違う大きさで刷られる。
+    """
+    made = png.encode_rgb(4, 3, png.new_buffer(4, 3), dpi=300)
+    check(made.count(b"pHYs") == 1, "作った PNG に pHYs が1つでない")
+
+    changed = png.patch_dpi(made, 600)
+    check(changed is not None, "書き換えられない")
+    check(changed.count(b"pHYs") == 1, "pHYs が増えた")
+
+    at = changed.index(b"pHYs")
+    ppm = struct.unpack(">I", changed[at + 4:at + 8])[0]
+    close(ppm * 0.0254, 600.0, 0.5, "書き換えた dpi が違う")
+
+
+@test
+def test_dpi_is_added_when_the_png_has_none():
+    """解像度が入っていない PNG にも入れられる。
+
+    Blender が書き出したものには入っていない。IHDR の直後へ置く。
+    """
+    made = bytearray(png.encode_rgb(4, 3, png.new_buffer(4, 3)))
+
+    # pHYs を取り除いた PNG を作る。
+    at = made.index(b"pHYs") - 4
+    length = struct.unpack(">I", bytes(made[at:at + 4]))[0]
+    stripped = bytes(made[:at] + made[at + 12 + length:])
+    check(b"pHYs" not in stripped, "取り除けていない")
+
+    filled = png.patch_dpi(stripped, 300)
+    check(filled is not None, "入れられない")
+    check(filled.count(b"pHYs") == 1, "pHYs が1つでない")
+
+    # IHDR の直後にあること。順番が違うと読まない実装がある。
+    check(
+        filled.index(b"pHYs") < filled.index(b"IDAT"),
+        "pHYs が画像データより後ろにある",
+    )
+
+
+@test
+def test_patch_refuses_things_that_are_not_png():
+    """PNG でないものは書き換えない。黙って壊さない。"""
+    check(png.patch_dpi(b"not a png at all", 300) is None, "PNG でないものを受けた")
+    check(png.patch_dpi(b"", 300) is None, "空を受けた")
 
 
 def main():

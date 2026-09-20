@@ -28,8 +28,6 @@ pHYs チャンクに 300dpi を入れる。入れないと、印刷側が原寸�
 
 import os
 
-import struct
-import zlib
 from pathlib import Path
 import blf
 import mathutils
@@ -39,6 +37,7 @@ import bpy
 
 from ... import debug as _pkg_debug
 from ...core import units as _units
+from ...export import png as _png
 from .. import bbox as _bbox
 from .. import dimension as _dimension
 from .. import keys as _keys
@@ -46,49 +45,22 @@ from .. import viewstate as _viewstate
 
 
 def tsdraft_patch_png_dpi(filepath, dpi):
-    """Insert/replace PNG pHYs chunk so Illustrator reads the intended physical size."""
-    path = Path(filepath)
-    data = path.read_bytes()
+    """撮った PNG へ実寸の解像度を入れ直す。
 
-    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+    Blender に撮らせたファイルには解像度が入っていないので、
+    出来上がったものへ後から入れる。書き換えそのものは
+    export.png が持つ。以前はここにも同じ処理があり、dpi から
+    「メートルあたりのピクセル数」を出す式が2箇所にあった。
+    片方だけ直せば、同じ画像が違う大きさで刷られる。
+    """
+    path = Path(filepath)
+    patched = _png.patch_dpi(path.read_bytes(), dpi)
+
+    if patched is None:
         return False
 
-    ppm = int(round(float(dpi) / 0.0254))  # pixels per meter
-
-    out = bytearray(data[:8])
-    pos = 8
-    inserted = False
-
-    while pos + 8 <= len(data):
-        length = struct.unpack(">I", data[pos:pos + 4])[0]
-        ctype = data[pos + 4:pos + 8]
-        end = pos + 12 + length
-        if end > len(data):
-            break
-
-        chunk = data[pos:end]
-
-        # Drop old pHYs and replace it once.
-        if ctype == b"pHYs":
-            if not inserted:
-                payload = struct.pack(">IIB", ppm, ppm, 1)
-                crc = zlib.crc32(b"pHYs" + payload) & 0xffffffff
-                out += struct.pack(">I", len(payload)) + b"pHYs" + payload + struct.pack(">I", crc)
-                inserted = True
-        else:
-            out += chunk
-
-            # Put pHYs immediately after IHDR when absent.
-            if ctype == b"IHDR" and not inserted:
-                payload = struct.pack(">IIB", ppm, ppm, 1)
-                crc = zlib.crc32(b"pHYs" + payload) & 0xffffffff
-                out += struct.pack(">I", len(payload)) + b"pHYs" + payload + struct.pack(">I", crc)
-                inserted = True
-
-        pos = end
-
-    path.write_bytes(out)
-    return inserted
+    path.write_bytes(patched)
+    return True
 
 
 def tsdraft_get_last_export_dir():
