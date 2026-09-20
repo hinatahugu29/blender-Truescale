@@ -309,16 +309,20 @@ def test_cache_survives_object_move():
     unfold = build_pattern_for(obj)
     context = bpy.context
 
+    # 呼び出し回数を数えるので、実体のある compute へ当てる。
+    # unfold 側は別名なので、そこを差し替えても呼ばれない。
+    from truescale.marking import compute as C
+
     calls = {"count": 0}
-    original = U._pattern_compute_flat_colored_segments
+    original = C.compute_colored_segments
 
     def counting(*args, **kwargs):
         calls["count"] += 1
         return original(*args, **kwargs)
 
-    U._pattern_compute_flat_colored_segments = counting
+    C.compute_colored_segments = counting
     try:
-        U._pattern_flat_colored_segments(context, obj, unfold)
+        C.colored_segments(context, obj, unfold)
         first = calls["count"]
         check(first >= 1, "1回目で計算されていない")
 
@@ -326,14 +330,14 @@ def test_cache_survives_object_move():
         for step in range(10):
             unfold.location.x += 0.1
             bpy.context.view_layer.update()
-            U._pattern_flat_colored_segments(context, obj, unfold)
+            C.colored_segments(context, obj, unfold)
 
         check(
             calls["count"] == first,
             f"移動のたびに再計算されている: {calls['count'] - first} 回",
         )
     finally:
-        U._pattern_compute_flat_colored_segments = original
+        C.compute_colored_segments = original
 
 
 @test
