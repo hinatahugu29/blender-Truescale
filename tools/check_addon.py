@@ -10,6 +10,7 @@ Blenderを起動せずに、以下のズレを検出する。
   5. register されているが unregister で消されない Scene プロパティ
   6. register されているがどこからも参照されていない Scene プロパティ
   7. どこからも呼ばれていないモジュール直下の関数
+  8. 未定義のまま読まれている名前（実行時に NameError になる）
 
 使い方:
     python tools/check_addon.py truescale/unfold/__init__.py
@@ -20,9 +21,18 @@ Blenderを起動せずに、以下のズレを検出する。
 既知の限界:
   7番の判定は1段階のみで、推移的ではない。死にコードから呼ばれている
   関数は「使われている」と見なされる。到達可能性の解析ではない。
+
+  7番は truescale パッケージの中しか見ない。tools/ のテストだけが
+  使っている関数は「未使用」と出る。実際にそれを信じて消し、
+  テストを壊したことがある。消す前に tools/ も見ること。
+
+  8番は名前だけを見て、属性は見ない。moduleA.name のように参照した
+  先が消えても気付けない。そちらは読み込みテストで拾う。
 """
 
 import ast
+import builtins
+import symtable
 import re
 import sys
 from pathlib import Path
@@ -215,6 +225,73 @@ class AddonAnalyzer(ast.NodeVisitor):
         self.generic_visit(node)
 
 
+def undefined_names(path):
+    """そのファイルで未定義のまま読まれている名前を返す。
+
+    分割で関数を別ファイルへ移すとき、呼び出しは書き換えても
+    モジュール直下の変数への参照を取り残すことがある。描画側は
+    例外を握り潰すので、動かしても気付けない。
+
+    symtable が各スコープの「グローバルとして読まれている名前」を
+    返すので、モジュール直下にも組み込みにも無いものを拾う。
+    """
+    source = path.read_text(encoding="utf-8")
+    try:
+        table = symtable.symtable(source, str(path), "exec")
+    except SyntaxError:
+        return []
+
+    defined = set(dir(builtins))
+    for sym in table.get_symbols():
+        if sym.is_assigned() or sym.is_imported() or sym.is_parameter():
+            defined.add(sym.get_name())
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef)):
+            defined.add(node.name)
+
+    # symtable は行番号を持たないので、関数ごとに AST から引く。
+    # 名前だけでは探す手間が変わらないため、どの関数の中かも出す。
+    tree = ast.parse(source)
+    scope_lines = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef)):
+            seen = {}
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Load):
+                    seen.setdefault(sub.id, sub.lineno)
+            scope_lines[(node.name, node.lineno)] = seen
+
+    found = set()
+
+    def lookup(scope_name, name):
+        for (n, _), seen in scope_lines.items():
+            if n == scope_name and name in seen:
+                return seen[name]
+        return 0
+
+    def walk(scope):
+        for sym in scope.get_symbols():
+            name = sym.get_name()
+            if name in defined:
+                continue
+            if sym.is_global() and sym.is_referenced():
+                where = scope.get_name()
+                if where == "top":
+                    found.add((name, 0, ""))
+                else:
+                    found.add((name, lookup(where, name), where))
+        for child in scope.get_children():
+            walk(child)
+
+    walk(table)
+    return sorted(
+        f"{name}  (行 {line} / {where})" if where else f"{name}"
+        for name, line, where in found
+    )
+
+
 def collect_references(paths):
     """複数ファイルから、名前とプロパティの参照だけを集める。
 
@@ -378,6 +455,12 @@ def analyze(path: Path, extra=None):
             ("どこからも呼ばれていないモジュール直下の関数", dead_functions)
         )
 
+    missing_names = undefined_names(path)
+    if missing_names:
+        problems.append(
+            ("未定義のまま読まれている名前（実行時に NameError）", missing_names)
+        )
+
     stats = {
         "行数": len(source.splitlines()),
         "クラス": len(analyzer.classes),
@@ -410,6 +493,27 @@ def main(argv):
     extra = collect_references(sorted(set(package_files)))
 
     exit_code = 0
+
+    # 未定義の名前だけは、引数以外のファイルも見る。分割で起きる
+    # 取り残しは「移動先」に現れるため、引数のファイルだけでは
+    # 見逃す。実際 overlay で起きた。
+    others = [
+        p for p in sorted(set(package_files))
+        if p.resolve() not in {q.resolve() for q in paths}
+    ]
+    stray = []
+    for p in others:
+        for item in undefined_names(p):
+            stray.append(f"{p}: {item}")
+    if stray:
+        print("=" * 72)
+        print("未定義のまま読まれている名前（実行時に NameError）")
+        print("=" * 72)
+        for item in stray:
+            print("  " + item)
+        print()
+        exit_code = 1
+
     for arg in argv[1:]:
         path = Path(arg)
         print("=" * 72)

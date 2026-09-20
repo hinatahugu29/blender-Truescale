@@ -13,6 +13,8 @@
 動く」ようにするため。
 """
 
+import json
+
 import bpy
 
 from . import mapping as _mapping

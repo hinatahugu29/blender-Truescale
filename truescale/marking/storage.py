@@ -117,6 +117,21 @@ def normalize_color(value):
     ]
 
 
+def scene_item_color(item, scene=None):
+    """注記1件の色を、シーンの設定を見て決める。
+
+    オート合印は保存値を持たず、常に現在の設定に従う。保存すると
+    色を変えるたびに全件の書き直しが必要になり、カラーピッカーを
+    ドラッグしている間ずっと走ってしまう。
+
+    描く側が3箇所でこれと同じ包みを書いていたので、ここへ集めた。
+    """
+    auto_color = None
+    if scene is not None:
+        auto_color = getattr(scene, "tsunfold_notch_color", None)
+    return item_color(item, auto_color)
+
+
 def item_color(item, auto_notch_color=None):
     """描画用に、注記1件の色をタプルで返す。
 

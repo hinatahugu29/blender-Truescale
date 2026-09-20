@@ -24,6 +24,8 @@ import math
 
 from mathutils import Vector
 
+import bpy
+
 from .. import debug as _debug
 from ..core import geometry as _geometry
 from ..core import mapping as _mapping

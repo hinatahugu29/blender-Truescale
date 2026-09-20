@@ -13,6 +13,12 @@ Blender の描画ハンドラから毎フレーム呼ばれる。描くだけで
 面を動かしている最中に注記を描き直すと、位置が追従せずちらつく。
 レイアウト編集中は早期に戻る。
 
+■ ここから unfold を呼ばない
+
+描くために必要な情報は core と marking から取る。unfold（オペレータ）
+を呼び戻すと循環importになり、それを避けるための遅延importが
+「どこから何を見ているか」を隠してしまう。
+
 ■ 用紙ガイドとシームの線は印刷されない
 
 画面で確認するための目印で、PNG書き出しには含めない。
@@ -36,6 +42,7 @@ from ..core import paper as _paper
 from ..core import session as _session
 from ..core import units as _units
 from ..marking import compute as _compute
+from ..marking import interact as _interact
 from ..marking import source as _source
 from ..marking import storage as _storage
 
@@ -52,24 +59,6 @@ def manual_layout_active(scene):
     return _scene_flag(scene, _session.MANUAL_LAYOUT_ACTIVE)
 
 
-def _host():
-    """unfold 本体。循環importを避けるため、呼ばれた時に読み込む。
-
-    ツールの選択状態など、まだ unfold 側にある情報を参照するため。
-    これらも順次こちらか core へ移していく。
-    """
-    from .. import unfold
-    return unfold
-
-
-def _item_color(item, scene=None):
-    """注記の色。オート合印は現在のシーン設定に従う。"""
-    auto_color = None
-    if scene is not None:
-        auto_color = getattr(scene, "tsunfold_notch_color", None)
-    return _storage.item_color(item, auto_color)
-
-
 def preview_outline_segments(context):
     """Return the outline matching the currently displayed finish mode."""
     mode = context.scene.get(_session.DISPLAY_MODE, "POLY")
@@ -83,7 +72,7 @@ def preview_outline_segments(context):
             and bool(obj.get("tsunfold_smooth_generated", False))
             and not obj.hide_viewport
         ):
-            return _smooth_curve_segments_world_xy(obj)
+            return _compute.smooth_curve_segments_world_xy(obj)
 
         # Fallback to any visible generated smooth curve.
         for candidate in bpy.data.objects:
@@ -92,7 +81,7 @@ def preview_outline_segments(context):
                 and bool(candidate.get("tsunfold_smooth_generated", False))
                 and not candidate.hide_viewport
             ):
-                return _smooth_curve_segments_world_xy(candidate)
+                return _compute.smooth_curve_segments_world_xy(candidate)
 
     # POLY or fallback.
     obj = _objects.active_unfold(context)
@@ -245,7 +234,7 @@ def flat_text_items(source_obj, unfold_obj):
         if item.get("type") not in {"number", "text"}:
             continue
 
-        p = _pattern_anchor_point_flat_local(
+        p = _compute.anchor_point_flat_local(
             unfold_obj, item.get("anchor", {})
         )
         if p is None:
@@ -261,7 +250,7 @@ def flat_text_items(source_obj, unfold_obj):
             text,
             unfold_obj.matrix_world @ p,
             size_mm,
-            _item_color(item),
+            _storage.scene_item_color(item),
         ))
 
     return result
@@ -274,7 +263,7 @@ def flat_memo_text_items(unfold_obj):
 
     mw = unfold_obj.matrix_world
 
-    for item in _host()._pattern_get_flat_memos(unfold_obj):
+    for item in _interact.get_flat_memos(unfold_obj):
         pos = item.get("pos", [0.0, 0.0, 0.0])
         try:
             local = Vector((
@@ -320,7 +309,7 @@ def source_text_items(source_obj):
             text,
             mw @ p,
             size_mm,
-            _item_color(item),
+            _storage.scene_item_color(item),
         ))
 
     context = bpy.context
@@ -425,7 +414,7 @@ def arrow_hud_text(scene):
     if mode == "CUSTOM":
         return "矢印：カスタム配置"
 
-    axis = _pattern_sanitize_arrow_axis(scene)
+    axis = _compute.sanitize_arrow_axis(scene)
 
     if axis == "X":
         return "↑ 矢印基準：元モデル X+"
@@ -529,7 +518,7 @@ def draw_direction_arrow_overlay(context):
 
     # Match Blender's navigation gizmo exactly:
     # X/Y/Z here are WORLD axes, independent of source object rotation.
-    world_up = _pattern_auto_up_vector(scene)
+    world_up = _compute.auto_up_vector(scene)
 
     if world_up.length <= 1e-12:
         return
@@ -693,12 +682,12 @@ def draw_marks_3d():
             if (
                 not bool(source.hide_get())
                 and not bool(source.hide_viewport)
-                and _pattern_island_highlight.get("source", "") == source.name
-                and _pattern_island_highlight.get("source_faces")
+                and _interact.island_highlight.get("source", "") == source.name
+                and _interact.island_highlight.get("source_faces")
             ):
                 wanted = set(
                     int(v)
-                    for v in _pattern_island_highlight.get(
+                    for v in _interact.island_highlight.get(
                         "source_faces",
                         [],
                     )
@@ -894,24 +883,24 @@ def draw_marks_3d():
             # ------------------------------------------------------
             # Live placement preview on source.
             # ------------------------------------------------------
-            preview_mode = _host()._pattern_active_tool(context.scene)
+            preview_mode = _interact.active_tool(context.scene)
             preview_source = bpy.data.objects.get(
-                _pattern_live_preview.get("source", "")
+                _interact.live_preview.get("source", "")
             )
 
             if preview_source is source:
-                preview_color = _host()._pattern_current_color(
+                preview_color = _interact.current_color(
                     context.scene,
                     preview_mode,
                 )
 
                 if (
                     preview_mode == "NOTCH"
-                    and int(_pattern_live_preview.get("notch_edge", -1)) >= 0
+                    and int(_interact.live_preview.get("notch_edge", -1)) >= 0
                 ):
                     item = {
-                        "edge": int(_pattern_live_preview["notch_edge"]),
-                        "t": float(_pattern_live_preview["notch_t"]),
+                        "edge": int(_interact.live_preview["notch_edge"]),
+                        "t": float(_interact.live_preview["notch_t"]),
                     }
                     seg = _source.notch_segment(
                         context,
@@ -965,8 +954,8 @@ def draw_marks_3d():
                     ):
                         preview_item = {
                             "type": "notch_edge",
-                            "edge": int(_pattern_live_preview["notch_edge"]),
-                            "t": float(_pattern_live_preview["notch_t"]),
+                            "edge": int(_interact.live_preview["notch_edge"]),
+                            "t": float(_interact.live_preview["notch_t"]),
                         }
                         if context.scene.get(
                             _session.DISPLAY_MODE,
@@ -1006,15 +995,15 @@ def draw_marks_3d():
                             batch.draw(shader)
 
                 if preview_mode == "ARROW":
-                    start_anchor = _pattern_live_preview.get("arrow_start")
-                    hover_anchor = _pattern_live_preview.get("hover_anchor")
+                    start_anchor = _interact.live_preview.get("arrow_start")
+                    hover_anchor = _interact.live_preview.get("hover_anchor")
 
                     if start_anchor is not None and hover_anchor is not None:
-                        wa = _host()._pattern_preview_anchor_world(
+                        wa = _interact.preview_anchor_world(
                             source,
                             start_anchor,
                         )
-                        wb = _host()._pattern_preview_anchor_world(
+                        wb = _interact.preview_anchor_world(
                             source,
                             hover_anchor,
                         )
@@ -1256,8 +1245,8 @@ def draw_text_2d():
             # Flat-only free memos. These are intentionally not linked
             # to source-model correspondence data.
             memo_items = flat_memo_text_items(unfold)
-            selected_unfold = _pattern_selected_memo.get("unfold", "")
-            selected_index = int(_pattern_selected_memo.get("index", -1))
+            selected_unfold = _interact.selected_memo.get("unfold", "")
+            selected_index = int(_interact.selected_memo.get("index", -1))
 
             for memo_index, (text, world_pos, size_mm, color, angle) in enumerate(memo_items):
                 display_text = (
@@ -1304,19 +1293,19 @@ def draw_text_2d():
         # ------------------------------------------------------
         # Live number/text preview follows the mouse on source.
         # ------------------------------------------------------
-        preview_mode = _host()._pattern_active_tool(context.scene)
+        preview_mode = _interact.active_tool(context.scene)
 
         if preview_mode in {"NUMBER", "TEXT"}:
             preview_source = bpy.data.objects.get(
-                _pattern_live_preview.get("source", "")
+                _interact.live_preview.get("source", "")
             )
-            hover_anchor = _pattern_live_preview.get("hover_anchor")
+            hover_anchor = _interact.live_preview.get("hover_anchor")
 
             if (
                 preview_source is source
                 and hover_anchor is not None
             ):
-                world_pos = _host()._pattern_preview_anchor_world(
+                world_pos = _interact.preview_anchor_world(
                     source,
                     hover_anchor,
                 )
@@ -1345,7 +1334,7 @@ def draw_text_2d():
                             )
 
                         if preview_text:
-                            color = _host()._pattern_current_color(
+                            color = _interact.current_color(
                                 context.scene,
                                 preview_mode,
                             )

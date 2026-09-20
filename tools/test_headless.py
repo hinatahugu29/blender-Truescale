@@ -261,6 +261,8 @@ def test_annotations_follow_object():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -302,6 +304,7 @@ def test_cache_survives_object_move():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -346,6 +349,7 @@ def test_draw_cache_is_bounded():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -366,6 +370,7 @@ def test_notch_color_does_not_rebuild():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -412,6 +417,7 @@ def test_sliders_do_not_invalidate_cache():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -441,6 +447,7 @@ def test_workflow_status_progresses():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -491,6 +498,7 @@ def test_scale_warning_for_oversized_pattern():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -518,6 +526,7 @@ def test_no_scale_warning_at_sane_scale():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -537,6 +546,7 @@ def test_manual_scale_overrides_scene():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -545,13 +555,13 @@ def test_manual_scale_overrides_scene():
 
     # シーンに従うモード
     scene.tsunfold_scale_mode = "SCENE"
-    close(U._bu_to_mm(scene, 1.0), 1000.0, 1e-6, "シーン基準での 1 BU")
+    close(UNITS.scene_bu_to_mm(scene, 1.0), 1000.0, 1e-6, "シーン基準での 1 BU")
 
     # アドオン指定モード
     scene.tsunfold_scale_mode = "MANUAL"
     scene.tsunfold_manual_mm_per_bu = 1.0
-    close(U._bu_to_mm(scene, 1.0), 1.0, 1e-6, "アドオン基準での 1 BU")
-    close(U._mm_to_bu(scene, 25.0), 25.0, 1e-6, "アドオン基準での逆変換")
+    close(UNITS.scene_bu_to_mm(scene, 1.0), 1.0, 1e-6, "アドオン基準での 1 BU")
+    close(UNITS.scene_mm_to_bu(scene, 25.0), 25.0, 1e-6, "アドオン基準での逆変換")
 
     # シーン側の設定は書き換えていないこと
     close(
@@ -561,7 +571,7 @@ def test_manual_scale_overrides_scene():
 
     # 戻せること
     scene.tsunfold_scale_mode = "SCENE"
-    close(U._bu_to_mm(scene, 1.0), 1000.0, 1e-6, "シーン基準へ戻らない")
+    close(UNITS.scene_bu_to_mm(scene, 1.0), 1000.0, 1e-6, "シーン基準へ戻らない")
 
 
 @test
@@ -570,6 +580,7 @@ def test_manual_scale_changes_pattern_size():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -600,6 +611,7 @@ def test_calibrated_scale_is_exact():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -618,7 +630,7 @@ def test_calibrated_scale_is_exact():
     loops = list(poly.loop_indices)
     a = mesh.vertices[mesh.loops[loops[0]].vertex_index].co
     b = mesh.vertices[mesh.loops[loops[1]].vertex_index].co
-    edge_mm = U._bu_to_mm(scene, (b - a).length)
+    edge_mm = UNITS.scene_bu_to_mm(scene, (b - a).length)
 
     close(edge_mm, 300.0, 0.5, "較正した辺の実寸")
 
@@ -634,6 +646,7 @@ def test_warning_when_island_spacing_dominates():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -674,6 +687,7 @@ def test_notch_color_follows_scene_setting():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -704,6 +718,7 @@ def test_notch_color_does_not_touch_annotations():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -732,6 +747,7 @@ def test_every_marking_setting_updates_immediately():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -789,6 +805,7 @@ def test_every_marking_setting_updates_immediately():
 def add_manual_notch(source, edge_index=0, t=0.5):
     """手動で置いた合印を1つ足す。"""
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
 
     items = U._pattern_get_annotations(source)
@@ -804,6 +821,7 @@ def add_manual_notch(source, edge_index=0, t=0.5):
 
 def count_notches(source):
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
 
     auto = manual = 0
@@ -876,6 +894,7 @@ def test_remove_all_notches_keeps_other_marks():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -904,6 +923,7 @@ def test_notch_status_text():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
 
@@ -1002,6 +1022,77 @@ def test_arrow_head_never_exceeds_shaft():
                 (point - end).length <= shaft + 1e-9,
                 f"長さ {length} で矢尻が軸を超えた",
             )
+
+
+# ============================================================
+# 操作中の状態の共有
+# ============================================================
+
+@test
+def test_overlay_and_interact_share_state():
+    """下描きとハイライトを、描く側と書く側が同じ辞書で見ている。
+
+    切り出しで参照が取り残されると、書く側と描く側が別々の辞書を
+    持つ。描画は例外を握り潰すので、画面に出ないという形でしか
+    現れない。実際に起きたので、同一性を直接確かめる。
+    """
+    from truescale import overlay
+    from truescale.marking import interact
+
+    check(
+        overlay._interact.live_preview is interact.live_preview,
+        "下描きの辞書が別物になっている",
+    )
+    check(
+        overlay._interact.island_highlight is interact.island_highlight,
+        "島ハイライトの辞書が別物になっている",
+    )
+
+    # clear は作り直さず中身を書き換えること。作り直すと、
+    # 参照を持っている側が古い辞書を見続ける。
+    before = interact.live_preview
+    interact.clear_live_preview()
+    check(
+        interact.live_preview is before,
+        "clear_live_preview が辞書を作り直している",
+    )
+
+    before = interact.island_highlight
+    interact.clear_island_highlight()
+    check(
+        interact.island_highlight is before,
+        "clear_island_highlight が辞書を作り直している",
+    )
+
+
+@test
+def test_modules_import_without_error():
+    """分割した各モジュールが単体で読み込める。
+
+    import の書き忘れは、握り潰される例外の中でしか現れないことが
+    ある。読み込みだけでも通しておく。
+    """
+    import importlib
+
+    names = (
+        "truescale.core.geometry", "truescale.core.mapping",
+        "truescale.core.objects", "truescale.core.paper",
+        "truescale.core.session", "truescale.core.solve",
+        "truescale.core.state", "truescale.core.units",
+        "truescale.core.view",
+        "truescale.marking.compute", "truescale.marking.interact",
+        "truescale.marking.placement", "truescale.marking.seams",
+        "truescale.marking.source", "truescale.marking.storage",
+        "truescale.export.outline", "truescale.export.png",
+        "truescale.overlay",
+        "truescale.unfold.build", "truescale.unfold.panel",
+        "truescale.unfold.status",
+    )
+    for name in names:
+        try:
+            importlib.import_module(name)
+        except Exception as exc:
+            check(False, f"{name} を読み込めない: {exc}")
 
 
 # ============================================================

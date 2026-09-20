@@ -143,7 +143,7 @@ def colored_segments(context, source_obj):
 
     for item in _storage.load(source_obj):
         kind = item.get("type")
-        color = _pattern_item_color(item, context.scene)
+        color = _storage.scene_item_color(item, context.scene)
 
         if kind == "notch_edge":
             seg = notch_segment(context, source_obj, item)

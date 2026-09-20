@@ -12,6 +12,7 @@ from pathlib import Path
 import blf
 import gpu
 import mathutils
+from mathutils import Vector
 from gpu_extras.batch import batch_for_shader
 from bpy.app.handlers import persistent
 from bpy_extras import view3d_utils
@@ -195,7 +196,6 @@ def restore_dark_place_view(space):
 
 
 def get_view_key_from_rv3d(rv3d):
-    from mathutils import Vector
 
     view_dir = rv3d.view_rotation @ Vector((0.0, 0.0, -1.0))
     view_dir.normalize()
@@ -386,8 +386,7 @@ def draw_bbox_overlay():
             gpu.state.line_width_set(1.0)
             return
 
-        from mathutils import Vector
-
+    
         axis_vectors = {
             "X": Vector((1.0, 0.0, 0.0)),
             "Y": Vector((0.0, 1.0, 0.0)),
@@ -2373,7 +2372,6 @@ def draw_size_labels():
     )
 
     # Blenderの現在ビュー方向（画面から奥へ向かう方向）
-    from mathutils import Vector
     view_key, view_dir = get_view_key_from_rv3d(rv3d)
 
     explicit_user_mode = bool(
