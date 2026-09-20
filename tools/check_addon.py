@@ -189,6 +189,10 @@ class AddonAnalyzer(ast.NodeVisitor):
     # --- 属性アクセス ---
 
     def visit_Attribute(self, node):
+        # 他モジュール越しの関数参照も「使っている」と数える。
+        # 分割後は _host()._pattern_x() のような呼び方が出るため。
+        self.name_loads.add(node.attr)
+
         # scene.<prop> / context.scene.<prop>
         base = node.value
         is_scene = (
