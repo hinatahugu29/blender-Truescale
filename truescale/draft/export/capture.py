@@ -22,8 +22,20 @@ pHYs チャンクに 300dpi を入れる。入れないと、印刷側が原寸�
 
 ■ 必ず元へ戻す
 
-視点・表示設定・選択状態は、撮る前に控えて finally で戻す。
-戻し損ねると、書き出しただけで作業中のビューが変わる。
+視点・表示設定は viewstate.export_view の中でだけ変わり、抜ける
+ときに必ず戻る。戻し損ねると、書き出しただけで作業中のビューが
+変わってしまう。
+
+■ 段取り
+
+  tsdraft_target_pane       どのペインで撮るか
+  tsdraft_aim_pane          箱へ向けて、刷れる見た目に整える
+  tsdraft_measure_pane      実寸とピクセルの対応を測る
+  tsdraft_clamp_crop_to_pane 切り抜く範囲をペインの中へ収める
+  tsdraft_shoot_pane        撮って切り抜く
+
+以前はこれが1つの関数に 737 行あった。途中で何が決まるのかが
+追えず、直すときに全部を読む必要があった。
 """
 
 import os
@@ -460,6 +472,280 @@ def tsdraft_crop_png_with_blender(src_path, dst_path, x0, y0, width, height):
         bpy.data.images.remove(img)
 
 
+# 面図ごとに、単一ビューで向ける Blender の視点。
+VIEW_AXIS = {
+    "top": "TOP",
+    "front": "FRONT",
+    "side": "RIGHT",
+}
+
+
+def tsdraft_target_pane(context, window, screen, area, space, view_key):
+    """撮るペインを決める。(リージョン, 視点) を返す。
+
+    四分割なら、その面図のペインをそのまま使う。単一ビューなら、
+    メインのビューをその向きへ変える（向きは export_view の中で
+    元へ戻る）。
+
+    四分割のときに一度描き直してから取り直しているのは、切り替えた
+    直後はリージョンの大きさが古いままのことがあるため。古い大きさで
+    切り抜き位置を計算すると、画像がずれる。
+    """
+    region, rv3d = tsdraft_find_view_region(area, view_key)
+
+    if region is not None:
+        tsdraft_force_view_redraw(context, area)
+        fresh_region, fresh_rv3d = tsdraft_find_view_region(area, view_key)
+        if fresh_region is not None and fresh_rv3d is not None:
+            return fresh_region, fresh_rv3d
+        return region, rv3d
+
+    # 単一ビュー、または想定外の配置。メインのビューを使う。
+    main_region = next(
+        (r for r in area.regions if r.type == 'WINDOW'), None
+    )
+    if main_region is None:
+        raise RuntimeError("3DビューのWINDOW領域が見つかりませんでした")
+
+    rv3d = space.region_3d
+    if rv3d is None:
+        raise RuntimeError("3Dビューの情報を取得できませんでした")
+
+    if view_key == "user":
+        # 任意ビューは、いま向いている方向をそのまま使う。
+        return main_region, rv3d
+
+    with context.temp_override(
+        window=window,
+        screen=screen,
+        area=area,
+        region=main_region,
+        space_data=space,
+        region_data=rv3d,
+    ):
+        bpy.ops.view3d.view_axis(
+            type=VIEW_AXIS.get(view_key, "FRONT"),
+            align_active=False,
+        )
+
+    tsdraft_force_view_redraw(context, area)
+    return main_region, rv3d
+
+
+# 箱がペインをどれだけ占めていれば良しとするか。ここへ収まるまで
+# 最大3回まで合わせ直す。狭すぎると図が小さくなり、広すぎると
+# 端が切れる。
+FILL_MIN = 0.90
+FILL_MAX = 1.03
+FILL_TRIES = 3
+
+
+def tsdraft_aim_pane(context, window, screen, area, space,
+                     region, rv3d, source_obj, bbox_obj, world_corners,
+                     scene, is_user_view=False,
+                     common_view_distance=None, fit_padding_ratio=0.58):
+    """ペインを箱へ向けて、刷れる見た目に整える。
+
+    やることは4つ。
+
+      共通の倍率を合わせる（三面で縮尺を揃えるため）
+      箱の中心へ寄せて、平行投影にする
+      背景・グリッドなどを刷れる見た目へ変える
+      箱がペインを占める割合を確かめ、外れていれば合わせ直す
+
+    最後の確認をするのは、利用者が極端にズームした状態から書き出す
+    ことがあるため。1回合わせただけでは、リージョンの大きさが
+    描き直しの後で変わって外れることがある。
+    """
+    if common_view_distance is not None and not is_user_view:
+        rv3d.view_distance = common_view_distance
+
+    if not is_user_view:
+        rv3d.view_location = (
+            sum(world_corners, mathutils.Vector()) / len(world_corners)
+        )
+        rv3d.view_perspective = 'ORTHO'
+
+        # 利用者が図が切れるほどズームしていても、撮る前に必ず
+        # 箱をペインの中へ戻す。
+        try:
+            tsdraft_frame_export_region(
+                context, window, screen, area, region, rv3d,
+                source_obj, bbox_obj, padding_ratio=fit_padding_ratio,
+            )
+        except Exception:
+            _pkg_debug.swallowed("draft.tsdraft_aim_pane")
+
+    # 刷れる見た目へ。軸・原点・3Dカーソルは configure_drawing_view が
+    # 常に消す。背景は白 / グリッド / 黒 / カスタムから選ぶ。
+    _viewstate.configure_drawing_view(
+        space,
+        getattr(scene, "tsdraft_export_background", 'WHITE'),
+        getattr(scene, "tsdraft_export_background_color", (1.0, 1.0, 1.0)),
+    )
+    scene.tsdraft_drawing_mode = True
+
+    tsdraft_force_view_redraw(context, area)
+
+    if is_user_view:
+        return
+
+    for _try in range(FILL_TRIES):
+        fill = tsdraft_export_bbox_fill_ratio(
+            region, rv3d, bbox_obj, fit_padding_ratio
+        )
+        if fill is not None and FILL_MIN <= fill <= FILL_MAX:
+            return
+
+        try:
+            tsdraft_frame_export_region(
+                context, window, screen, area, region, rv3d,
+                source_obj, bbox_obj, padding_ratio=fit_padding_ratio,
+            )
+        except Exception:
+            return
+
+        tsdraft_force_view_redraw(context, area)
+
+
+def tsdraft_shoot_pane(context, window, screen, area, space,
+                       region, temp_path, out_path, crop_box,
+                       extra_redraw=False):
+    """エリア全体を1枚撮り、ペインの必要な範囲だけを切り出す。
+
+    crop_box は (min_x, min_y, max_x, max_y)。ペインの中の座標。
+
+    Nパネルやツールバーの表示はここで切らない。切るとリージョンの
+    大きさが変わり、計算し終えた切り抜き位置がずれる。実際それで
+    UIが写り込んでいた。WINDOW リージョンの中だけを切り出せば、
+    そもそも入らない。
+
+    ギズモだけは消す。これは画の上に重なるもので、リージョンの
+    大きさを変えない。撮ったら必ず戻す。
+    """
+    min_x, min_y, max_x, max_y = crop_box
+
+    old_gizmo = getattr(space, "show_gizmo", None)
+
+    try:
+        if hasattr(space, "show_gizmo"):
+            space.show_gizmo = False
+
+        # 倍率も文字の抑止も、画面へ届いてから撮る。
+        tsdraft_force_view_redraw(context, area)
+        tsdraft_force_view_redraw(context, area)
+        if extra_redraw:
+            tsdraft_force_view_redraw(context, area)
+
+        with context.temp_override(window=window, screen=screen, area=area):
+            bpy.ops.screen.screenshot_area(
+                filepath=temp_path, hide_props_region=False
+            )
+    finally:
+        if old_gizmo is not None and hasattr(space, "show_gizmo"):
+            space.show_gizmo = old_gizmo
+        tsdraft_force_view_redraw(context, area)
+
+    if not Path(temp_path).exists():
+        raise RuntimeError("画面のスクリーンショットを書き出せませんでした")
+
+    # エリアの座標へ直してから切る。
+    tsdraft_crop_png_with_blender(
+        temp_path,
+        out_path,
+        round(region.x - area.x + min_x),
+        round(region.y - area.y + min_y),
+        round(max_x - min_x),
+        round(max_y - min_y),
+    )
+
+
+class PaneMeasure:
+    """撮るペインの中で、箱がどこに何ピクセルで写っているか。
+
+    切り抜きの範囲も、PNG へ書き込む解像度も、ここから決まる。
+    実寸で刷れるかどうかはこの値にかかっているので、撮る処理から
+    切り離して、値だけを見られるようにしてある。
+    """
+
+    __slots__ = (
+        "min_x", "min_y", "max_x", "max_y",
+        "px_w", "px_h", "mm_w", "mm_h",
+        "px_per_mm", "dpi",
+    )
+
+    def __init__(self, min_x, min_y, max_x, max_y,
+                 mm_w, mm_h, px_per_mm, dpi):
+        self.min_x = float(min_x)
+        self.min_y = float(min_y)
+        self.max_x = float(max_x)
+        self.max_y = float(max_y)
+        self.px_w = self.max_x - self.min_x
+        self.px_h = self.max_y - self.min_y
+        self.mm_w = float(mm_w)
+        self.mm_h = float(mm_h)
+        self.px_per_mm = float(px_per_mm)
+        self.dpi = float(dpi)
+
+
+# 面図ごとに、画面の横・縦へ対応する世界の軸。
+PANE_AXES = {
+    "top": ("x", "y"),
+    "front": ("x", "z"),
+    "side": ("y", "z"),
+}
+
+
+def tsdraft_measure_pane(region, rv3d, world_corners, view_key,
+                         unit_scale, is_user_view=False):
+    """箱をペインへ投影して、実寸とピクセルの対応を測る。
+
+    任意ビューは実寸を保証しない、ただの画面撮影なので、
+    ミリの対応は持たせない。
+    """
+    projected = []
+    for co in world_corners:
+        flat = view3d_utils.location_3d_to_region_2d(region, rv3d, co)
+        if flat is not None:
+            projected.append((float(flat.x), float(flat.y)))
+
+    if len(projected) < 4:
+        raise RuntimeError(
+            f"{_dimension.tsdraft_svg_view_label(view_key)}"
+            "のBounding Boxを投影できませんでした"
+        )
+
+    xs = [p[0] for p in projected]
+    ys = [p[1] for p in projected]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+
+    if is_user_view:
+        return PaneMeasure(min_x, min_y, max_x, max_y, 0.0, 0.0, 1.0, 96.0)
+
+    axis_u, axis_v = PANE_AXES.get(view_key, ("y", "z"))
+    vals_u = [getattr(co, axis_u) for co in world_corners]
+    vals_v = [getattr(co, axis_v) for co in world_corners]
+
+    mm_w = (max(vals_u) - min(vals_u)) * unit_scale * 1000.0
+    mm_h = (max(vals_v) - min(vals_v)) * unit_scale * 1000.0
+
+    px_w = max_x - min_x
+    px_h = max_y - min_y
+
+    if px_w <= 1 or px_h <= 1 or mm_w <= 0 or mm_h <= 0:
+        raise RuntimeError(
+            f"{_dimension.tsdraft_svg_view_label(view_key)}"
+            "の実寸対応を取得できませんでした"
+        )
+
+    px_per_mm = (px_w / mm_w + px_h / mm_h) * 0.5
+    return PaneMeasure(
+        min_x, min_y, max_x, max_y,
+        mm_w, mm_h, px_per_mm, px_per_mm * 25.4,
+    )
+
+
 def tsdraft_clamp_crop_to_pane(area, target_region, box, font_size,
                                fixed_top=False, whole_pane=False):
     """切り抜きの範囲を、3Dビューの描画部分の中へ収める。
@@ -518,9 +804,22 @@ def tsdraft_clamp_crop_to_pane(area, target_region, box, font_size,
 
 
 def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_distance=None, fit_padding_ratio=0.58, suppress_dimension_text=False):
-    """
-    Export the requested view by directly using its matching Quad View pane.
-    No fake view switching when Quad View already contains top/front/side.
+    """1つの面図を、実寸のPNGとして書き出す。
+
+    段取りは5つ。
+
+      1. 撮るペインを決める    tsdraft_target_pane
+      2. 箱へ向けて見た目を整える  tsdraft_aim_pane
+      3. 実寸とピクセルの対応を測る tsdraft_measure_pane
+      4. 切り抜く範囲を決める   draft.labels + clamp_crop_to_pane
+      5. 撮って切り抜く      tsdraft_shoot_pane
+
+    四分割にその面図のペインがあれば、そのまま使う。無いときだけ
+    メインのビューを向け直す。向きも表示も export_view の中でだけ
+    変わり、抜けるときに必ず戻る。
+
+    戻り値は、この画像の実寸と、箱が画像のどこにあるかの一覧。
+    三面図シートを組むときに使う。
     """
     view_ctx = tsdraft_get_export_view_context(context)
     if view_ctx is None:
@@ -562,198 +861,37 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
             # 画像側のクロップでUI領域を除外するので、撮影後も表示状態が変わらない。
             tsdraft_force_view_redraw(context, area)
 
-            # -------------------------------------------------
-            # Quad View: directly grab the requested pane.
-            # Single View: switch that one view to the requested axis.
-            # -------------------------------------------------
-            target_region, target_rv3d = tsdraft_find_view_region(area, view_key)
-
-            # Quad Viewの最新リージョン情報を使う。
-            if target_region is not None:
-                tsdraft_force_view_redraw(context, area)
-                refreshed_region, refreshed_rv3d = tsdraft_find_view_region(area, view_key)
-                if refreshed_region is not None and refreshed_rv3d is not None:
-                    target_region, target_rv3d = refreshed_region, refreshed_rv3d
-
-            if target_region is None or target_rv3d is None:
-                # Single-view or unusual layout fallback: switch the main view.
-                main_region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-                if main_region is None:
-                    raise RuntimeError("3DビューのWINDOW領域が見つかりませんでした")
-
-                target_rv3d = space.region_3d
-                if target_rv3d is None:
-                    raise RuntimeError("3Dビューの情報を取得できませんでした")
-
-                override = {
-                    "window": export_window,
-                    "screen": export_screen,
-                    "area": area,
-                    "region": main_region,
-                    "space_data": space,
-                    "region_data": target_rv3d,
-                }
-
-                if view_key == "user":
-                    # 任意ビューは現在の向きをそのまま使う。
-                    target_region = main_region
-                    target_rv3d = space.region_3d
-                else:
-                    axis_map = {
-                        "top": "TOP",
-                        "front": "FRONT",
-                        "side": "RIGHT",
-                    }
-
-                    with context.temp_override(**override):
-                        bpy.ops.view3d.view_axis(
-                            type=axis_map.get(view_key, "FRONT"),
-                            align_active=False
-                        )
-
-                    tsdraft_force_view_redraw(context, area)
-                    target_region = main_region
-
-            # Keep common orthographic zoom if supplied.
-            if common_view_distance is not None and not is_user_view:
-                target_rv3d.view_distance = common_view_distance
-
-            # Center the requested pane on the Bounding Box.
-            world_corners = [bbox_obj.matrix_world @ v.co for v in bbox_obj.data.vertices]
-
-            if not is_user_view:
-                center = sum(world_corners, mathutils.Vector()) / len(world_corners)
-                target_rv3d.view_location = center
-                target_rv3d.view_perspective = 'ORTHO'
-
-                # Export safety net:
-                # even if the user managed to zoom until the object is clipped,
-                # force the bbox back inside this pane before screenshot.
-                try:
-                    tsdraft_frame_export_region(
-                        context,
-                        export_window,
-                        export_screen,
-                        area,
-                        target_region,
-                        target_rv3d,
-                        source_obj,
-                        bbox_obj,
-                        padding_ratio=fit_padding_ratio
-                    )
-                except Exception:
-                    _pkg_debug.swallowed("draft.tsdraft_export_viewport_exact_png")
-
-            # Printable styling.
-            # 書き出し背景は白 / グリッド / 黒 / カスタムから選択。
-            # 軸・原点・3Dカーソルはconfigure_drawing_view側で常に非表示。
-            export_background = getattr(scene, "tsdraft_export_background", 'WHITE')
-            export_custom_color = getattr(
-                scene,
-                "tsdraft_export_background_color",
-                (1.0, 1.0, 1.0)
+            # 撮るペインを決める。四分割ならそのペイン、単一ビュー
+            # ならメインのビューをその向きへ変える。
+            target_region, target_rv3d = tsdraft_target_pane(
+                context, export_window, export_screen, area, space, view_key
             )
-            _viewstate.configure_drawing_view(
-                space,
-                export_background,
-                export_custom_color
+
+            # ペインを箱へ向けて、刷れる見た目に整える。
+            world_corners = [
+                bbox_obj.matrix_world @ v.co
+                for v in bbox_obj.data.vertices
+            ]
+            tsdraft_aim_pane(
+                context, export_window, export_screen, area, space,
+                target_region, target_rv3d,
+                source_obj, bbox_obj, world_corners, scene,
+                is_user_view=is_user_view,
+                common_view_distance=common_view_distance,
+                fit_padding_ratio=fit_padding_ratio,
             )
-            scene.tsdraft_drawing_mode = True
 
-            tsdraft_force_view_redraw(context, area)
+            # 箱をペインへ投影して、実寸とピクセルの対応を測る。
+            measured = tsdraft_measure_pane(
+                target_region, target_rv3d, world_corners,
+                view_key, unit_scale, is_user_view,
+            )
 
-            # 撮影の直前でも倍率を確かめる。
-            # 初期画面が極端なズーム状態でも、ここで必ず一定のBBox占有率へ戻す。
-            if not is_user_view:
-                for _verify in range(3):
-                    fill = tsdraft_export_bbox_fill_ratio(
-                        target_region,
-                        target_rv3d,
-                        bbox_obj,
-                        fit_padding_ratio
-                    )
-
-                    if fill is not None and 0.90 <= fill <= 1.03:
-                        break
-
-                    try:
-                        tsdraft_frame_export_region(
-                            context,
-                            export_window,
-                            export_screen,
-                            area,
-                            target_region,
-                            target_rv3d,
-                            source_obj,
-                            bbox_obj,
-                            padding_ratio=fit_padding_ratio
-                        )
-                    except Exception:
-                        break
-
-                    tsdraft_force_view_redraw(context, area)
-
-            # -------------------------------------------------
-            # Project BBox into the target pane only.
-            # -------------------------------------------------
-            projected = []
-            for co in world_corners:
-                p2 = view3d_utils.location_3d_to_region_2d(
-                    target_region,
-                    target_rv3d,
-                    co
-                )
-                if p2 is not None:
-                    projected.append((float(p2.x), float(p2.y)))
-
-            if len(projected) < 4:
-                raise RuntimeError(f"{_dimension.tsdraft_svg_view_label(view_key)}のBounding Boxを投影できませんでした")
-
-            xs = [p[0] for p in projected]
-            ys = [p[1] for p in projected]
-            bbox_min_x = min(xs)
-            bbox_max_x = max(xs)
-            bbox_min_y = min(ys)
-            bbox_max_y = max(ys)
-
-            bbox_px_w = bbox_max_x - bbox_min_x
-            bbox_px_h = bbox_max_y - bbox_min_y
-
-            if is_user_view:
-                # 任意ビューは実寸を保証しない、ただの画面撮影。
-                bbox_mm_w = 0.0
-                bbox_mm_h = 0.0
-                px_per_mm = 1.0
-                dpi = 96.0
-            else:
-                if view_key == "top":
-                    vals_u = [co.x for co in world_corners]
-                    vals_v = [co.y for co in world_corners]
-                elif view_key == "front":
-                    vals_u = [co.x for co in world_corners]
-                    vals_v = [co.z for co in world_corners]
-                else:
-                    vals_u = [co.y for co in world_corners]
-                    vals_v = [co.z for co in world_corners]
-
-                bbox_mm_w = (max(vals_u) - min(vals_u)) * unit_scale * 1000.0
-                bbox_mm_h = (max(vals_v) - min(vals_v)) * unit_scale * 1000.0
-
-                if bbox_px_w <= 1 or bbox_px_h <= 1 or bbox_mm_w <= 0 or bbox_mm_h <= 0:
-                    raise RuntimeError(f"{_dimension.tsdraft_svg_view_label(view_key)}の実寸対応を取得できませんでした")
-
-                px_per_mm_x = bbox_px_w / bbox_mm_w
-                px_per_mm_y = bbox_px_h / bbox_mm_h
-                px_per_mm = (px_per_mm_x + px_per_mm_y) * 0.5
-                dpi = px_per_mm * 25.4
-
-            # -------------------------------------------------
-            # Crop bounds: BBox + dimension labels.
-            # -------------------------------------------------
-            crop_min_x = bbox_min_x
-            crop_max_x = bbox_max_x
-            crop_min_y = bbox_min_y
-            crop_max_y = bbox_max_y
+            # 切り抜きの範囲。箱に、寸法の文字のぶんを足していく。
+            crop_min_x = measured.min_x
+            crop_max_x = measured.max_x
+            crop_min_y = measured.min_y
+            crop_max_y = measured.max_y
 
             # 切り抜きの範囲は、寸法の文字まで含める。文字が入る場所は
             # draft.labels が決める。画面へ描く側と同じ計算なので、
@@ -812,81 +950,37 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
             if crop_max_x <= crop_min_x or crop_max_y <= crop_min_y:
                 raise RuntimeError("書き出し範囲を計算できませんでした")
 
-            # -------------------------------------------------
-            # Screenshot entire editor area once; crop requested pane coordinates.
-            # Temporarily hide viewport chrome that can bleed into the PNG,
-            # then restore every state directly afterwards.
-            # -------------------------------------------------
-            # IMPORTANT:
-            # Do not toggle N-panel / toolbar here because that changes region geometry
-            # after crop coordinates were calculated. That was causing header/UI bleed.
-            # WINDOW-region cropping already excludes those regions.
-            old_show_gizmo = getattr(space, "show_gizmo", None)
+            # エリアを1枚撮って、ペインの必要な範囲だけ切り出す。
+            tsdraft_shoot_pane(
+                context, export_window, export_screen, area, space,
+                target_region, temp_full, filepath,
+                (crop_min_x, crop_min_y, crop_max_x, crop_max_y),
+                extra_redraw=hard_suppress_dimension_text,
+            )
 
-            try:
-                if hasattr(space, "show_gizmo"):
-                    space.show_gizmo = False
-
-                # Make absolutely sure zoom/layout and text-suppression changes
-                # have reached the screen before the screenshot.
-                tsdraft_force_view_redraw(context, area)
-                tsdraft_force_view_redraw(context, area)
-                if hard_suppress_dimension_text:
-                    tsdraft_force_view_redraw(context, area)
-
-                with context.temp_override(
-                    window=export_window,
-                    screen=export_screen,
-                    area=area
-                ):
-                    bpy.ops.screen.screenshot_area(
-                        filepath=temp_full,
-                        hide_props_region=False
-                    )
-            finally:
-                if old_show_gizmo is not None and hasattr(space, "show_gizmo"):
-                    space.show_gizmo = old_show_gizmo
-
-                tsdraft_force_view_redraw(context, area)
-
-            if not Path(temp_full).exists():
-                raise RuntimeError("画面のスクリーンショットを書き出せませんでした")
-
-            region_offset_x = target_region.x - area.x
-            region_offset_y = target_region.y - area.y
-
-            crop_x = region_offset_x + crop_min_x
-            crop_y = region_offset_y + crop_min_y
             crop_w = crop_max_x - crop_min_x
             crop_h = crop_max_y - crop_min_y
-
-            tsdraft_crop_png_with_blender(
-                temp_full,
-                filepath,
-                round(crop_x),
-                round(crop_y),
-                round(crop_w),
-                round(crop_h)
-            )
 
             if not Path(filepath).exists():
                 raise RuntimeError("切り抜いたPNGを書き出せませんでした")
 
-            if not tsdraft_patch_png_dpi(filepath, dpi):
+            if not tsdraft_patch_png_dpi(filepath, measured.dpi):
                 raise RuntimeError("PNGへ実寸のdpi情報を書き込めませんでした")
 
+            # 箱が画像のどこにあるか。四方の余白をピクセルで返す。
+            # 三面図シートは、これを使って三面の位置を揃える。
             return {
-                "bbox_width_mm": bbox_mm_w,
-                "bbox_height_mm": bbox_mm_h,
-                "bbox_px_w": bbox_px_w,
-                "bbox_px_h": bbox_px_h,
-                "dpi": dpi,
+                "bbox_width_mm": measured.mm_w,
+                "bbox_height_mm": measured.mm_h,
+                "bbox_px_w": measured.px_w,
+                "bbox_px_h": measured.px_h,
+                "dpi": measured.dpi,
                 "image_w_px": round(crop_w),
                 "image_h_px": round(crop_h),
-                "bbox_left_px": float(bbox_min_x - crop_min_x),
-                "bbox_right_px": float(crop_max_x - bbox_max_x),
-                "bbox_bottom_px": float(bbox_min_y - crop_min_y),
-                "bbox_top_px": float(crop_max_y - bbox_max_y),
+                "bbox_left_px": float(measured.min_x - crop_min_x),
+                "bbox_right_px": float(crop_max_x - measured.max_x),
+                "bbox_bottom_px": float(measured.min_y - crop_min_y),
+                "bbox_top_px": float(crop_max_y - measured.max_y),
                 "view_distance": target_rv3d.view_distance,
             }
 

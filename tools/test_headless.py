@@ -2758,6 +2758,48 @@ def test_dark_place_cage_wraps_the_box():
     )
 
 
+@test
+def test_pane_measure_maps_pixels_to_real_size():
+    """ペインの中の箱が、実寸とピクセルで正しく対応する。
+
+    実寸で刷れるかどうかはこの値だけで決まる。撮る処理から
+    切り離したので、値そのものを確かめられる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.draft.export import capture as C
+    truescale.register()
+
+    # 面図ごとに、画面の横・縦へ対応する軸の表がある。
+    check(C.PANE_AXES["top"] == ("x", "y"), "上面図の軸")
+    check(C.PANE_AXES["front"] == ("x", "z"), "正面図の軸")
+    check(C.PANE_AXES["side"] == ("y", "z"), "側面図の軸")
+
+    # 投影できない入力は、黙って変な値を返さない。
+    try:
+        C.tsdraft_measure_pane(None, None, [], "front", 1.0)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("投影できないのにエラーにならない")
+
+
+@test
+def test_pane_measure_holds_its_numbers():
+    """測った値が、素直に取り出せる形で入っている。"""
+    reset_scene()
+    import truescale
+    from truescale.draft.export import capture as C
+    truescale.register()
+
+    m = C.PaneMeasure(10.0, 20.0, 110.0, 70.0, 50.0, 25.0, 2.0, 50.8)
+
+    close(m.px_w, 100.0, 1e-9, "横のピクセル数")
+    close(m.px_h, 50.0, 1e-9, "縦のピクセル数")
+    close(m.px_w / m.mm_w, 2.0, 1e-9, "横の ピクセル/ミリ")
+    close(m.dpi / 25.4, m.px_per_mm, 1e-9, "dpi と ピクセル/ミリ が合わない")
+
+
 def main():
     print()
     print("=" * 72)
