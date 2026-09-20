@@ -157,6 +157,18 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 ),
                 icon='HIDE_OFF' if loaded_obj.hide_get() else 'HIDE_ON',
             )
+
+            # 元モデル側だけでなく、型紙側へ跳ぶ手段も要る。
+            # 作った型紙が画面の外にあると、探す方法が無かった。
+            vis_row.operator(
+                "truescale_unfold.toggle_pattern_preview",
+                text=(
+                    "型紙を隠す"
+                    if scene.tsunfold_pattern_preview
+                    else "型紙を表示して選択"
+                ),
+                icon='MESH_GRID',
+            )
             source_box.prop(
                 scene,
                 "tsunfold_lightweight_view",
@@ -204,6 +216,20 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             running = marking.row()
             running.alert = True
             running.label(text=tool_text, icon='REC')
+
+            # 同じボタンをもう一度押しても止まるが、それが分かる
+            # 作りになっていなかった。止め方をその場に出す。
+            stop = marking.row(align=True)
+            stop.operator(
+                "truescale_unfold.marking_tool_off",
+                text="道具を止める",
+                icon='PAUSE',
+            )
+            stop.operator(
+                "truescale_unfold.finish_marking",
+                text="終了して元の選択へ",
+                icon='LOOP_BACK',
+            )
 
         source = _objects.source_from_context(context)
         if source is None:
@@ -294,6 +320,62 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 "tsunfold_notch_color",
                 text="",
             )
+
+        # -------------------------
+        # NUMBER / TEXT
+        # -------------------------
+        # どちらも実装は揃っていたのに、始める手段も設定も
+        # パネルに無く、機能ごと隠れていた。
+        text_box = marking.box()
+        text_box.use_property_split = True
+        text_box.use_property_decorate = False
+        head = text_box.row()
+        head.scale_y = 1.25
+        head.label(text="◆ 番号・文字", icon='SMALL_CAPS')
+
+        num_row = text_box.row(align=True)
+        num_row.operator(
+            "truescale_unfold.place_number",
+            text="手動で番号を追加",
+            icon='ADD',
+        )
+        num_row.operator(
+            "truescale_unfold.reset_number",
+            text="",
+            icon='LOOP_BACK',
+        )
+
+        hint = _status.source_required_hint(context)
+        if hint:
+            num_row.enabled = False
+
+        text_box.prop(scene, "tsunfold_number_start", text="開始番号")
+        text_box.label(text=f"次に置く番号: {scene.tsunfold_next_number}")
+        text_box.prop(scene, "tsunfold_number_size_mm", text="番号の大きさ")
+
+        color_row = text_box.row(align=True)
+        color_row.label(text="番号の色")
+        color_row.prop(scene, "tsunfold_number_color", text="")
+
+        text_box.separator()
+
+        text_box.prop(scene, "tsunfold_custom_text", text="文字")
+        add_text = text_box.row()
+        add_text.operator(
+            "truescale_unfold.place_text",
+            text="手動で文字を追加",
+            icon='ADD',
+        )
+        # 文字が空のまま始めても、クリックのたびに警告が出るだけ。
+        add_text.enabled = bool(scene.tsunfold_custom_text) and not hint
+
+        text_box.prop(scene, "tsunfold_text_size_mm", text="文字の大きさ")
+        color_row = text_box.row(align=True)
+        color_row.label(text="文字の色")
+        color_row.prop(scene, "tsunfold_text_color", text="")
+
+        if hint:
+            text_box.label(text=hint, icon='INFO')
 
         # -------------------------
         # PATTERN ID

@@ -31,14 +31,21 @@ class TSDRAFT_OT_quad_view(bpy.types.Operator):
         override = _viewstate.get_view3d_override(context)
 
         if override is None:
-            self.report({'ERROR'}, "3Dビュー上で実行してクレメンス")
+            self.report({'ERROR'}, "3Dビューの上で実行してください")
             return {'CANCELLED'}
 
         space = override["space_data"]
 
+        # 第2引数は背景の種類。以前は表示グリッドの真偽値を渡していて、
+        # 背景の設定が無視されていた（常に白・グリッドなし）。
         _viewstate.configure_drawing_view(
             space,
-            context.scene.tsdraft_show_grid
+            getattr(context.scene, "tsdraft_drawing_background", 'WHITE'),
+            getattr(
+                context.scene,
+                "tsdraft_drawing_background_color",
+                (1.0, 1.0, 1.0),
+            ),
         )
         context.scene.tsdraft_drawing_mode = True
 
@@ -117,25 +124,6 @@ class TSDRAFT_OT_user_view(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class TSDRAFT_OT_apply_drawing_style(bpy.types.Operator):
-    bl_idname = "truescale_draft.apply_drawing_style"
-    bl_label = "図面表示を再適用"
-
-    def execute(self, context):
-        if context.area is None or context.area.type != 'VIEW_3D':
-            return {'CANCELLED'}
-
-        _viewstate.configure_drawing_view(
-            context.area.spaces.active,
-            getattr(context.scene, "tsdraft_drawing_background", 'WHITE'),
-            getattr(context.scene, "tsdraft_drawing_background_color", (1.0, 1.0, 1.0))
-        )
-        context.scene.tsdraft_drawing_mode = True
-
-        _bbox.redraw_viewports()
-        return {'FINISHED'}
-
-
 class TSDRAFT_OT_restore_view(bpy.types.Operator):
     bl_idname = "truescale_draft.restore_view"
     bl_label = "元の表示に戻す"
@@ -145,7 +133,7 @@ class TSDRAFT_OT_restore_view(bpy.types.Operator):
         override = _viewstate.get_view3d_override(context)
 
         if override is None:
-            self.report({'ERROR'}, "3Dビュー上で実行してクレメンス")
+            self.report({'ERROR'}, "3Dビューの上で実行してください")
             return {'CANCELLED'}
 
         space = override["space_data"]
@@ -181,7 +169,7 @@ class TSDRAFT_OT_dark_place(bpy.types.Operator):
 
     def execute(self, context):
         if context.area is None or context.area.type != 'VIEW_3D':
-            self.report({'ERROR'}, "3Dビュー上で実行してクレメンス")
+            self.report({'ERROR'}, "3Dビューの上で実行してください")
             return {'CANCELLED'}
 
         scene = context.scene
@@ -229,7 +217,6 @@ classes = (
     TSDRAFT_OT_top_view,
     TSDRAFT_OT_side_view,
     TSDRAFT_OT_user_view,
-    TSDRAFT_OT_apply_drawing_style,
     TSDRAFT_OT_restore_view,
     TSDRAFT_OT_dark_place,
 )

@@ -190,6 +190,16 @@ class TSDRAFT_PT_main(bpy.types.Panel):
                 text="カスタム色"
             )
 
+        # 四分割は三面図の本命の表示なのに、押す場所が無かった。
+        # 単一ビューの4つより先に置く。
+        quad = box.row()
+        quad.scale_y = 1.2
+        quad.operator(
+            "truescale_draft.quad_view",
+            text="三面＋任意ビュー（四分割）",
+            icon='MESH_GRID',
+        )
+
         row = box.row(align=True)
         row.operator("truescale_draft.front_view", text="正面")
         row.operator("truescale_draft.top_view", text="上面")

@@ -1057,6 +1057,108 @@ def test_arrow_head_never_exceeds_shaft():
 
 
 # ============================================================
+# 番号と文字
+# ============================================================
+
+@test
+def test_number_and_text_reach_the_overlay():
+    """番号と文字を置くと、描画へ渡す項目になる。
+
+    どちらも入口がパネルに無く、一度も確認されていなかった。
+    保存から描画までの経路が通っているかを見る。
+    """
+    reset_scene()
+    import truescale
+    from truescale import overlay as OV
+    from truescale.marking import storage as ST
+    truescale.register()
+
+    scene = bpy.context.scene
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    # 注記の位置は「元モデルの三角形と、その中の重み」で持つ。
+    # 面の当たり判定を通さずに、同じ形を直接組み立てる。
+    from truescale.marking import interact as IN
+    from mathutils import Vector
+
+    mesh = obj.data
+    mesh.calc_loop_triangles()
+    tri = mesh.loop_triangles[0]
+    center = sum(
+        (mesh.vertices[i].co for i in tri.vertices),
+        Vector((0.0, 0.0, 0.0)),
+    ) / 3.0
+    anchor_item = IN.make_anchor_from_hit(obj, tri.polygon_index, center)
+    check(anchor_item is not None, "位置の基準を作れない")
+
+    items = ST.load(obj)
+
+    items.append({
+        "type": "number",
+        "value": 7,
+        "anchor": anchor_item,
+        "size_mm": 8.0,
+        "color": [0.0, 0.0, 0.0],
+    })
+    items.append({
+        "type": "text",
+        "text": "前身頃",
+        "anchor": anchor_item,
+        "size_mm": 6.0,
+        "color": [0.0, 0.0, 0.0],
+    })
+    ST.save(obj, items)
+
+    labels = OV.flat_text_items(obj, unfold, scene)
+    texts = [str(row[0]) for row in labels]
+    check("7" in texts, f"番号が描画項目に出ない: {texts}")
+    check("前身頃" in texts, f"文字が描画項目に出ない: {texts}")
+
+    # 色は種類ごとの設定に従うこと（保存値ではなく）
+    scene.tsunfold_number_color = (1.0, 0.0, 0.0)
+    scene.tsunfold_text_color = (0.0, 1.0, 0.0)
+    labels = OV.flat_text_items(obj, unfold, scene)
+    by_text = {str(row[0]): tuple(round(c, 3) for c in row[3]) for row in labels}
+    check(
+        by_text.get("7") == (1.0, 0.0, 0.0),
+        f"番号が番号の色設定に従っていない: {by_text.get('7')}",
+    )
+    check(
+        by_text.get("前身頃") == (0.0, 1.0, 0.0),
+        f"文字が文字の色設定に従っていない: {by_text.get('前身頃')}",
+    )
+
+
+@test
+def test_panel_tools_are_all_registered():
+    """パネルが出す道具のオペレータが全て実在する。
+
+    パネルへ出したはいいが登録されていない、という取り違えを防ぐ。
+    """
+    reset_scene()
+    import truescale
+    truescale.register()
+
+    wanted = (
+        ("truescale_unfold", "place_notch"),
+        ("truescale_unfold", "place_number"),
+        ("truescale_unfold", "place_text"),
+        ("truescale_unfold", "place_arrow"),
+        ("truescale_unfold", "reset_number"),
+        ("truescale_unfold", "marking_tool_off"),
+        ("truescale_unfold", "finish_marking"),
+        ("truescale_unfold", "toggle_pattern_preview"),
+        ("truescale_draft", "quad_view"),
+    )
+    for group, name in wanted:
+        check(
+            hasattr(getattr(bpy.ops, group), name),
+            f"オペレータが無い: {group}.{name}",
+        )
+
+
+# ============================================================
 # ファイルを開いたときの初期化
 # ============================================================
 

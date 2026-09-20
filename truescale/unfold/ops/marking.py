@@ -92,6 +92,37 @@ class TSUNFOLD_OT_place_number(bpy.types.Operator):
         return _tools.modal(self, context, event)
 
 
+class TSUNFOLD_OT_place_text(bpy.types.Operator):
+    """任意の文字を置く道具。
+
+    入口だけが無かった。置いたあとの処理も描画も揃っていたのに、
+    この道具を始める手段が無く、設定（文字・大きさ・色）も
+    パネルに出ていなかった。
+
+    型紙へ直接書くメモ（place_flat_memo）とは別物。こちらは元モデル
+    側の注記として持つので、型紙を作り直しても残り、立体と平面の
+    両方に出る。
+    """
+
+    bl_idname = "truescale_unfold.place_text"
+    bl_label = "文字モード"
+    bl_description = "入力した文字を、クリックした位置へ置きます"
+
+    _source_name = ""
+    _first_anchor = None
+    _last_mode = "NONE"
+
+    @classmethod
+    def poll(cls, context):
+        return _objects.source_from_context(context) is not None
+
+    def invoke(self, context, event):
+        return _tools.toggle_invoke(self, context, "TEXT")
+
+    def modal(self, context, event):
+        return _tools.modal(self, context, event)
+
+
 class TSUNFOLD_OT_place_arrow(bpy.types.Operator):
     bl_idname = "truescale_unfold.place_arrow"
     bl_label = "上方向矢印モード"
@@ -132,20 +163,6 @@ class TSUNFOLD_OT_finish_marking(bpy.types.Operator):
         _interact.restore_work_state(context)
 
         self.report({'INFO'}, "マーキングを終了し、元の作業状態へ戻しました")
-        return {'FINISHED'}
-
-
-class TSUNFOLD_OT_toggle_direction_arrow(bpy.types.Operator):
-    bl_idname = "truescale_unfold.toggle_direction_arrow"
-    bl_label = "水色の方向ガイド"
-    bl_description = "画面左側の水色の方向矢印を表示/非表示します"
-
-    def execute(self, context):
-        scene = context.scene
-        scene.tsunfold_show_direction_arrow = not bool(
-            scene.tsunfold_show_direction_arrow
-        )
-        _view.tag_redraw()
         return {'FINISHED'}
 
 
@@ -292,54 +309,6 @@ class TSUNFOLD_OT_clear_arrows_all(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class TSUNFOLD_OT_delete_last_type(bpy.types.Operator):
-    bl_idname = "truescale_unfold.delete_last_type"
-    bl_label = "種類別マーキング削除"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    annotation_type: StringProperty(default="")
-
-    def execute(self, context):
-        source = _objects.source_from_context(context)
-
-        if source is None:
-            unfold = _objects.resolve_unfold_for_layout(context)
-            if unfold is not None:
-                source = bpy.data.objects.get(
-                    unfold.get("tsunfold_source", "")
-                )
-
-        if source is None:
-            return {'CANCELLED'}
-
-        items = _storage.load(source)
-        before = len(items)
-
-        items = [
-            item
-            for item in items
-            if str(item.get("type", "")) != self.annotation_type
-        ]
-
-        removed = before - len(items)
-
-        if removed <= 0:
-            self.report({'INFO'}, "削除するマーキングがありません")
-            return {'CANCELLED'}
-
-        _interact.save_annotations(source, items)
-
-        names = {
-            "notch_edge": "合印",
-            "number": "型紙番号",
-            "text": "テキスト",
-            "arrow": "矢印",
-        }
-        label = names.get(self.annotation_type, "マーキング")
-        self.report({'INFO'}, f"{label}を {removed} 個削除しました")
-        return {'FINISHED'}
-
-
 class TSUNFOLD_OT_reset_number(bpy.types.Operator):
     bl_idname = "truescale_unfold.reset_number"
     bl_label = "番号を1に戻す"
@@ -347,24 +316,6 @@ class TSUNFOLD_OT_reset_number(bpy.types.Operator):
     def execute(self, context):
         context.scene.tsunfold_number_start = 1
         context.scene.tsunfold_next_number = 1
-        return {'FINISHED'}
-
-
-class TSUNFOLD_OT_delete_last_annotation(bpy.types.Operator):
-    bl_idname = "truescale_unfold.delete_last_annotation"
-    bl_label = "最後の印を削除"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        source = _objects.source_from_context(context)
-        if source is None:
-            return {'CANCELLED'}
-
-        items = _storage.load(source)
-        if items:
-            items.pop()
-            _interact.save_annotations(source, items)
-
         return {'FINISHED'}
 
 
@@ -397,12 +348,10 @@ classes = (
     TSUNFOLD_OT_place_notch,
     TSUNFOLD_OT_place_number,
     TSUNFOLD_OT_place_arrow,
+    TSUNFOLD_OT_place_text,
     TSUNFOLD_OT_finish_marking,
-    TSUNFOLD_OT_toggle_direction_arrow,
     TSUNFOLD_OT_return_default,
     TSUNFOLD_OT_clear_arrows_all,
-    TSUNFOLD_OT_delete_last_type,
     TSUNFOLD_OT_reset_number,
-    TSUNFOLD_OT_delete_last_annotation,
     TSUNFOLD_OT_clear_annotations,
 )
