@@ -656,12 +656,27 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 tile.label(text="切らずに重ねて貼れます")
                 tile.label(text="刷ったら目盛りを定規で確認")
 
+        # 作業の終わり方は2つある。片付ける（消す）だけでは、
+        # 型紙そのものを成果物として残したい人に応えられない。
         finish = layout.box()
+        finish.label(text="4. 仕上げ")
+
+        finish.operator(
+            "truescale_unfold.finalize_pattern",
+            text="型紙を確定して残す",
+            icon='CHECKMARK',
+        )
+        finish.label(text="アドオンから切り離し、普通のメッシュにします")
+        finish.label(text="マーキングは消えますが、片付けでも消えません")
+
+        finish.separator()
+
         finish.operator(
             "truescale_unfold.return_default",
             text="作業終了・型紙を片付ける",
             icon='HOME',
         )
+        finish.label(text="確定していない型紙は消えます")
 
         info = layout.box()
         info.label(text="型紙ヘルパー カスタムシーン Beta v1.5.6")

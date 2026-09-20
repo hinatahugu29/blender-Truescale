@@ -1057,6 +1057,102 @@ def test_arrow_head_never_exceeds_shaft():
 
 
 # ============================================================
+# 型紙の確定
+# ============================================================
+
+@test
+def test_finalized_pattern_survives_cleanup():
+    """確定した型紙は、片付けても消えない。
+
+    これまで作業の終わり方は「片付ける（消す）」だけで、型紙
+    そのものを成果物として残したい使い方に応えられなかった。
+    """
+    reset_scene()
+    import truescale
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    name = unfold.name
+    before = len(unfold.data.vertices)
+
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+
+    result = bpy.ops.truescale_unfold.finalize_pattern()
+    check(result == {'FINISHED'}, f"確定できない: {result}")
+
+    left = [k for k in unfold.keys() if str(k).startswith("tsunfold_")]
+    check(not left, f"アドオンの印が残っている: {left}")
+    check(
+        len(unfold.data.vertices) == before,
+        "確定でメッシュが変わった",
+    )
+
+    # 片付けても残ること
+    bpy.context.view_layer.objects.active = obj
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    obj.select_set(True)
+    bpy.ops.truescale_unfold.return_default()
+
+    check(name in bpy.data.objects, "確定したのに片付けで消えた")
+
+
+@test
+def test_unfinalized_pattern_is_cleaned_up():
+    """確定していない型紙は、これまでどおり片付けで消える。
+
+    確定を足したことで、消えるべきものが消えなくなっていないか。
+    """
+    reset_scene()
+    import truescale
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    name = unfold.name
+
+    bpy.context.view_layer.objects.active = obj
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    obj.select_set(True)
+    bpy.ops.truescale_unfold.return_default()
+
+    check(name not in bpy.data.objects, "確定していないのに残った")
+
+
+@test
+def test_finalized_pattern_is_no_longer_drawn():
+    """確定した型紙には、マーキングが描かれなくなる。
+
+    切り離したのに描き続けると、消せない表示が残る。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import collect as CO
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+
+    before = CO.pattern_lines(bpy.context)
+    check(before is not None, "確定前に書き出せない")
+
+    bpy.ops.truescale_unfold.finalize_pattern()
+
+    after = CO.pattern_lines(bpy.context)
+    check(after is None, "確定したのに、まだ型紙として扱われている")
+
+
+# ============================================================
 # 島を動かしたときの追従
 # ============================================================
 

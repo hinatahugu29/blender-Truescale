@@ -223,6 +223,70 @@ class TSUNFOLD_OT_build_pattern(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def _targets(context):
+    """確定の対象。選んでいる型紙、無ければいま扱っている型紙。
+
+    複数選んでいればまとめて確定する。1枚ずつ押させる理由が無い。
+    """
+    selected = [
+        obj
+        for obj in context.selected_objects
+        if obj.type == 'MESH' and bool(obj.get("tsunfold_generated", False))
+    ]
+    if selected:
+        return selected
+
+    found = _objects.resolve_unfold_for_layout(context)
+    return [found] if found is not None else []
+
+
+class TSUNFOLD_OT_finalize_pattern(bpy.types.Operator):
+    """型紙を確定して、普通のメッシュとして残す。"""
+
+    bl_idname = "truescale_unfold.finalize_pattern"
+    bl_label = "型紙を確定して残す"
+    bl_description = (
+        "選択中の型紙をアドオンの管理から外し、普通のメッシュとして"
+        "残します。マーキングの表示は消えますが、メッシュは片付けでも"
+        "消えなくなります"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return bool(_targets(context))
+
+    def execute(self, context):
+        targets = _targets(context)
+        if not targets:
+            self.report({'WARNING'}, "確定できる型紙が選ばれていません")
+            return {'CANCELLED'}
+
+        for obj in targets:
+            _objects.detach(obj)
+
+        # 型紙を指していた作業状態を片付ける。残すと、消えた相手を
+        # 探し続けることになる。
+        scene = context.scene
+        names = {obj.name for obj in targets}
+        if str(scene.get(_session.PREVIEW_SOURCE_NAME, "")) in names:
+            scene[_session.PREVIEW_SOURCE_NAME] = ""
+
+        _interact.invalidate_layout_cache()
+
+        if len(targets) == 1:
+            self.report(
+                {'INFO'},
+                f"{targets[0].name} を確定しました（もう片付けでは消えません）",
+            )
+        else:
+            self.report(
+                {'INFO'},
+                f"{len(targets)} 個の型紙を確定しました",
+            )
+        return {'FINISHED'}
+
+
 class TSUNFOLD_OT_delete_unfold(bpy.types.Operator):
     bl_idname = "truescale_unfold.delete_unfold"
     bl_label = "展開図を削除"
@@ -433,6 +497,7 @@ class TSUNFOLD_OT_toggle_preview(bpy.types.Operator):
 classes = (
     TSUNFOLD_OT_unfold_real_mesh,
     TSUNFOLD_OT_build_pattern,
+    TSUNFOLD_OT_finalize_pattern,
     TSUNFOLD_OT_delete_unfold,
     TSUNFOLD_OT_toggle_source_visibility,
     TSUNFOLD_OT_toggle_pattern_preview,

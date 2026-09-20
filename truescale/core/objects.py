@@ -292,3 +292,32 @@ def _invalidate_caches():
     """
     from ..marking import interact
     interact.invalidate_layout_cache()
+
+
+def detach(obj):
+    """型紙をアドオンの管理から外し、ただのメッシュにする。
+
+    アドオンは全ての判断を tsunfold_ で始まるカスタムプロパティで
+    行っている。それを外せば、生成物としては扱われなくなる。
+
+      片付けの対象から外れる（消されない）
+      マーキングが描かれなくなる
+      型紙として解決されなくなる
+
+    消すキーを並べて書かないこと。プロパティを足したときに
+    追従されず、消し残しが出る。接頭辞で拾えば必ず一致する。
+    同じ失敗を register / unregister でやったことがある。
+
+    戻り値は外したキーの数。
+    """
+    if obj is None:
+        return 0
+
+    keys = [key for key in obj.keys() if str(key).startswith("tsunfold_")]
+    for key in keys:
+        try:
+            del obj[key]
+        except Exception:
+            _debug.swallowed("core.objects.detach")
+
+    return len(keys)
