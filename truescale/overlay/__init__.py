@@ -831,6 +831,34 @@ def dragging_marks(context):
     return (unfold, segments or [], texts or [])
 
 
+# 切る線と折る線の色。紙の上では太さで区別するが、画面では
+# 太さの差が見えないので色で分ける。
+ALLOWANCE_CUT = (0.10, 0.10, 0.10, 0.95)
+ALLOWANCE_FOLD = (0.35, 0.45, 0.85, 0.95)
+
+
+def paint_allowance(shader, cut_verts, fold_verts):
+    """縫い代・糊代を描く。頂点はワールド座標で、2つで1本。
+
+    ふつうの描画と、手動レイアウト中のずらした描画の両方から
+    呼ぶ。色と描き方をここに1つだけ置く。2箇所に書くと、片方だけ
+    直して画面の中で食い違う。
+    """
+    shader.bind()
+    gpu.state.blend_set('ALPHA')
+
+    for verts, color in (
+        (cut_verts, ALLOWANCE_CUT),
+        (fold_verts, ALLOWANCE_FOLD),
+    ):
+        if not verts:
+            continue
+        shader.uniform_float("color", color)
+        batch_for_shader(shader, 'LINES', {"pos": verts}).draw(shader)
+
+    gpu.state.blend_set('NONE')
+
+
 def draw_allowance_3d(context, shader):
     """縫い代と糊代を画面にも出す。
 
@@ -878,20 +906,7 @@ def draw_allowance_3d(context, shader):
             _linestyle.dashed(ax, ay, bx, by, dash_bu, gap_bu)
         )
 
-    shader.bind()
-    gpu.state.blend_set('ALPHA')
-
-    for items, color in (
-        (made.cut, (0.10, 0.10, 0.10, 0.95)),
-        (chopped, (0.35, 0.45, 0.85, 0.95)),
-    ):
-        if not items:
-            continue
-        verts = to_world(items)
-        shader.uniform_float("color", color)
-        batch_for_shader(shader, 'LINES', {"pos": verts}).draw(shader)
-
-    gpu.state.blend_set('NONE')
+    paint_allowance(shader, to_world(made.cut), to_world(chopped))
 
 
 def draw_marks_3d():
@@ -901,27 +916,52 @@ def draw_marks_3d():
     if context.area is None or context.area.type != 'VIEW_3D':
         return
 
-    if manual_layout_active(context.scene):
-        # 動かしている最中は、控えた印をずらして描く。作り直すと
+    # 手動レイアウト中かどうか。ここで丸ごと描画を止めていたが、
+    # 止める必要があるのは型紙側だけである。型紙は編集モードに
+    # 入っていて、形は BMesh 側にあり obj.data へ反映されない。
+    #
+    # 元モデル側（シームの赤線、元モデルに写した印）は、型紙が
+    # 編集中かどうかと関係がない。一緒に消していたので、並べて
+    # いる最中だけ画面から色々と消えていた。
+    dragging = manual_layout_active(context.scene)
+
+    if dragging:
+        # 控えた印と代を、島ごとの移動量だけずらして描く。作り直すと
         # 1フレーム 39〜205ms かかり、ドラッグが止まって見える。
         try:
             unfold, segments, _texts = dragging_marks(context)
-            if unfold is not None and segments:
+            if unfold is not None:
                 gpu.state.depth_test_set('LESS_EQUAL')
-                draw_thick_segments(segments, unfold, context.scene)
+
+                if segments:
+                    draw_thick_segments(segments, unfold, context.scene)
+
+                # 縫い代と糊代も島と一緒に動く。ここで描かないと、
+                # 置き場所を決めている最中だけ消えてしまう。
+                from ..marking import dragging as _dragging
+
+                cut, fold = _dragging.current_allowance(unfold)
+                if cut or fold:
+                    shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+                    paint_allowance(
+                        shader,
+                        [p for pair in (cut or []) for p in pair],
+                        [p for pair in (fold or []) for p in pair],
+                    )
+
                 gpu.state.depth_test_set('NONE')
         except Exception:
             _debug.swallowed("overlay.draw_marks_3d.dragging")
-        return
 
     try:
         shader = gpu.shader.from_builtin('UNIFORM_COLOR')
         gpu.state.depth_test_set('LESS_EQUAL')
 
-        try:
-            draw_allowance_3d(context, shader)
-        except Exception:
-            _debug.swallowed("overlay.draw_allowance_3d")
+        if not dragging:
+            try:
+                draw_allowance_3d(context, shader)
+            except Exception:
+                _debug.swallowed("overlay.draw_allowance_3d")
 
         source = _objects.source_from_context(context)
 
@@ -973,7 +1013,11 @@ def draw_marks_3d():
                     batch.draw(shader)
 
                 unfold_h = _objects.unfold_for_source(source)
-                if unfold_h is not None and not unfold_h.hide_viewport:
+                if (
+                    unfold_h is not None
+                    and not unfold_h.hide_viewport
+                    and not dragging
+                ):
                     mapping = _objects.flat_face_source_map(unfold_h)
                     unfold_h.data.calc_loop_triangles()
                     flat_verts = []
@@ -1096,6 +1140,9 @@ def draw_marks_3d():
             unfold = _objects.unfold_for_source(source)
             show_transferred = (
                 unfold is not None
+                # 手動レイアウト中は、控えたものを上で描いている。
+                # ここで描き直すと動かす前の位置に出る。
+                and not dragging
                 and (
                     not unfold.hide_viewport
                     or context.scene.get(
@@ -1179,6 +1226,7 @@ def draw_marks_3d():
                     # if it already exists.
                     if (
                         unfold is not None
+                        and not dragging
                         and (
                             not unfold.hide_viewport
                             or context.scene.get(
@@ -1419,9 +1467,15 @@ def _draw_text_2d_inner():
 
         if dragging:
             # 動かしている最中の文字。控えたものをずらして描く。
+            #
+            # ここで抜けてしまうと、元モデル側の文字まで一緒に
+            # 消える。元モデルは編集中ではないので、消す理由がない。
+            # 型紙側の文字だけを、下で出さないようにする。
             _unfold, _segments, texts = dragging_marks(context)
             for text, world_pos, size_mm, color, angle in texts:
                 draw_label(text, world_pos, size_mm, color, angle)
+
+        if source is None:
             return
 
         # ------------------------------------------------------
@@ -1481,6 +1535,9 @@ def _draw_text_2d_inner():
 
         if (
             unfold is not None
+            # 手動レイアウト中は、控えたものを上で描いている。
+            # ここで描き直すと動かす前の位置に出る。
+            and not dragging
             and (
                 not unfold.hide_viewport
                 or context.scene.get(

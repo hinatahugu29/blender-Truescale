@@ -165,7 +165,7 @@ def pattern_lines(context):
             lines.append((x0, y0, x1, y1, color, float(width_mm)))
 
         # 3〜5. 文字はすべて輪郭線として集める。
-        for text, world_pos, size_mm, color, angle in _text_sources(
+        for text, world_pos, size_mm, color, angle in text_sources(
             context, source, unfold
         ):
             for wa, wb in _outline.text_segments(
@@ -207,7 +207,7 @@ def _world_allowance(unfold, allow):
     return {"cut": move(allow.cut), "fold": move(allow.fold)}
 
 
-def _text_sources(context, source, unfold):
+def text_sources(context, source, unfold):
     """紙に出る文字を、(文字, 位置, 大きさ, 色, 角度) で順に返す。
 
     出どころが3つある。まとめておかないと、書き出しの経路が
@@ -294,7 +294,7 @@ def pattern_bounds(context):
             min_y = min(min_y, wa.y, wb.y)
             max_y = max(max_y, wa.y, wb.y)
 
-        for text, pos, size_mm, _color, _angle in _text_sources(
+        for text, pos, size_mm, _color, _angle in text_sources(
             context, source, unfold
         ):
             # 文字の輪郭は起こさず、占める範囲を見積もる。回転して

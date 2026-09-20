@@ -45,6 +45,10 @@ _snapshot = {
     "segments": [],
     # 文字: (文字, 位置, 大きさ, 色, 角度, 島番号)
     "texts": [],
+    # 縫い代・糊代の切る線: (始点, 終点, 島番号)
+    "cut": [],
+    # 同じく折る線。控える時点で破線へ刻んである。
+    "fold": [],
 }
 
 
@@ -57,6 +61,8 @@ def clear():
     _snapshot["islands"] = []
     _snapshot["segments"] = []
     _snapshot["texts"] = []
+    _snapshot["cut"] = []
+    _snapshot["fold"] = []
 
 
 def _centroid(mesh, vertex_ids):
@@ -122,8 +128,13 @@ def take_snapshot(context, source_obj, unfold_obj):
             (local_a, local_b, color, width, _island_of(islands, polys, middle))
         )
 
+    # 文字は書き出しと同じ一覧から取る。以前はここで型紙IDだけを
+    # 拾っていたため、並べている最中はメモと転写ラベルが消えていた。
+    # 出どころを2つ持つと、片方に足した文字がもう片方から漏れる。
+    from ..export import collect as _collect
+
     texts = []
-    for text, world_pos, size_mm, color, angle, _locked in _compute.text_items(
+    for text, world_pos, size_mm, color, angle in _collect.text_sources(
         context, source_obj, unfold_obj
     ):
         local = inverse @ Vector(world_pos)
@@ -131,6 +142,40 @@ def take_snapshot(context, source_obj, unfold_obj):
             (text, local, size_mm, color, angle,
              _island_of(islands, polys, local))
         )
+
+    # 縫い代と糊代。これも島と一緒に動く。控えずに毎フレーム
+    # 作り直すと、面320の型紙で1フレーム 340ms かかる。
+    from ..export import allowance as _allowance
+
+    allow = _allowance.build(context, source_obj, unfold_obj)
+
+    def by_island(items):
+        out = []
+        for ax, ay, bx, by in items:
+            middle = Vector(((ax + bx) * 0.5, (ay + by) * 0.5, 0.0))
+            out.append((
+                Vector((ax, ay, 0.0)),
+                Vector((bx, by, 0.0)),
+                _island_of(islands, polys, middle),
+            ))
+        return out
+
+    # 折り線はここで刻んでおく。刻みは平行移動で変わらないので、
+    # 控えた時点で済ませてよい。毎フレーム刻み直す理由がない。
+    from ..export import linestyle as _linestyle
+    from ..core import units as _units
+
+    dash = _units.scene_mm_to_bu(
+        context.scene, _linestyle.FOLD_DASH_MM
+    )
+    gap = _units.scene_mm_to_bu(context.scene, _linestyle.FOLD_GAP_MM)
+
+    chopped = []
+    for ax, ay, bx, by in allow.fold:
+        chopped.extend(_linestyle.dashed(ax, ay, bx, by, dash, gap))
+
+    _snapshot["cut"] = by_island(allow.cut)
+    _snapshot["fold"] = by_island(chopped)
 
     _snapshot["object"] = unfold_obj.name
     _snapshot["epoch"] = int(_state.epoch)
@@ -206,3 +251,28 @@ def current(unfold_obj):
     ]
 
     return (segments, texts)
+
+
+def current_allowance(unfold_obj):
+    """いまの縫い代・糊代。(切る線, 折る線)。出せなければ (None, None)。
+
+    線は (始点, 終点) のワールド座標。印と同じく、控えたものを
+    島ごとの移動量だけずらす。手動レイアウトでやれるのは島の
+    移動だけなので、形は変わらない。
+    """
+    if not _snapshot["cut"] and not _snapshot["fold"]:
+        return (None, None)
+
+    moved = _offsets(unfold_obj)
+    if moved is None:
+        return (None, None)
+
+    matrix = unfold_obj.matrix_world
+
+    def shift(items):
+        return [
+            (matrix @ (a + moved[island]), matrix @ (b + moved[island]))
+            for a, b, island in items
+        ]
+
+    return (shift(_snapshot["cut"]), shift(_snapshot["fold"]))

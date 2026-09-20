@@ -2082,6 +2082,118 @@ def test_disabled_tab_survives_a_rebuild():
     )
 
 
+@test
+def test_allowance_follows_the_island_being_dragged():
+    """手動で並べている最中も、縫い代と糊代が消えない。
+
+    以前は手動レイアウト中に描画を丸ごと止めていた。置き場所を
+    決めている最中こそ、代を含めた大きさが見えてほしい。印と
+    同じく、控えておいて島ごとの移動量だけずらす。
+    """
+    reset_scene()
+    import bmesh
+    import truescale
+    from truescale.marking import dragging as DR
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_tab_enable = True
+    scene.tsunfold_seam_enable = True
+
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+
+    check(DR.take_snapshot(bpy.context, obj, unfold), "控えを取れない")
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    try:
+        cut_before, fold_before = DR.current_allowance(unfold)
+        check(cut_before, "編集モードで切る線を取れない")
+        check(fold_before, "編集モードで折る線を取れない")
+
+        mesh = bmesh.from_edit_mesh(unfold.data)
+        mesh.verts.ensure_lookup_table()
+        shift = 5.0
+        for index in DR._snapshot["islands"][0]:
+            mesh.verts[index].co.x += shift
+        bmesh.update_edit_mesh(unfold.data)
+
+        cut_after, _fold_after = DR.current_allowance(unfold)
+        moved = sorted({
+            round(b[0].x - a[0].x, 4)
+            for a, b in zip(cut_before, cut_after)
+        })
+
+        check(
+            any(abs(value - shift) < 1e-4 for value in moved),
+            f"動かした島の代が追従していない: {moved}",
+        )
+        check(
+            any(abs(value) < 1e-9 for value in moved),
+            f"動かしていない島の代まで動いた: {moved}",
+        )
+    finally:
+        bpy.ops.object.mode_set(mode='OBJECT')
+        DR.clear()
+
+
+@test
+def test_memo_text_follows_the_island_being_dragged():
+    """並べている最中も、型紙へのメモが消えない。
+
+    以前は型紙IDだけを控えていたため、メモと転写ラベルが消えて
+    いた。控える一覧を、書き出しが使うものと同じにした。出どころを
+    2つ持つと、片方に足した文字がもう片方から漏れる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.marking import dragging as DR
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+
+    from truescale.export import collect as CO
+    from truescale.marking import interact as IN
+
+    # 型紙へメモを1つ置く。
+    center = unfold.data.vertices[0].co
+    IN.set_flat_memos(unfold, [{
+        "text": "ここは折る",
+        "pos": [center.x, center.y, 0.0],
+        "size_mm": 6.0,
+        "angle": 0.0,
+    }])
+
+    items = list(CO.text_sources(bpy.context, obj, unfold))
+    check(
+        any("ここは折る" == row[0] for row in items),
+        "置いたメモが書き出しの一覧に無い",
+    )
+
+    check(DR.take_snapshot(bpy.context, obj, unfold), "控えを取れない")
+
+    check(
+        len(DR._snapshot["texts"]) == len(items),
+        f"控えた文字が {len(DR._snapshot['texts'])} 件、"
+        f"書き出しは {len(items)} 件",
+    )
+    check(
+        any(row[0] == "ここは折る" for row in DR._snapshot["texts"]),
+        "メモが控えられていない",
+    )
+
+
 def main():
     print()
     print("=" * 72)
