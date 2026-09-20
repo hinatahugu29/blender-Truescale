@@ -258,6 +258,7 @@ def test_annotations_follow_object():
     キャッシュしたローカル座標にワールド変換を掛け忘れると、
     注記が原点に取り残される。
     """
+    from truescale.marking import compute as C
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -271,7 +272,7 @@ def test_annotations_follow_object():
     unfold = build_pattern_for(obj)
 
     context = bpy.context
-    before = U._pattern_flat_colored_segments(context, obj, unfold)
+    before = C.colored_segments(context, obj, unfold)
     if not before:
         raise Skip("色付きセグメントが生成されませんでした")
 
@@ -279,7 +280,7 @@ def test_annotations_follow_object():
     unfold.location = unfold.location + delta
     bpy.context.view_layer.update()
 
-    after = U._pattern_flat_colored_segments(context, obj, unfold)
+    after = C.colored_segments(context, obj, unfold)
 
     check(
         len(before) == len(after),
@@ -370,6 +371,7 @@ def test_notch_color_does_not_rebuild():
 
     以前は色の変更で全シームを走査し直していた。その回帰テスト。
     """
+    from truescale.marking import auto_notch as AN
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -382,13 +384,13 @@ def test_notch_color_does_not_rebuild():
     build_pattern_for(obj)
 
     calls = {"count": 0}
-    original = U._pattern_refresh_auto_notches
+    original = AN.refresh
 
     def counting(*args, **kwargs):
         calls["count"] += 1
         return original(*args, **kwargs)
 
-    U._pattern_refresh_auto_notches = counting
+    AN.refresh = counting
     try:
         bpy.context.scene.tsunfold_notch_color = (0.5, 0.25, 0.75)
         check(
@@ -406,7 +408,7 @@ def test_notch_color_does_not_rebuild():
             "分割数の変更で合印が作り直されていない",
         )
     finally:
-        U._pattern_refresh_auto_notches = original
+        AN.refresh = original
 
 
 @test
@@ -449,6 +451,7 @@ def test_sliders_do_not_invalidate_cache():
 @test
 def test_workflow_status_progresses():
     """パネル先頭の案内が、段階に応じて次の一手を示す。"""
+    from truescale.unfold import status as STATUS
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -458,7 +461,7 @@ def test_workflow_status_progresses():
     truescale.register()
 
     # 何も無い状態
-    _, current, next_step = U._pattern_workflow_status(bpy.context)
+    _, current, next_step = STATUS.workflow(bpy.context)
     check("未読み込み" in current, f"未読み込みを示さない: {current}")
     check(next_step is not None, "次の一手が示されない")
 
@@ -468,7 +471,7 @@ def test_workflow_status_progresses():
         edge.use_seam = False
     bpy.context.scene["tsunfold_seam_source"] = plain.name
 
-    _, current, next_step = U._pattern_workflow_status(bpy.context)
+    _, current, next_step = STATUS.workflow(bpy.context)
     check("シーム 0 本" in current, f"シーム0本を示さない: {current}")
     check(
         next_step and "シーム" in next_step,
@@ -478,7 +481,7 @@ def test_workflow_status_progresses():
     # シームを入れた状態（型紙はまだ無い）
     for edge in plain.data.edges:
         edge.use_seam = True
-    _, current, next_step = U._pattern_workflow_status(bpy.context)
+    _, current, next_step = STATUS.workflow(bpy.context)
     check(
         next_step and "型紙を作成" in next_step,
         f"型紙作成の案内が出ない: {next_step}",
@@ -488,7 +491,7 @@ def test_workflow_status_progresses():
     reset_scene()
     obj = make_seamed_cube(size=2.0)
     build_pattern_for(obj)
-    _, current, next_step = U._pattern_workflow_status(bpy.context)
+    _, current, next_step = STATUS.workflow(bpy.context)
     check("型紙" in current, f"型紙ができたことを示さない: {current}")
     check(next_step is None, f"完了後も次の一手が出ている: {next_step}")
 
@@ -501,6 +504,7 @@ def test_scale_warning_for_oversized_pattern():
     デフォルトの立方体でも2メートルの型紙になる。
     この状態では用紙に収まらず、合印も小さすぎて見えない。
     """
+    from truescale.unfold import status as STATUS
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -515,7 +519,7 @@ def test_scale_warning_for_oversized_pattern():
     obj = make_seamed_cube(size=2.0)         # 2 BU = 2000 mm の立方体
     unfold = build_pattern_for(obj)
 
-    warnings = U._pattern_scale_warnings(bpy.context, unfold)
+    warnings = STATUS.scale_warnings(bpy.context, unfold)
     check(warnings, "大きすぎる型紙に警告が出ない")
 
     joined = " / ".join(warnings)
@@ -530,6 +534,7 @@ def test_scale_warning_for_oversized_pattern():
 @test
 def test_no_scale_warning_at_sane_scale():
     """用紙に収まる型紙では警告を出さない。"""
+    from truescale.unfold import status as STATUS
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -544,7 +549,7 @@ def test_no_scale_warning_at_sane_scale():
     obj = make_seamed_cube(size=40.0)          # 40 BU = 40 mm の立方体
     unfold = build_pattern_for(obj)
 
-    warnings = U._pattern_scale_warnings(bpy.context, unfold)
+    warnings = STATUS.scale_warnings(bpy.context, unfold)
     check(not warnings, f"妥当な寸法なのに警告が出ている: {warnings}")
 
 
@@ -586,6 +591,7 @@ def test_manual_scale_overrides_scene():
 @test
 def test_manual_scale_changes_pattern_size():
     """基準を変えると型紙の実寸表示が追従する。"""
+    from truescale.unfold import build as BUILD
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -601,11 +607,11 @@ def test_manual_scale_changes_pattern_size():
     unfold = build_pattern_for(obj)
 
     scene.tsunfold_scale_mode = "SCENE"
-    scene_size = U._object_xy_size_mm(bpy.context, unfold)
+    scene_size = BUILD.object_xy_size_mm(bpy.context, unfold)
 
     scene.tsunfold_scale_mode = "MANUAL"
     scene.tsunfold_manual_mm_per_bu = 10.0   # 1 BU = 10 mm
-    manual_size = U._object_xy_size_mm(bpy.context, unfold)
+    manual_size = BUILD.object_xy_size_mm(bpy.context, unfold)
 
     # 1000 mm/BU から 10 mm/BU へ変えたので 1/100 になるはず
     close(
@@ -654,6 +660,7 @@ def test_warning_when_island_spacing_dominates():
     効きすぎて島が散らばる。実際にこれで「型紙が遠くに飛んだ」
     という症状が出た。
     """
+    from truescale.unfold import status as STATUS
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -673,7 +680,7 @@ def test_warning_when_island_spacing_dominates():
     scene.tsunfold_manual_mm_per_bu = 0.1
     scene.tsunfold_spacing_mm = 10.0
 
-    warnings = U._pattern_scale_warnings(bpy.context, unfold)
+    warnings = STATUS.scale_warnings(bpy.context, unfold)
     check(
         any("間隔" in line for line in warnings),
         f"間隔が大きすぎる警告が出ない: {warnings}",
@@ -681,7 +688,7 @@ def test_warning_when_island_spacing_dominates():
 
     # 間隔を型紙に見合う値にすれば消えること
     scene.tsunfold_spacing_mm = 0.05
-    warnings = U._pattern_scale_warnings(bpy.context, unfold)
+    warnings = STATUS.scale_warnings(bpy.context, unfold)
     check(
         not any("間隔" in line for line in warnings),
         f"間隔を直しても警告が残る: {warnings}",
@@ -696,6 +703,7 @@ def test_notch_color_follows_scene_setting():
     保存していた頃は、色を変えるたびに全アノテーションの
     書き直しとキャッシュ全破棄が走っていた。
     """
+    from truescale.marking import compute as C
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -709,7 +717,7 @@ def test_notch_color_follows_scene_setting():
     unfold = build_pattern_for(obj)
 
     def notch_colors():
-        rows = U._pattern_flat_colored_segments(bpy.context, obj, unfold)
+        rows = C.colored_segments(bpy.context, obj, unfold)
         return {tuple(round(c, 4) for c in row[2]) for row in rows}
 
     scene.tsunfold_notch_color = (1.0, 0.0, 0.0)
@@ -739,9 +747,9 @@ def test_notch_color_does_not_touch_annotations():
     obj = make_seamed_cube(size=2.0)
     build_pattern_for(obj)
 
-    before = obj.get(U._PATTERN_ANNOTATION_PROP, "")
+    before = obj.get(ST.ANNOTATION_PROP, "")
     bpy.context.scene.tsunfold_notch_color = (0.2, 0.4, 0.6)
-    after = obj.get(U._PATTERN_ANNOTATION_PROP, "")
+    after = obj.get(ST.ANNOTATION_PROP, "")
 
     check(
         before == after,
@@ -758,6 +766,7 @@ def test_every_marking_setting_updates_immediately():
     実際に合印の太さでこれが起きた（値を変えても更新ボタンを
     押すまで反映されなかった）。
     """
+    from truescale.marking import compute as C
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -772,8 +781,8 @@ def test_every_marking_setting_updates_immediately():
 
     def snapshot():
         """描画に渡される値をまとめて文字列化する。"""
-        segments = U._pattern_flat_colored_segments(bpy.context, obj, unfold)
-        texts = U._pattern_auto_flat_oriented_text_items(
+        segments = C.colored_segments(bpy.context, obj, unfold)
+        texts = C.text_items(
             bpy.context, obj, unfold
         )
         return repr([
@@ -819,6 +828,7 @@ def test_every_marking_setting_updates_immediately():
 
 def add_manual_notch(source, edge_index=0, t=0.5):
     """手動で置いた合印を1つ足す。"""
+    from truescale.marking import interact as IN
     from truescale import unfold as U
     from truescale.marking import storage as ST
     from truescale.marking import storage as ST
@@ -833,7 +843,7 @@ def add_manual_notch(source, edge_index=0, t=0.5):
         "color": [1.0, 0.0, 0.0],
         "auto": False,
     })
-    U._pattern_set_annotations(source, items)
+    IN.save_annotations(source, items)
 
 
 def count_notches(source):
@@ -909,6 +919,7 @@ def test_remove_auto_notches_keeps_manual():
 @test
 def test_remove_all_notches_keeps_other_marks():
     """合印を消しても他のマーキングは残る。"""
+    from truescale.marking import interact as IN
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -923,7 +934,7 @@ def test_remove_all_notches_keeps_other_marks():
     # 合印以外の注記を1つ足しておく
     items = ST.load(obj)
     items.append({"type": "text", "value": "テスト", "color": [0, 0, 0]})
-    U._pattern_set_annotations(obj, items)
+    IN.save_annotations(obj, items)
 
     bpy.context.view_layer.objects.active = obj
     bpy.ops.truescale_unfold.remove_all_notches()
@@ -939,6 +950,7 @@ def test_remove_all_notches_keeps_other_marks():
 @test
 def test_notch_status_text():
     """合印の状態表示が状況に応じて変わる。"""
+    from truescale.unfold import status as STATUS
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -948,13 +960,13 @@ def test_notch_status_text():
     truescale.register()
 
     # 元モデルすら無い状態
-    text = U._pattern_notch_status_text(bpy.context)
+    text = STATUS.notch_text(bpy.context)
     check("未読み込み" in text, f"未読み込みの表示が出ない: {text}")
 
     obj = make_seamed_cube(size=2.0)
     build_pattern_for(obj)
 
-    text = U._pattern_notch_status_text(bpy.context)
+    text = STATUS.notch_text(bpy.context)
     check("合印" in text, f"合印の件数が出ない: {text}")
 
 
@@ -1056,6 +1068,7 @@ def test_manual_marks_follow_color_setting():
     手動のものだけ変わらなかった。オート合印と矢印は追従していた
     ので、同じパネルの中で挙動が食い違っていた。
     """
+    from truescale.marking import compute as C
     reset_scene()
     import truescale
     from truescale import unfold as U
@@ -1082,7 +1095,7 @@ def test_manual_marks_follow_color_setting():
     def manual_colors():
         return [
             tuple(round(c, 4) for c in row[2])
-            for row in U._pattern_flat_colored_segments(
+            for row in C.colored_segments(
                 bpy.context, obj, unfold
             )
         ]
@@ -1192,7 +1205,8 @@ def test_modules_import_without_error():
         "truescale.marking.source", "truescale.marking.storage",
         "truescale.export.outline", "truescale.export.png",
         "truescale.overlay",
-        "truescale.unfold.build", "truescale.unfold.panel",
+        "truescale.unfold.build", "truescale.unfold.ops",
+        "truescale.unfold.panel", "truescale.unfold.props",
         "truescale.unfold.status",
     )
     for name in names:

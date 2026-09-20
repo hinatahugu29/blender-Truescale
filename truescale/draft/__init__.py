@@ -5372,7 +5372,15 @@ def unregister():
     namespace[AUTO_FOLLOW_GUARD_KEY] = None
 
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+        # 登録されていないものは飛ばす。未登録の状態で呼ばれても
+        # クラスの数だけエラーを出さないようにするため。本当に
+        # 外し損ねたときのエラーが埋もれる。
+        if not hasattr(cls, "bl_rna"):
+            continue
+        try:
+            bpy.utils.unregister_class(cls)
+        except RuntimeError:
+            _debug.swallowed("unfold.unregister")
 
     _unregister_scene_props()
 
