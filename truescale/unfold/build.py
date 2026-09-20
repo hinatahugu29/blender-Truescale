@@ -481,6 +481,33 @@ def _shelf_fill(mesh, islands, usable_w, gap, allow_rotate=True):
     return used_w, cursor_y + row_h
 
 
+def initial_layout(context, obj):
+    """型紙を作った直後の並び。用紙に沿って詰める。
+
+    以前は横一列に並べていた（pack_islands）。島が30個ある形だと
+    2 メートルの帯になり、そのまま書き出すと A4 で12枚の横長に
+    なる。自動レイアウトを押せば直るが、押さないと使い物にならない
+    並びを既定にする理由が無い。
+
+    ここで用紙に沿えておけば、そのまま書き出しても筋の通った
+    枚数になる。拡大縮小はしない。
+    """
+    scene = context.scene
+    margin = float(getattr(scene, "tsunfold_tile_margin_mm", 8.0))
+    footer = 12.0
+    paper_w, paper_h = _paper.scene_dimensions_mm(scene)
+
+    ok, _message, _cols, _rows = pack_for_pages(
+        context,
+        obj,
+        paper_w - margin * 2.0,
+        paper_h - margin * 2.0 - footer,
+    )
+    if not ok:
+        # 島がひとつも無いなど。従来どおり横一列にしておく。
+        pack_islands(context, obj, scene.tsunfold_spacing_mm)
+
+
 def pack_for_pages(context, obj, content_w_mm, content_h_mm, max_pages_wide=8):
     """紙をまたいでよい前提で、枚数が少なくなるように詰める。
 

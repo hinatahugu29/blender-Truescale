@@ -134,7 +134,7 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
             self.report({'ERROR'}, "平面Meshを生成できませんでした。")
             return {'CANCELLED'}
 
-        _build.pack_islands(context, result, context.scene.tsunfold_spacing_mm)
+        _build.initial_layout(context, result)
         _interact.invalidate_layout_cache()
         _build.show_from_top(context, result)
         _view.focus_selected(context, top_view=True)
