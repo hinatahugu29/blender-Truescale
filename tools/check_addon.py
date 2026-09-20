@@ -59,6 +59,7 @@ def _joinedstr_shape(node: ast.JoinedStr):
 
 class AddonAnalyzer(ast.NodeVisitor):
     def __init__(self):
+        self.string_constants = {}   # 定数名 -> 文字列（定数経由の参照を追うため）
         self.dynamic_prop_patterns = set()  # (前方一致, 後方一致)
         self.module_functions = {}   # モジュール直下の関数名 -> 行番号
         self.name_loads = set()      # 読み取られた名前（関数が使われたか判定用）
@@ -109,6 +110,14 @@ class AddonAnalyzer(ast.NodeVisitor):
                 for elt in node.value.elts:
                     if isinstance(elt, ast.Name):
                         self.registered_classes.append(elt.id)
+
+            # モジュール直下の NAME = "文字列"
+            if (isinstance(target, ast.Name)
+                    and not self._func_stack
+                    and not self._class_stack
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)):
+                self.string_constants[target.id] = node.value.value
 
             # bpy.types.Scene.<name> = ...
             if (isinstance(target, ast.Attribute)
@@ -162,6 +171,14 @@ class AddonAnalyzer(ast.NodeVisitor):
             name_arg = node.args[1]
             if isinstance(name_arg, ast.Constant) and isinstance(name_arg.value, str):
                 self.referenced_props.setdefault(name_arg.value, []).append(node.lineno)
+            elif isinstance(name_arg, ast.Name):
+                # getattr(scene, PROP) のように定数を経由する形。
+                # 解決できなければ何もしない（見逃す側に倒す）。
+                resolved = self.string_constants.get(name_arg.id)
+                if resolved:
+                    self.referenced_props.setdefault(resolved, []).append(
+                        node.lineno
+                    )
             elif isinstance(name_arg, ast.JoinedStr):
                 # f"mhs_{view}_offset_x" のような動的な名前。
                 # 前後の固定部分を取り出し、後でパターン照合に使う。
@@ -194,11 +211,43 @@ class AddonAnalyzer(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def analyze(path: Path):
+def collect_references(paths):
+    """複数ファイルから、名前とプロパティの参照だけを集める。
+
+    分割後は、あるファイルで register したプロパティを
+    別のファイルが参照する。1ファイルだけ見ていると誤検出する。
+    """
+    props = set()
+    patterns = set()
+    names = set()
+
+    for path in paths:
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        analyzer = AddonAnalyzer()
+        analyzer.visit(tree)
+        props.update(analyzer.referenced_props)
+        patterns.update(analyzer.dynamic_prop_patterns)
+        names.update(analyzer.name_loads)
+
+    return props, patterns, names
+
+
+def analyze(path: Path, extra=None):
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
     analyzer = AddonAnalyzer()
     analyzer.visit(tree)
+
+    # 他のファイルからの参照も合わせる
+    if extra is not None:
+        extra_props, extra_patterns, extra_names = extra
+        for name in extra_props:
+            analyzer.referenced_props.setdefault(name, [])
+        analyzer.dynamic_prop_patterns.update(extra_patterns)
+        analyzer.name_loads.update(extra_names)
 
     defined_operators = {
         info["bl_idname"]: name
@@ -330,6 +379,20 @@ def main(argv):
         print(__doc__)
         return 2
 
+    paths = [Path(a) for a in argv[1:]]
+
+    # 同じパッケージの他のファイルも参照元として数える
+    package_files = []
+    for path in paths:
+        root = path.parent
+        while root.name and (root / "__init__.py").exists():
+            if root.parent == root:
+                break
+            root = root.parent
+        package_files.extend(root.rglob("*.py"))
+
+    extra = collect_references(sorted(set(package_files)))
+
     exit_code = 0
     for arg in argv[1:]:
         path = Path(arg)
@@ -342,7 +405,7 @@ def main(argv):
             exit_code = 1
             continue
 
-        stats, problems = analyze(path)
+        stats, problems = analyze(path, extra)
         print("  " + " / ".join(f"{k}: {v}" for k, v in stats.items()))
         print()
 

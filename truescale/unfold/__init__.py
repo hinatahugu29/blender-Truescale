@@ -8835,16 +8835,6 @@ def register():
         options={'HIDDEN'},
     )
 
-    bpy.types.Scene.tsunfold_mark_color = FloatVectorProperty(
-        name="旧印の色",
-        subtype='COLOR',
-        size=3,
-        min=0.0,
-        max=1.0,
-        default=(0.0, 0.0, 0.0),
-        options={'HIDDEN'},
-    )
-
     bpy.types.Scene.tsunfold_notch_color = FloatVectorProperty(
         name="合印の色",
         subtype='COLOR',
