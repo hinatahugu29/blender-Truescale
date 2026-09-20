@@ -6,6 +6,9 @@ set BLENDER=D:\SteamLibrary\steamapps\common\Blender\blender.exe
 set BLENDER_PY=D:\SteamLibrary\steamapps\common\Blender\5.2\python\bin\python.exe
 
 echo === 1. 静的チェック ===
+REM オペレータは ops/ が機能別に持っている。__init__.py だけ見ても
+REM オペレータは1件も見つからないので、ops/ も個別に見る。
+for %%F in ("%~dp0..\truescale\unfold\ops\*.py") do "%BLENDER_PY%" "%~dp0check_addon.py" "%%F"
 "%BLENDER_PY%" "%~dp0check_addon.py" "%~dp0..\truescale\unfold\__init__.py" "%~dp0..\truescale\draft\__init__.py"
 
 echo.

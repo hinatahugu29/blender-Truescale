@@ -17,7 +17,10 @@ import json
 
 import bpy
 
+from .. import debug as _debug
+
 from . import mapping as _mapping
+
 from . import session as _session
 
 GENERATED_PROP = "tsunfold_generated"
@@ -213,3 +216,79 @@ def seam_source(context):
                 return src
 
     return None
+
+
+def active_smooth(context):
+    obj = context.active_object
+    if (
+        obj
+        and obj.type == 'CURVE'
+        and bool(obj.get("tsunfold_smooth_generated", False))
+    ):
+        return obj
+    return None
+
+
+def delete_generated_for_source(context, source_obj):
+    """Delete stale generated pattern/layout objects before regeneration."""
+    if source_obj is None:
+        return 0
+
+    old_meshes = [
+        obj
+        for obj in list(bpy.data.objects)
+        if (
+            obj.type == 'MESH'
+            and bool(obj.get("tsunfold_generated", False))
+            and obj.get("tsunfold_source", "") == source_obj.name
+        )
+    ]
+
+    old_names = {obj.name for obj in old_meshes}
+
+    old_curves = [
+        obj
+        for obj in list(bpy.data.objects)
+        if (
+            obj.type == 'CURVE'
+            and bool(obj.get("tsunfold_smooth_generated", False))
+            and (
+                obj.get("tsunfold_smooth_source", "") in old_names
+                or obj.get("tsunfold_source", "") == source_obj.name
+            )
+        )
+    ]
+
+    total = 0
+
+    for obj in old_curves:
+        data = obj.data
+        bpy.data.objects.remove(obj, do_unlink=True)
+        if data is not None and data.users == 0:
+            bpy.data.curves.remove(data)
+        total += 1
+
+    for obj in old_meshes:
+        data = obj.data
+        bpy.data.objects.remove(obj, do_unlink=True)
+        if data is not None and data.users == 0:
+            bpy.data.meshes.remove(data)
+        total += 1
+
+    context.scene.tsunfold_pattern_preview = False
+    context.scene.tsunfold_preview = False
+    context.scene[_session.PREVIEW_PREV_ACTIVE] = ""
+    context.scene[_session.DISPLAY_MODE] = "POLY"
+    _invalidate_caches()
+
+    return total
+
+
+def _invalidate_caches():
+    """描画キャッシュを捨てる。
+
+    marking.interact はこちらを使うので、逆向きに import できない。
+    呼ばれた時に読み込む。
+    """
+    from ..marking import interact
+    interact.invalidate_layout_cache()

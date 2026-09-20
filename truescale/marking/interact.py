@@ -735,3 +735,16 @@ def raycast_any_visible(context, event):
 
     original = hit_obj.original if hasattr(hit_obj, "original") else hit_obj
     return original, int(face_index)
+
+
+def save_annotations(source_obj, annotations):
+    """注記を書き込み、キャッシュを捨てる。
+
+    保存の実装は truescale.marking.storage。
+    キャッシュ破棄は描画側の都合なので、ここで渡す。
+    """
+    _storage.save(
+        source_obj,
+        annotations,
+        on_changed=invalidate_layout_cache,
+    )

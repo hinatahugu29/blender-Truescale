@@ -261,6 +261,7 @@ def test_annotations_follow_object():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import units as UNITS
     from truescale.core import state as S
@@ -304,6 +305,7 @@ def test_cache_survives_object_move():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -349,6 +351,7 @@ def test_draw_cache_is_bounded():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -370,6 +373,7 @@ def test_notch_color_does_not_rebuild():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -417,6 +421,7 @@ def test_sliders_do_not_invalidate_cache():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -447,6 +452,7 @@ def test_workflow_status_progresses():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -498,6 +504,7 @@ def test_scale_warning_for_oversized_pattern():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -526,6 +533,7 @@ def test_no_scale_warning_at_sane_scale():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -546,6 +554,7 @@ def test_manual_scale_overrides_scene():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -580,6 +589,7 @@ def test_manual_scale_changes_pattern_size():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -611,6 +621,7 @@ def test_calibrated_scale_is_exact():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -646,6 +657,7 @@ def test_warning_when_island_spacing_dominates():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -687,6 +699,7 @@ def test_notch_color_follows_scene_setting():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -718,6 +731,7 @@ def test_notch_color_does_not_touch_annotations():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -747,6 +761,7 @@ def test_every_marking_setting_updates_immediately():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -805,10 +820,12 @@ def test_every_marking_setting_updates_immediately():
 def add_manual_notch(source, edge_index=0, t=0.5):
     """手動で置いた合印を1つ足す。"""
     from truescale import unfold as U
+    from truescale.marking import storage as ST
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
 
-    items = U._pattern_get_annotations(source)
+    items = ST.load(source)
     items.append({
         "type": "notch_edge",
         "edge": int(edge_index),
@@ -821,11 +838,12 @@ def add_manual_notch(source, edge_index=0, t=0.5):
 
 def count_notches(source):
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
 
     auto = manual = 0
-    for item in U._pattern_get_annotations(source):
+    for item in ST.load(source):
         if item.get("type") != "notch_edge":
             continue
         if bool(item.get("auto", False)):
@@ -894,6 +912,7 @@ def test_remove_all_notches_keeps_other_marks():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -902,7 +921,7 @@ def test_remove_all_notches_keeps_other_marks():
     build_pattern_for(obj)
 
     # 合印以外の注記を1つ足しておく
-    items = U._pattern_get_annotations(obj)
+    items = ST.load(obj)
     items.append({"type": "text", "value": "テスト", "color": [0, 0, 0]})
     U._pattern_set_annotations(obj, items)
 
@@ -911,7 +930,7 @@ def test_remove_all_notches_keeps_other_marks():
 
     kinds = [
         item.get("type")
-        for item in U._pattern_get_annotations(obj)
+        for item in ST.load(obj)
     ]
     check("notch_edge" not in kinds, f"合印が残っている: {kinds}")
     check("text" in kinds, f"他のマーキングまで消えている: {kinds}")
@@ -923,6 +942,7 @@ def test_notch_status_text():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.core import units as UNITS
     from truescale.core import state as S
     truescale.register()
@@ -1039,6 +1059,7 @@ def test_manual_marks_follow_color_setting():
     reset_scene()
     import truescale
     from truescale import unfold as U
+    from truescale.marking import storage as ST
     from truescale.marking import storage as ST
     truescale.register()
 

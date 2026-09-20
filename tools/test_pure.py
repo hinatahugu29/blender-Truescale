@@ -252,20 +252,60 @@ def test_item_color_survives_broken_data():
         check(len(result) == 3, f"3要素で返らない: {result}")
 
 
+class _FakeScene:
+    """色設定だけを持つ、シーンの代役。"""
+
+    def __init__(self, **colors):
+        for name, value in colors.items():
+            setattr(self, name, value)
+
+
 @test
-def test_auto_notch_uses_scene_color():
-    """オート合印はシーンの色に従い、手動は保存値を使う。"""
+def test_marks_follow_type_color_setting():
+    """オートも手動も、種類ごとの色設定に従う。
+
+    以前は置いた時点の色を保存値から使っていたため、あとから
+    設定を変えても手動のものだけ変わらなかった。オート合印と
+    矢印は追従していたので、同じパネルの中で食い違っていた。
+    """
+    scene = _FakeScene(
+        tsunfold_notch_color=(0.0, 0.0, 1.0),
+        tsunfold_arrow_color=(0.0, 1.0, 0.0),
+    )
+
     auto = {"type": storage.NOTCH, "auto": True, "color": [1.0, 0.0, 0.0]}
     manual = {"type": storage.NOTCH, "auto": False, "color": [1.0, 0.0, 0.0]}
+    arrow = {"type": storage.ARROW, "color": [1.0, 0.0, 0.0]}
 
-    scene_color = (0.0, 0.0, 1.0)
     check(
-        storage.item_color(auto, scene_color) == (0.0, 0.0, 1.0),
-        "オートがシーンの色に従っていない",
+        storage.scene_item_color(auto, scene) == (0.0, 0.0, 1.0),
+        "オート合印が設定に従っていない",
     )
     check(
-        storage.item_color(manual, scene_color) == (1.0, 0.0, 0.0),
-        "手動の色が上書きされている",
+        storage.scene_item_color(manual, scene) == (0.0, 0.0, 1.0),
+        "手動の合印が設定に従っていない",
+    )
+    check(
+        storage.scene_item_color(arrow, scene) == (0.0, 1.0, 0.0),
+        "矢印が矢印の色設定に従っていない",
+    )
+
+
+@test
+def test_color_falls_back_to_saved_value():
+    """設定が取れないときは保存値を使う。
+
+    古いファイルや、プロパティがまだ登録されていない状態でも
+    描けるようにするため。
+    """
+    item = {"type": storage.NOTCH, "color": [1.0, 0.0, 0.0]}
+    check(
+        storage.scene_item_color(item, None) == (1.0, 0.0, 0.0),
+        "シーンが無いときに保存値へ落ちていない",
+    )
+    check(
+        storage.scene_item_color(item, _FakeScene()) == (1.0, 0.0, 0.0),
+        "設定が未登録のときに保存値へ落ちていない",
     )
 
 
