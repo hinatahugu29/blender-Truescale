@@ -19,6 +19,15 @@
 集めた時点で、型紙を囲む最小の矩形の左下が (0, 0) になるよう
 ずらしてある。分割の計算も同じ前提なので、そのまま渡せる。
 
+■ 大きさだけなら安く求まる
+
+パネルや用紙ガイドが要るのは「型紙が何ミリか」だけで、線そのものは
+要らない。pattern_lines は文字の輪郭を起こすために一時的な FONT
+オブジェクトを作るので、毎フレーム呼べるものではない（1回 350ms）。
+
+extent はそれを避け、文字は占める範囲の見積もりで済ませる。
+少し大きめに見るので、実際より枚数が減ることはない。
+
 ■ 文字は線になっている
 
 番号も型紙IDも、Blenderのフォント機能で一度メッシュにしてから
@@ -154,3 +163,71 @@ def _text_sources(context, source, unfold):
             _edge_locked,
         ) in _compute.text_items(context, source, unfold):
             yield (text, world_pos, size_mm, color, angle)
+
+
+def pattern_bounds(context):
+    """型紙の外形（min_x, min_y, max_x, max_y）。Blender Unit、ワールド。
+
+    大きさだけでなく位置も要る場面がある。用紙ガイドは、分割の枠を
+    型紙の左下へ合わせて並べる必要がある（書き出しと同じ基準で
+    ないと、画面の枠と実際の切れ目がずれる）。
+    """
+    from ..core import objects as _objects
+    from ..core import units as _units
+    from ..marking import compute as _compute
+    from . import outline as _outline
+
+    scene = context.scene
+
+    box = _outline.bbox(_outline.current_finish_segments(context))
+    if box is None:
+        return None
+
+    min_x, min_y, max_x, max_y = box
+
+    source = _objects.source_from_context(context)
+    unfold = _objects.unfold_for_source(source) if source else None
+
+    if source is not None and unfold is not None:
+        for wa, wb, _color, _width in _compute.colored_segments(
+            context, source, unfold
+        ):
+            min_x = min(min_x, wa.x, wb.x)
+            max_x = max(max_x, wa.x, wb.x)
+            min_y = min(min_y, wa.y, wb.y)
+            max_y = max(max_y, wa.y, wb.y)
+
+        for text, pos, size_mm, _color, _angle in _text_sources(
+            context, source, unfold
+        ):
+            # 文字の輪郭は起こさず、占める範囲を見積もる。回転して
+            # いるかもしれないので、縦横とも長いほうで見る。
+            reach = _units.scene_mm_to_bu(
+                scene, float(size_mm) * max(1.0, len(str(text))) * 0.7
+            )
+            min_x = min(min_x, pos.x - reach)
+            max_x = max(max_x, pos.x + reach)
+            min_y = min(min_y, pos.y - reach)
+            max_y = max(max_y, pos.y + reach)
+
+    return (min_x, min_y, max_x, max_y)
+
+
+def pattern_extent(context):
+    """型紙の外形の大きさ（幅mm, 高さmm）。無ければ None。
+
+    線を作らずに求める。パネルと用紙ガイドは毎フレーム呼ぶので、
+    pattern_lines（文字の輪郭を起こす、1回 350ms）は使えない。
+    """
+    from ..core import units as _units
+
+    box = pattern_bounds(context)
+    if box is None:
+        return None
+
+    min_x, min_y, max_x, max_y = box
+    scene = context.scene
+    return (
+        _units.scene_bu_to_mm(scene, max_x - min_x),
+        _units.scene_bu_to_mm(scene, max_y - min_y),
+    )

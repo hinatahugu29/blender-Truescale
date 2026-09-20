@@ -211,8 +211,8 @@ def _plan(context):
 
 def needs_tiling(context):
     """いまの型紙が用紙に収まらないか。"""
-    drawing, plan = _plan(context)
-    if drawing is None or plan is None:
+    size, plan = _plan(context)
+    if size is None or plan is None:
         return False
     return plan.count > 1
 
@@ -223,11 +223,12 @@ def paper_fit_text(context):
     「入らない」とだけ言われても先へ進めない。何枚になるのか、
     どの用紙なら1枚で済むのかまで出す。
     """
-    drawing, plan = _plan(context)
-    if drawing is None:
+    extent, plan = _plan(context)
+    if extent is None:
         return []
 
-    size = f"{drawing.width_mm:.0f} × {drawing.height_mm:.0f} mm"
+    width_mm, height_mm = extent
+    size = f"{width_mm:.0f} × {height_mm:.0f} mm"
 
     if plan is None:
         return [f"型紙 {size}", "余白と重ねしろが用紙に対して大きすぎます"]
@@ -244,8 +245,8 @@ def paper_fit_text(context):
         usable_w = max(pw, ph) - plan.margin * 2.0
         usable_h = min(pw, ph) - plan.margin * 2.0
         if (
-            (drawing.width_mm <= usable_h and drawing.height_mm <= usable_w)
-            or (drawing.width_mm <= usable_w and drawing.height_mm <= usable_h)
+            (width_mm <= usable_h and height_mm <= usable_w)
+            or (width_mm <= usable_w and height_mm <= usable_h)
         ):
             lines.append(f"{name} なら1枚で収まります")
             break

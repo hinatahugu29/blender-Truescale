@@ -1057,6 +1057,117 @@ def test_arrow_head_never_exceeds_shaft():
 
 
 # ============================================================
+# 用紙ガイド
+# ============================================================
+
+@test
+def test_paper_guide_matches_the_split():
+    """用紙ガイドの枠が、実際の分割と同じ並びになる。
+
+    画面の枠と刷ったときの切れ目が違うと、枠を見ながら置いた意味が
+    無くなる。枚数・位置とも、書き出しと同じ計算から出す。
+    """
+    reset_scene()
+    import truescale
+    from truescale import overlay as OV
+    from truescale.unfold.ops.export import tile_plan
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+
+    _size, plan = tile_plan(bpy.context)
+    check(plan is not None, "分割の計画が立たない")
+
+    grid = OV.paper_grid(bpy.context)
+    check(grid is not None, "ガイドの枠が出ない")
+
+    _ox, _oy, _cw, _ch, _sw, _sh, cols, rows = grid
+    check(
+        cols == plan.cols and rows == plan.rows,
+        f"枠 {cols}×{rows} と分割 {plan.cols}×{plan.rows} が違う",
+    )
+
+
+@test
+def test_paper_guide_shows_the_usable_area():
+    """ガイドの枠は、紙の外形ではなく型紙を置ける範囲。
+
+    外形（A4なら210×297）で出すと、枠いっぱいに置いた島が刷った
+    ときに切れる。余白と目盛りの帯を引いた残りでなければならない。
+    """
+    reset_scene()
+    import truescale
+    from truescale import overlay as OV
+    from truescale.core import units as UNITS
+    from truescale.unfold.ops.export import tile_plan
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+
+    _size, plan = tile_plan(bpy.context)
+    grid = OV.paper_grid(bpy.context)
+    scene = bpy.context.scene
+
+    width_mm = UNITS.scene_bu_to_mm(scene, grid[2])
+    height_mm = UNITS.scene_bu_to_mm(scene, grid[3])
+
+    check(
+        abs(width_mm - plan.content_w) < 0.01,
+        f"枠の幅が置ける範囲と違う: {width_mm:.1f} ≠ {plan.content_w:.1f}",
+    )
+    check(
+        abs(height_mm - plan.content_h) < 0.01,
+        f"枠の高さが置ける範囲と違う: {height_mm:.1f} ≠ {plan.content_h:.1f}",
+    )
+    check(width_mm < plan.paper_w, "枠が紙の外形のままになっている")
+
+
+@test
+def test_paper_guide_follows_the_pattern():
+    """型紙を動かすと、ガイドの枠も一緒に動く。
+
+    枠が原点に固定だと、型紙を動かした瞬間に「どこで切れるか」の
+    表示が嘘になる。
+    """
+    reset_scene()
+    import truescale
+    from truescale import overlay as OV
+    from truescale.core import units as UNITS
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+
+    before = OV.paper_grid(bpy.context)
+    check(before is not None, "ガイドの枠が出ない")
+
+    shift = 1.0
+    unfold.location.x += shift
+    bpy.context.view_layer.update()
+
+    after = OV.paper_grid(bpy.context)
+    moved = after[0] - before[0]
+    check(
+        abs(moved - shift) < 1e-4,
+        f"型紙を動かしても枠が追従しない: {moved:.4f} ≠ {shift}",
+    )
+
+
+# ============================================================
 # 型紙の確定
 # ============================================================
 

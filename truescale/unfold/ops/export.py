@@ -46,35 +46,36 @@ def _overlay():
     return overlay
 
 
-def _paper_for(context, drawing):
-    """いま選ばれている用紙の寸法。向きの自動も見る。"""
-    return _outline.paper_dimensions(
-        context.scene, drawing.width_mm, drawing.height_mm
-    )
-
-
-def tile_plan(context):
-    """いまの型紙を分割するとどうなるか。書き出さずに調べる。
-
-    パネルが枚数を出すのにも使う。押す前に何枚になるか分かれば、
-    30枚だと気付いた時点で用紙を変えられる。
-    """
-    drawing = _collect.pattern_lines(context)
-    if drawing is None:
-        return None, None
-
-    paper_w, paper_h = _paper_for(context, drawing)
+def _plan_for_size(context, width_mm, height_mm):
+    """その大きさの型紙を、いまの用紙設定で分割する計画。"""
     scene = context.scene
-
-    plan = _tiling.plan(
-        drawing.width_mm,
-        drawing.height_mm,
+    paper_w, paper_h = _outline.paper_dimensions(
+        scene, width_mm, height_mm
+    )
+    return _tiling.plan(
+        width_mm,
+        height_mm,
         paper_w,
         paper_h,
         margin=float(getattr(scene, "tsunfold_tile_margin_mm", 8.0)),
         overlap=float(getattr(scene, "tsunfold_tile_overlap_mm", 15.0)),
     )
-    return drawing, plan
+
+
+def tile_plan(context):
+    """いまの型紙を分割するとどうなるか。線を作らずに調べる。
+
+    パネルと用紙ガイドが毎フレーム呼ぶので、線を集める
+    pattern_lines は使えない（文字の輪郭を起こすので 1回 350ms）。
+    外形の大きさだけを見積もる。
+
+    戻り値は ((幅mm, 高さmm), 計画)。
+    """
+    size = _collect.pattern_extent(context)
+    if size is None:
+        return None, None
+
+    return size, _plan_for_size(context, size[0], size[1])
 
 
 class TSUNFOLD_OT_export_sheets(bpy.types.Operator, ExportHelper):
@@ -115,11 +116,14 @@ class TSUNFOLD_OT_export_sheets(bpy.types.Operator, ExportHelper):
 
     def execute(self, context):
         scene = context.scene
-        drawing, plan = tile_plan(context)
 
+        # 書き出しは見積もりではなく、本当の線で決める。
+        drawing = _collect.pattern_lines(context)
         if drawing is None:
             self.report({'ERROR'}, "書き出せる線がありません。")
             return {'CANCELLED'}
+
+        plan = _plan_for_size(context, drawing.width_mm, drawing.height_mm)
         if plan is None:
             self.report(
                 {'ERROR'},

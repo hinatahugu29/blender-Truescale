@@ -19,6 +19,13 @@ Blender の描画ハンドラから毎フレーム呼ばれる。描くだけで
 を呼び戻すと循環importになり、それを避けるための遅延importが
 「どこから何を見ているか」を隠してしまう。
 
+■ 用紙ガイドは「置ける範囲」を分割の数だけ並べる
+
+紙の外形ではなく、余白と目盛りの帯を引いた残りを枠にする。外形で
+出すと、枠いっぱいに置いた島が刷ったときに切れる。位置は型紙の
+左下に合わせる。書き出しと同じ基準でないと、画面の枠と実際の
+切れ目がずれる。
+
 ■ 用紙ガイドとシームの線は印刷されない
 
 画面で確認するための目印で、PNG書き出しには含めない。
@@ -181,6 +188,42 @@ def preview_outline_segments(context):
     return []
 
 
+def paper_grid(context):
+    """画面に出す用紙の枠。(左下x, 左下y, 幅, 高さ, 列, 行) を返す。
+
+    寸法は Blender Unit。型紙が無ければ None。
+
+    枠は「紙の外形」ではなく「型紙を置ける範囲」。紙は 210×297 でも、
+    余白と目盛りの帯を引いた 194×269 しか使えない。外形で枠を出すと、
+    枠いっぱいに置いた島が刷ったときに切れる。
+
+    位置は型紙の左下に合わせる。書き出しと同じ基準にしないと、
+    画面の枠と実際の切れ目がずれる。
+    """
+    from ..export import collect as _collect
+    from ..unfold.ops.export import tile_plan
+
+    box = _collect.pattern_bounds(context)
+    if box is None:
+        return None
+
+    _size, plan = tile_plan(context)
+    if plan is None:
+        return None
+
+    scene = context.scene
+    return (
+        box[0],
+        box[1],
+        _units.scene_mm_to_bu(scene, plan.content_w),
+        _units.scene_mm_to_bu(scene, plan.content_h),
+        _units.scene_mm_to_bu(scene, plan.step_w),
+        _units.scene_mm_to_bu(scene, plan.step_h),
+        plan.cols,
+        plan.rows,
+    )
+
+
 def draw_paper_guide():
     context = bpy.context
     if context is None or context.scene is None:
@@ -266,21 +309,69 @@ def draw_paper_guide():
             gpu.state.blend_set('NONE')
 
         elif show_paper:
-            # Normal layout guide: blue outline only.
-            verts = [
-                (0.0, 0.0, z),
-                (w, 0.0, z),
-                (w, h, z),
-                (0.0, h, z),
-                (0.0, 0.0, z),
-            ]
-            batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": verts})
+            grid = paper_grid(context)
 
             gpu.state.blend_set('ALPHA')
-            gpu.state.line_width_set(2.0)
             shader.bind()
-            shader.uniform_float("color", (0.12, 0.55, 1.0, 0.9))
-            batch.draw(shader)
+
+            if grid is None:
+                # 型紙がまだ無い。置き場所の目安として、紙1枚ぶんを
+                # 原点に出しておく。
+                verts = [
+                    (0.0, 0.0, z),
+                    (w, 0.0, z),
+                    (w, h, z),
+                    (0.0, h, z),
+                    (0.0, 0.0, z),
+                ]
+                batch = batch_for_shader(
+                    shader, 'LINE_STRIP', {"pos": verts}
+                )
+                gpu.state.line_width_set(2.0)
+                shader.uniform_float("color", (0.12, 0.55, 1.0, 0.55))
+                batch.draw(shader)
+            else:
+                ox, oy, cw, ch, sw, sh, cols, rows = grid
+
+                # 1枚ずつの枠を、実際に分割される位置へ並べる。
+                # 重なりの分だけ枠も重なるので、継ぎ目が二重線で見える。
+                verts = []
+                for row in range(rows):
+                    for col in range(cols):
+                        x = ox + col * sw
+                        y = oy + row * sh
+                        corners = [
+                            (x, y, z),
+                            (x + cw, y, z),
+                            (x + cw, y + ch, z),
+                            (x, y + ch, z),
+                        ]
+                        for index in range(4):
+                            verts.append(corners[index])
+                            verts.append(corners[(index + 1) % 4])
+
+                batch = batch_for_shader(shader, 'LINES', {"pos": verts})
+                gpu.state.line_width_set(1.0)
+                shader.uniform_float("color", (0.12, 0.55, 1.0, 0.75))
+                batch.draw(shader)
+
+                # 全体の外周は濃く。何枚ぶんの広がりかが一目で分かる。
+                total_w = cw + sw * (cols - 1)
+                total_h = ch + sh * (rows - 1)
+                outer = [
+                    (ox, oy, z + 0.00001),
+                    (ox + total_w, oy, z + 0.00001),
+                    (ox + total_w, oy + total_h, z + 0.00001),
+                    (ox, oy + total_h, z + 0.00001),
+                    (ox, oy, z + 0.00001),
+                ]
+                batch = batch_for_shader(
+                    shader, 'LINE_STRIP', {"pos": outer}
+                )
+                gpu.state.line_width_set(2.0)
+                shader.uniform_float("color", (0.12, 0.55, 1.0, 1.0))
+                batch.draw(shader)
+
             gpu.state.line_width_set(1.0)
             gpu.state.blend_set('NONE')
 
