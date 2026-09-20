@@ -614,7 +614,7 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 icon='CHECKMARK',
             )
             if _manual_layout_active(scene):
-                output.label(text="手動調整中：マーキング表示を一時停止")
+                output.label(text="手動調整中：印は島と一緒に動きます")
             else:
                 output.label(text="面を選択してGで移動 → レイアウト確定")
 

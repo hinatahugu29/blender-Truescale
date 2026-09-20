@@ -1057,6 +1057,99 @@ def test_arrow_head_never_exceeds_shaft():
 
 
 # ============================================================
+# 手動レイアウト中の印
+# ============================================================
+
+@test
+def test_marks_follow_the_island_being_dragged():
+    """島を動かすと、その島の印だけが一緒に動く。
+
+    手動レイアウト中は編集モードなので、形は BMesh 側にあり
+    obj.data には反映されない。そのまま描き直すと動かす前の位置に
+    出るので、以前は表示ごと止めていた。置き場所を決めている最中
+    こそ見えてほしいので、控えておいてずらす形にした。
+    """
+    reset_scene()
+    import bmesh
+    import truescale
+    from truescale.marking import dragging as DR
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+
+    check(DR.take_snapshot(bpy.context, obj, unfold), "控えを取れない")
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    try:
+        before, _texts = DR.current(unfold)
+        check(before, "編集モードで印を取れない")
+
+        mesh = bmesh.from_edit_mesh(unfold.data)
+        mesh.verts.ensure_lookup_table()
+        island = DR._snapshot["islands"][0]
+        shift = 5.0
+        for index in island:
+            mesh.verts[index].co.x += shift
+        bmesh.update_edit_mesh(unfold.data)
+
+        after, _texts = DR.current(unfold)
+        moved = sorted({round(b[0].x - a[0].x, 4)
+                        for a, b in zip(before, after)})
+
+        check(
+            any(abs(value - shift) < 1e-4 for value in moved),
+            f"動かした島の印が追従していない: {moved}",
+        )
+        check(
+            any(abs(value) < 1e-9 for value in moved),
+            f"動かしていない島の印まで動いた: {moved}",
+        )
+    finally:
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+
+@test
+def test_dragging_gives_up_when_topology_changes():
+    """頂点が増減したら、印を出さない。
+
+    移動だけのはずだが、編集モードでは何でもできる。覚えている
+    対応が合わなくなったら、間違った位置に出すより出さない。
+    """
+    reset_scene()
+    import bmesh
+    import truescale
+    from truescale.marking import dragging as DR
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+    DR.take_snapshot(bpy.context, obj, unfold)
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    try:
+        mesh = bmesh.from_edit_mesh(unfold.data)
+        mesh.verts.new((0.0, 0.0, 0.0))
+        bmesh.update_edit_mesh(unfold.data)
+
+        segments, texts = DR.current(unfold)
+        check(
+            segments is None and texts is None,
+            "形が変わったのに印を出そうとしている",
+        )
+    finally:
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+
+# ============================================================
 # 用紙ガイド
 # ============================================================
 
@@ -1742,6 +1835,7 @@ def test_modules_import_without_error():
         "truescale.core.state", "truescale.core.units",
         "truescale.core.view",
         "truescale.marking.auto_notch", "truescale.marking.compute",
+        "truescale.marking.dragging",
         "truescale.marking.interact", "truescale.marking.symmetry",
         "truescale.marking.tools",
         "truescale.marking.placement", "truescale.marking.seams",

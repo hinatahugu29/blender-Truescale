@@ -22,6 +22,7 @@ from ...export import outline as _outline
 from ...export import png as _png
 from ...marking import auto_notch as _auto_notch
 from ...marking import compute as _compute
+from ...marking import dragging as _dragging
 from ...marking import interact as _interact
 from ...marking import seams as _seams
 from ...marking import source as _source
@@ -186,6 +187,7 @@ class TSUNFOLD_OT_return_default(bpy.types.Operator):
             )
 
         context.scene[_session.MANUAL_LAYOUT_ACTIVE] = False
+        _dragging.clear()
         scene = context.scene
         source = _objects.seam_source(context)
 

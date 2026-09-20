@@ -21,6 +21,7 @@ from ...export import outline as _outline
 from ...export import png as _png
 from ...marking import auto_notch as _auto_notch
 from ...marking import compute as _compute
+from ...marking import dragging as _dragging
 from ...marking import interact as _interact
 from ...marking import seams as _seams
 from ...marking import source as _source
@@ -97,6 +98,12 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
 
         if obj is None:
             return {'CANCELLED'}
+
+        # 動かしている最中も印が見えるよう、いまの位置を控える。
+        # 形は変わらないので、あとは島ごとの移動量を足すだけで済む。
+        source = _objects.source_from_context(context)
+        if source is not None:
+            _dragging.take_snapshot(context, source, obj)
 
         # Smooth finishing is a separate Curve. Manual layout edits operate
         # on the real flat Mesh, so temporarily return to POLY display.
@@ -309,6 +316,7 @@ class TSUNFOLD_OT_layout_confirm(bpy.types.Operator):
             return {'CANCELLED'}
 
         context.scene[_session.MANUAL_LAYOUT_ACTIVE] = False
+        _dragging.clear()
         _interact.invalidate_layout_cache()
         _view.tag_redraw()
 

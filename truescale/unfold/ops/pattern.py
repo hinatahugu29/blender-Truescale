@@ -21,6 +21,7 @@ from ...export import outline as _outline
 from ...export import png as _png
 from ...marking import auto_notch as _auto_notch
 from ...marking import compute as _compute
+from ...marking import dragging as _dragging
 from ...marking import interact as _interact
 from ...marking import seams as _seams
 from ...marking import source as _source
@@ -295,6 +296,7 @@ class TSUNFOLD_OT_delete_unfold(bpy.types.Operator):
 
     def execute(self, context):
         context.scene[_session.MANUAL_LAYOUT_ACTIVE] = False
+        _dragging.clear()
         try:
             context.scene.tsunfold_pattern_preview = False
             context.scene[_session.PREVIEW_PREV_ACTIVE] = ""

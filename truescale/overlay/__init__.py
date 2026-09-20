@@ -8,10 +8,17 @@ Blender の描画ハンドラから毎フレーム呼ばれる。描くだけで
 ここに重い処理を置くと、ビュー操作そのものが重くなる。
 計算結果はキャッシュから読み、ここでは GPU へ渡すだけにする。
 
-■ 手動レイアウト中は描かない
+■ 手動レイアウト中は、控えた印をずらして描く
 
-面を動かしている最中に注記を描き直すと、位置が追従せずちらつく。
-レイアウト編集中は早期に戻る。
+編集モード中の形は BMesh 側にあり、obj.data へは反映されない。
+そのまま描き直すと動かす前の位置に出るので、以前は表示ごと
+止めていた。ただ、置き場所を決めている最中こそ「この島をここへ
+置くと合印が継ぎ目に乗る」が見えてほしい。
+
+手動レイアウトでやれるのは島の移動だけで、形は変わらない。
+始めた時点で一度計算しておけば、あとは島ごとの移動量を足すだけで
+足りる。作り直すと1フレーム 39〜205ms かかり、ドラッグが
+5〜25 fps まで落ちる。詳しくは marking.dragging。
 
 ■ ここから unfold を呼ばない
 
@@ -809,13 +816,39 @@ def draw_direction_arrow_overlay(context):
             _debug.swallowed("overlay._pattern_draw_direction_arrow_overlay")
 
 
+def dragging_marks(context):
+    """手動レイアウト中の印。(型紙, 線, 文字)。
+
+    控えたものを島ごとの移動量だけずらして返す。作り直さない。
+    """
+    from ..marking import dragging as _dragging
+
+    unfold = _objects.resolve_unfold_for_layout(context)
+    if unfold is None:
+        return (None, [], [])
+
+    segments, texts = _dragging.current(unfold)
+    return (unfold, segments or [], texts or [])
+
+
 def draw_marks_3d():
     context = bpy.context
     if context is None:
         return
-    if manual_layout_active(context.scene):
-        return
     if context.area is None or context.area.type != 'VIEW_3D':
+        return
+
+    if manual_layout_active(context.scene):
+        # 動かしている最中は、控えた印をずらして描く。作り直すと
+        # 1フレーム 39〜205ms かかり、ドラッグが止まって見える。
+        try:
+            unfold, segments, _texts = dragging_marks(context)
+            if unfold is not None and segments:
+                gpu.state.depth_test_set('LESS_EQUAL')
+                draw_thick_segments(segments, unfold, context.scene)
+                gpu.state.depth_test_set('NONE')
+        except Exception:
+            _debug.swallowed("overlay.draw_marks_3d.dragging")
         return
 
     try:
@@ -1207,9 +1240,6 @@ def draw_marks_3d():
 def draw_text_2d():
     context = bpy.context
 
-    if context is not None and manual_layout_active(context.scene):
-        return
-
     if (
         context is None
         or context.area is None
@@ -1227,7 +1257,9 @@ def draw_text_2d():
             source_name = unfold_fallback.get("tsunfold_source", "")
             source = bpy.data.objects.get(source_name)
 
-    if source is None:
+    dragging = manual_layout_active(context.scene)
+
+    if source is None and not dragging:
         return
 
     rv3d = getattr(context.space_data, "region_3d", None)
@@ -1291,6 +1323,13 @@ def draw_text_2d():
                 _debug.swallowed("overlay._draw_pattern_text_2d.draw_label")
 
             blf.draw(font_id, str(text))
+
+        if dragging:
+            # 動かしている最中の文字。控えたものをずらして描く。
+            _unfold, _segments, texts = dragging_marks(context)
+            for text, world_pos, size_mm, color, angle in texts:
+                draw_label(text, world_pos, size_mm, color, angle)
+            return
 
             try:
                 blf.disable(font_id, blf.ROTATION)
