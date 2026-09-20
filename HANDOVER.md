@@ -113,6 +113,9 @@ tools/run_tests.cmd
 | `tools/test_headless.py` | Blender をヘッドレスで起動して実操作を試す |
 | `tools/build.py` | 配布用 ZIP を作る |
 | `tools/audit_settings.py` | 設定ごとの描画コストを実測する |
+| `tools/measure_viewport.py` | 描画ハンドラを外した場合との差を測る |
+| `tools/measure_depsgraph.py` | depsgraph ハンドラのコストを測る |
+| `tools/dump_state.py` | 状態が今どうなっているかを出す |
 
 ---
 
