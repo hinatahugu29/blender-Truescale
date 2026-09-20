@@ -1,6 +1,9 @@
 import bpy
 
 from .. import debug as _debug
+from . import keys as _keys
+from . import dimension as _dimension
+from . import viewstate as _viewstate
 import traceback
 import os
 import html
@@ -19,40 +22,6 @@ from bpy_extras import view3d_utils
 from bpy_extras.io_utils import ExportHelper
 
 
-HANDLER_KEY = "TSDRAFT_SIZE_LABEL_HANDLER"
-BBOX_HANDLER_KEY = "TSDRAFT_BBOX_DRAW_HANDLER"
-VIEW_LABEL_HANDLER_KEY = "TSDRAFT_VIEW_LABEL_HANDLER"
-DATA_KEY = "TSDRAFT_SIZE_LABEL_DATA"
-SOURCE_KEY = "TSDRAFT_SIZE_SOURCE_NAME"
-VIEW_STATE_KEY = "TSDRAFT_VIEW_STATE"
-BBOX_NAME = "サイズ用バウンディングボックス"
-
-# 旧バージョンが driver_namespace に残したキー。後始末のためだけに持つ。
-# ここは「過去に実際に使われていた文字列」でなければ意味がないので、
-# 接頭辞の一括置換の対象にしてはいけない。
-#   MHS_ … 最初期の接頭辞
-#   MHP_ … Truescale へ改称する前の接頭辞
-LEGACY_HANDLER_KEYS = (
-    "MHS_SIZE_LABEL_HANDLER",
-    "MHS_BBOX_DRAW_HANDLER",
-    "MHS_VIEW_LABEL_HANDLER",
-    "MHP_SIZE_LABEL_HANDLER",
-    "MHP_BBOX_DRAW_HANDLER",
-    "MHP_VIEW_LABEL_HANDLER",
-)
-LEGACY_DATA_KEY = "MHP_SIZE_LABEL_DATA"
-LEGACY_SOURCE_KEY = "MHP_SIZE_SOURCE_NAME"
-EXPORT_CONTEXT_KEY = "TSDRAFT_EXPORT_VIEW_CONTEXT"
-ZOOM_SYNC_STATE_KEY = "TSDRAFT_ORTHO_ZOOM_SYNC_STATE"
-AUTO_FOLLOW_SIGNATURE_KEY = "TSDRAFT_AUTO_FOLLOW_SIGNATURE"
-AUTO_FOLLOW_GUARD_KEY = "TSDRAFT_AUTO_FOLLOW_GUARD"
-LAST_EXPORT_DIR_KEY = "TSDRAFT_LAST_EXPORT_DIR"
-DARK_VIEW_STATE_KEY = "TSDRAFT_DARK_VIEW_STATE"
-DARK_BG = (0.004, 0.012, 0.028)
-DARK_GRAD_TOP = (0.045, 0.145, 0.220)
-DARK_GRAD_BOTTOM = (0.006, 0.018, 0.032)
-DARK_LINE = (0.32, 0.34, 0.37, 1.0)
-DARK_TEXT = (0.72, 0.88, 0.96, 1.0)
 
 
 
@@ -89,133 +58,12 @@ class TSDRAFT_Preferences(bpy.types.AddonPreferences):
         layout.prop(self, "show_dark_place_button")
 
 
-def save_dark_view_state(space):
-    namespace = bpy.app.driver_namespace
-    if namespace.get(DARK_VIEW_STATE_KEY) is not None:
-        return
-
-    shading = space.shading
-
-    theme_gradients = None
-    try:
-        theme_gradients = bpy.context.preferences.themes[0].view_3d.space.gradients
-    except Exception:
-        _debug.swallowed("draft.save_dark_view_state")
-
-    overlay = space.overlay
-    scene = getattr(bpy.context, "scene", None)
-
-    state = {
-        "background_type": getattr(shading, "background_type", None),
-        "background_color": tuple(getattr(shading, "background_color", (0.05, 0.05, 0.05))),
-        "show_floor": getattr(overlay, "show_floor", None),
-        "show_ortho_grid": getattr(overlay, "show_ortho_grid", None),
-        "show_axis_x": getattr(overlay, "show_axis_x", None),
-        "show_axis_y": getattr(overlay, "show_axis_y", None),
-        "scene_show_grid": (
-            bool(getattr(scene, "tsdraft_show_grid", False))
-            if scene is not None
-            else False
-        ),
-    }
-
-    if theme_gradients is not None:
-        state["theme_background_type"] = theme_gradients.background_type
-        state["theme_gradient"] = tuple(theme_gradients.gradient)
-        state["theme_high_gradient"] = tuple(theme_gradients.high_gradient)
-
-    namespace[DARK_VIEW_STATE_KEY] = state
 
 
-def apply_dark_place_view(space):
-    save_dark_view_state(space)
-
-    shading = space.shading
-
-    # Blender標準のテーマグラデーションを深海色に一時変更
-    try:
-        gradients = bpy.context.preferences.themes[0].view_3d.space.gradients
-        gradients.background_type = 'LINEAR'
-        gradients.gradient = DARK_GRAD_BOTTOM
-        gradients.high_gradient = DARK_GRAD_TOP
-
-        if hasattr(shading, "background_type"):
-            shading.background_type = 'THEME'
-    except Exception:
-        # 万一テーマへ触れない環境では従来の単色へフォールバック
-        if hasattr(shading, "background_type"):
-            shading.background_type = 'VIEWPORT'
-        if hasattr(shading, "background_color"):
-            shading.background_color = DARK_BG
 
 
-def restore_dark_place_view(space):
-    namespace = bpy.app.driver_namespace
-    state = namespace.get(DARK_VIEW_STATE_KEY)
-    shading = space.shading
-
-    if state is not None:
-        # テーマのグラデーション設定を元へ戻す
-        try:
-            gradients = bpy.context.preferences.themes[0].view_3d.space.gradients
-
-            if "theme_background_type" in state:
-                gradients.background_type = state["theme_background_type"]
-            if "theme_gradient" in state:
-                gradients.gradient = state["theme_gradient"]
-            if "theme_high_gradient" in state:
-                gradients.high_gradient = state["theme_high_gradient"]
-        except Exception:
-            _debug.swallowed("draft.restore_dark_place_view")
-
-        if state.get("background_type") is not None and hasattr(shading, "background_type"):
-            shading.background_type = state["background_type"]
-
-        if hasattr(shading, "background_color"):
-            shading.background_color = state["background_color"]
-
-        overlay = space.overlay
-
-        if state.get("show_floor") is not None and hasattr(overlay, "show_floor"):
-            overlay.show_floor = state["show_floor"]
-
-        if state.get("show_ortho_grid") is not None and hasattr(overlay, "show_ortho_grid"):
-            overlay.show_ortho_grid = state["show_ortho_grid"]
-
-        if state.get("show_axis_x") is not None and hasattr(overlay, "show_axis_x"):
-            overlay.show_axis_x = state["show_axis_x"]
-
-        if state.get("show_axis_y") is not None and hasattr(overlay, "show_axis_y"):
-            overlay.show_axis_y = state["show_axis_y"]
-
-        # tsdraft_show_grid は暗所中に変更していないため、ここでは触らない。
-        # Sceneプロパティへ代入すると update_grid() が走り、
-        # 図面用の白背景を再適用してしまうため、実際のoverlayだけ復元する。
-
-    namespace[DARK_VIEW_STATE_KEY] = None
 
 
-def get_view_key_from_rv3d(rv3d):
-
-    view_dir = rv3d.view_rotation @ Vector((0.0, 0.0, -1.0))
-    view_dir.normalize()
-
-    abs_view = (
-        abs(view_dir.x),
-        abs(view_dir.y),
-        abs(view_dir.z),
-    )
-    strongest = max(abs_view)
-
-    if strongest >= 0.965:
-        if abs_view[1] == strongest:
-            return "front", view_dir
-        elif abs_view[2] == strongest:
-            return "top", view_dir
-        else:
-            return "side", view_dir
-
-    return "user", view_dir
 
 
 def draw_bbox_overlay():
@@ -239,7 +87,7 @@ def draw_bbox_overlay():
     if mode == 'NONE' and not dark_place:
         return
 
-    view_key, view_dir = get_view_key_from_rv3d(rv3d)
+    view_key, view_dir = _viewstate.get_view_key_from_rv3d(rv3d)
 
     explicit_user_mode = bool(
         getattr(scene, "tsdraft_user_view_mode", False)
@@ -262,7 +110,7 @@ def draw_bbox_overlay():
         ):
             return
 
-    bbox_obj = bpy.data.objects.get(BBOX_NAME)
+    bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
     if bbox_obj is None:
         return
 
@@ -270,7 +118,7 @@ def draw_bbox_overlay():
     shader.bind()
 
     if dark_place:
-        shader.uniform_float("color", DARK_LINE)
+        shader.uniform_float("color", _keys.DARK_LINE)
         gpu.state.line_width_set(2.5)
     else:
         frame_color = scene.tsdraft_frame_color
@@ -381,7 +229,7 @@ def draw_bbox_overlay():
         # 以前は tsdraft_show_dimensions_* がOFFだと線まで消えていたため、
         # 任意ビューや通常の斜めビューで「寸法線のみ」を選ぶと
         # 何も表示されない状態になっていた。
-        data = bpy.app.driver_namespace.get(DATA_KEY, [])
+        data = bpy.app.driver_namespace.get(_keys.DATA_KEY, [])
         if not data:
             gpu.state.line_width_set(1.0)
             return
@@ -437,7 +285,7 @@ def draw_bbox_overlay():
 
 def ensure_bbox_draw_handler():
     namespace = bpy.app.driver_namespace
-    handler = namespace.get(BBOX_HANDLER_KEY)
+    handler = namespace.get(_keys.BBOX_HANDLER_KEY)
 
     if handler is None:
         handler = bpy.types.SpaceView3D.draw_handler_add(
@@ -446,12 +294,12 @@ def ensure_bbox_draw_handler():
             'WINDOW',
             'POST_VIEW'
         )
-        namespace[BBOX_HANDLER_KEY] = handler
+        namespace[_keys.BBOX_HANDLER_KEY] = handler
 
 
 def remove_bbox_draw_handler():
     namespace = bpy.app.driver_namespace
-    handler = namespace.get(BBOX_HANDLER_KEY)
+    handler = namespace.get(_keys.BBOX_HANDLER_KEY)
 
     if handler is not None:
         try:
@@ -459,7 +307,7 @@ def remove_bbox_draw_handler():
         except Exception:
             _debug.swallowed("draft.remove_bbox_draw_handler")
 
-    namespace[BBOX_HANDLER_KEY] = None
+    namespace[_keys.BBOX_HANDLER_KEY] = None
 
 
 def draw_view_label():
@@ -479,7 +327,7 @@ def draw_view_label():
     if not getattr(scene, "tsdraft_drawing_mode", False):
         return
 
-    view_key, _ = get_view_key_from_rv3d(rv3d)
+    view_key, _ = _viewstate.get_view_key_from_rv3d(rv3d)
 
     # -----------------------------------------------------
     # HARD ZOOM LOCK
@@ -488,7 +336,7 @@ def draw_view_label():
     # 任意ビューは対象外。
     # -----------------------------------------------------
     if view_key in {"top", "front", "side"}:
-        bbox_obj = bpy.data.objects.get(BBOX_NAME)
+        bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
 
         if bbox_obj is not None:
             try:
@@ -537,13 +385,13 @@ def draw_view_label():
 
                         sync_state = {}
                         for other_rv in quadviews:
-                            other_key, _ = get_view_key_from_rv3d(other_rv)
+                            other_key, _ = _viewstate.get_view_key_from_rv3d(other_rv)
                             if other_key in {"top", "front", "side"}:
                                 other_rv.view_distance = safe_distance
                                 sync_state[other_key] = safe_distance
 
                         if sync_state:
-                            bpy.app.driver_namespace[ZOOM_SYNC_STATE_KEY] = sync_state
+                            bpy.app.driver_namespace[_keys.ZOOM_SYNC_STATE_KEY] = sync_state
 
             except Exception:
                 _debug.swallowed("draft.draw_view_label")
@@ -575,7 +423,7 @@ def draw_view_label():
 
 def ensure_view_label_handler():
     namespace = bpy.app.driver_namespace
-    handler = namespace.get(VIEW_LABEL_HANDLER_KEY)
+    handler = namespace.get(_keys.VIEW_LABEL_HANDLER_KEY)
 
     if handler is None:
         handler = bpy.types.SpaceView3D.draw_handler_add(
@@ -584,12 +432,12 @@ def ensure_view_label_handler():
             'WINDOW',
             'POST_PIXEL'
         )
-        namespace[VIEW_LABEL_HANDLER_KEY] = handler
+        namespace[_keys.VIEW_LABEL_HANDLER_KEY] = handler
 
 
 def remove_view_label_handler():
     namespace = bpy.app.driver_namespace
-    handler = namespace.get(VIEW_LABEL_HANDLER_KEY)
+    handler = namespace.get(_keys.VIEW_LABEL_HANDLER_KEY)
 
     if handler is not None:
         try:
@@ -597,7 +445,7 @@ def remove_view_label_handler():
         except Exception:
             _debug.swallowed("draft.remove_view_label_handler")
 
-    namespace[VIEW_LABEL_HANDLER_KEY] = None
+    namespace[_keys.VIEW_LABEL_HANDLER_KEY] = None
 
 
 
@@ -610,15 +458,15 @@ SVG_PX_TO_MM = 25.4 / 96.0
 def tsdraft_import_legacy_state():
     namespace = bpy.app.driver_namespace
 
-    if not namespace.get(DATA_KEY):
-        legacy_data = namespace.get(LEGACY_DATA_KEY)
+    if not namespace.get(_keys.DATA_KEY):
+        legacy_data = namespace.get(_keys.LEGACY_DATA_KEY)
         if legacy_data:
-            namespace[DATA_KEY] = legacy_data
+            namespace[_keys.DATA_KEY] = legacy_data
 
-    if not namespace.get(SOURCE_KEY):
-        legacy_source = namespace.get(LEGACY_SOURCE_KEY)
+    if not namespace.get(_keys.SOURCE_KEY):
+        legacy_source = namespace.get(_keys.LEGACY_SOURCE_KEY)
         if legacy_source:
-            namespace[SOURCE_KEY] = legacy_source
+            namespace[_keys.SOURCE_KEY] = legacy_source
 
 
 def tsdraft_resolve_source_object(context):
@@ -626,20 +474,20 @@ def tsdraft_resolve_source_object(context):
     namespace = bpy.app.driver_namespace
 
     # 1. 従来の一時記憶
-    source_name = namespace.get(SOURCE_KEY)
+    source_name = namespace.get(_keys.SOURCE_KEY)
     if source_name:
         obj = bpy.data.objects.get(source_name)
         if obj is not None:
             return obj
 
     # 2. Bounding Box自身に保存した永続情報
-    bbox_obj = bpy.data.objects.get(BBOX_NAME)
+    bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
     if bbox_obj is not None:
         source_name = bbox_obj.get("tsdraft_source_name")
         if source_name:
             obj = bpy.data.objects.get(source_name)
             if obj is not None:
-                namespace[SOURCE_KEY] = obj.name
+                namespace[_keys.SOURCE_KEY] = obj.name
                 return obj
 
     # 3. 現在のアクティブメッシュから復旧
@@ -647,9 +495,9 @@ def tsdraft_resolve_source_object(context):
     if (
         active is not None
         and active.type == 'MESH'
-        and active.name != BBOX_NAME
+        and active.name != _keys.BBOX_NAME
     ):
-        namespace[SOURCE_KEY] = active.name
+        namespace[_keys.SOURCE_KEY] = active.name
         if bbox_obj is not None:
             bbox_obj["tsdraft_source_name"] = active.name
         return active
@@ -657,11 +505,11 @@ def tsdraft_resolve_source_object(context):
     # 4. 選択中のメッシュが1個だけならそれを採用
     selected_meshes = [
         obj for obj in getattr(context, "selected_objects", [])
-        if obj.type == 'MESH' and obj.name != BBOX_NAME
+        if obj.type == 'MESH' and obj.name != _keys.BBOX_NAME
     ]
     if len(selected_meshes) == 1:
         obj = selected_meshes[0]
-        namespace[SOURCE_KEY] = obj.name
+        namespace[_keys.SOURCE_KEY] = obj.name
         if bbox_obj is not None:
             bbox_obj["tsdraft_source_name"] = obj.name
         return obj
@@ -669,11 +517,11 @@ def tsdraft_resolve_source_object(context):
     # 5. シーン内に候補メッシュが1個だけなら最後の救済
     candidates = [
         obj for obj in context.scene.objects
-        if obj.type == 'MESH' and obj.name != BBOX_NAME
+        if obj.type == 'MESH' and obj.name != _keys.BBOX_NAME
     ]
     if len(candidates) == 1:
         obj = candidates[0]
-        namespace[SOURCE_KEY] = obj.name
+        namespace[_keys.SOURCE_KEY] = obj.name
         if bbox_obj is not None:
             bbox_obj["tsdraft_source_name"] = obj.name
         return obj
@@ -760,7 +608,7 @@ def tsdraft_patch_png_dpi(filepath, dpi):
 
 
 def tsdraft_get_last_export_dir():
-    path = bpy.app.driver_namespace.get(LAST_EXPORT_DIR_KEY)
+    path = bpy.app.driver_namespace.get(_keys.LAST_EXPORT_DIR_KEY)
 
     if path and os.path.isdir(path):
         return path
@@ -787,7 +635,7 @@ def tsdraft_remember_export_dir(path):
         except Exception:
             _debug.swallowed("draft.tsdraft_remember_export_dir")
 
-        bpy.app.driver_namespace[LAST_EXPORT_DIR_KEY] = folder
+        bpy.app.driver_namespace[_keys.LAST_EXPORT_DIR_KEY] = folder
 
 
 def tsdraft_store_export_view_context(context):
@@ -799,7 +647,7 @@ def tsdraft_store_export_view_context(context):
     if region is None:
         return
 
-    bpy.app.driver_namespace[EXPORT_CONTEXT_KEY] = {
+    bpy.app.driver_namespace[_keys.EXPORT_CONTEXT_KEY] = {
         "window": context.window,
         "screen": context.screen,
         "area": context.area,
@@ -812,7 +660,7 @@ def tsdraft_get_export_view_context(context):
     Return the VIEW_3D context saved at invoke-time.
     Falls back to scanning open Blender windows if needed.
     """
-    saved = bpy.app.driver_namespace.get(EXPORT_CONTEXT_KEY)
+    saved = bpy.app.driver_namespace.get(_keys.EXPORT_CONTEXT_KEY)
 
     if saved:
         try:
@@ -874,14 +722,14 @@ def tsdraft_find_view_region(area, wanted_key):
         pairs = list(zip(window_regions[:len(quadviews)], quadviews))
 
         for region, rv in pairs:
-            key, _ = get_view_key_from_rv3d(rv)
+            key, _ = _viewstate.get_view_key_from_rv3d(rv)
             if key == wanted_key:
                 return region, rv
 
     # Single view fallback.
     rv = space.region_3d
     if rv is not None:
-        key, _ = get_view_key_from_rv3d(rv)
+        key, _ = _viewstate.get_view_key_from_rv3d(rv)
         if key == wanted_key:
             region = next((r for r in window_regions if r.type == 'WINDOW'), None)
             if region is not None:
@@ -905,7 +753,7 @@ def tsdraft_sync_ortho_zoom(space):
 
     orthos = []
     for rv in quadviews:
-        key, _ = get_view_key_from_rv3d(rv)
+        key, _ = _viewstate.get_view_key_from_rv3d(rv)
         if key in {"top", "front", "side"}:
             orthos.append((key, rv))
 
@@ -913,7 +761,7 @@ def tsdraft_sync_ortho_zoom(space):
         return
 
     ns = bpy.app.driver_namespace
-    prev = ns.get(ZOOM_SYNC_STATE_KEY)
+    prev = ns.get(_keys.ZOOM_SYNC_STATE_KEY)
 
     current = {key: float(rv.view_distance) for key, rv in orthos}
 
@@ -933,7 +781,7 @@ def tsdraft_sync_ortho_zoom(space):
         for _, rv in orthos:
             rv.view_distance = master_value
 
-        ns[ZOOM_SYNC_STATE_KEY] = {
+        ns[_keys.ZOOM_SYNC_STATE_KEY] = {
             key: master_value
             for key, _ in orthos
         }
@@ -955,12 +803,12 @@ def tsdraft_sync_ortho_zoom(space):
         for _, rv in orthos:
             rv.view_distance = master_value
 
-        ns[ZOOM_SYNC_STATE_KEY] = {
+        ns[_keys.ZOOM_SYNC_STATE_KEY] = {
             key: master_value
             for key, _ in orthos
         }
     else:
-        ns[ZOOM_SYNC_STATE_KEY] = current
+        ns[_keys.ZOOM_SYNC_STATE_KEY] = current
 
 
 
@@ -1184,7 +1032,7 @@ def tsdraft_enforce_quad_zoom_lock_once():
     Top / Front / Side may zoom out freely, but cannot zoom in far enough
     for the Bounding Box to exceed ~72% of any pane.
     """
-    bbox_obj = bpy.data.objects.get(BBOX_NAME)
+    bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
     if bbox_obj is None:
         return
 
@@ -1276,7 +1124,7 @@ def tsdraft_enforce_quad_zoom_lock_once():
                     rv3d.view_distance = safe_distance
                     state[key] = safe_distance
 
-                bpy.app.driver_namespace[ZOOM_SYNC_STATE_KEY] = state
+                bpy.app.driver_namespace[_keys.ZOOM_SYNC_STATE_KEY] = state
 
                 try:
                     area.tag_redraw()
@@ -1349,123 +1197,12 @@ def tsdraft_crop_png_with_blender(src_path, dst_path, x0, y0, width, height):
         bpy.data.images.remove(img)
 
 
-def tsdraft_capture_rv3d_state(rv3d):
-    if rv3d is None:
-        return None
-
-    return {
-        "view_location": rv3d.view_location.copy(),
-        "view_rotation": rv3d.view_rotation.copy(),
-        "view_distance": float(rv3d.view_distance),
-        "view_perspective": rv3d.view_perspective,
-        "view_camera_zoom": getattr(rv3d, "view_camera_zoom", None),
-        "view_camera_offset": (
-            tuple(rv3d.view_camera_offset)
-            if hasattr(rv3d, "view_camera_offset")
-            else None
-        ),
-    }
 
 
-def tsdraft_restore_rv3d_state(rv3d, state):
-    if rv3d is None or not state:
-        return
-
-    rv3d.view_location = state["view_location"]
-    rv3d.view_rotation = state["view_rotation"]
-    rv3d.view_distance = state["view_distance"]
-    rv3d.view_perspective = state["view_perspective"]
-
-    if (
-        state.get("view_camera_zoom") is not None
-        and hasattr(rv3d, "view_camera_zoom")
-    ):
-        rv3d.view_camera_zoom = state["view_camera_zoom"]
-
-    if (
-        state.get("view_camera_offset") is not None
-        and hasattr(rv3d, "view_camera_offset")
-    ):
-        rv3d.view_camera_offset = state["view_camera_offset"]
 
 
-def tsdraft_capture_export_display_state(space, scene):
-    shading = space.shading
-    overlay = space.overlay
-
-    overlay_attrs = (
-        "show_axis_x",
-        "show_axis_y",
-        "show_axis_z",
-        "show_cursor",
-        "show_object_origins",
-        "show_object_origins_all",
-        "show_floor",
-        "show_ortho_grid",
-        "show_text",
-    )
-
-    return {
-        "shading_type": shading.type,
-        "background_type": getattr(shading, "background_type", None),
-        "background_color": tuple(
-            getattr(shading, "background_color", (0.05, 0.05, 0.05))
-        ),
-        "overlay": {
-            attr: getattr(overlay, attr, None)
-            for attr in overlay_attrs
-        },
-        "drawing_mode": bool(
-            getattr(scene, "tsdraft_drawing_mode", False)
-        ),
-        "driver_view_state": bpy.app.driver_namespace.get(
-            VIEW_STATE_KEY,
-            None
-        ),
-    }
 
 
-def tsdraft_restore_export_display_state(space, scene, state):
-    if not state:
-        return
-
-    shading = space.shading
-    overlay = space.overlay
-
-    try:
-        shading.type = state["shading_type"]
-    except Exception:
-        _debug.swallowed("draft.tsdraft_restore_export_display_state")
-
-    if (
-        state.get("background_type") is not None
-        and hasattr(shading, "background_type")
-    ):
-        try:
-            shading.background_type = state["background_type"]
-        except Exception:
-            _debug.swallowed("draft.tsdraft_restore_export_display_state")
-
-    if hasattr(shading, "background_color"):
-        try:
-            shading.background_color = state["background_color"]
-        except Exception:
-            _debug.swallowed("draft.tsdraft_restore_export_display_state")
-
-    for attr, value in state.get("overlay", {}).items():
-        if value is not None and hasattr(overlay, attr):
-            try:
-                setattr(overlay, attr, value)
-            except Exception:
-                _debug.swallowed("draft.tsdraft_restore_export_display_state")
-
-    scene.tsdraft_drawing_mode = state.get("drawing_mode", False)
-
-    # configure_drawing_view() が書き出し中に作った退避状態を残さない。
-    bpy.app.driver_namespace[VIEW_STATE_KEY] = state.get(
-        "driver_view_state",
-        None
-    )
 
 
 
@@ -1483,7 +1220,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
 
     # 書き出しは一時的にビュー方向・背景・オーバーレイを変更するため、
     # 開始時の状態を丸ごと退避して最後に必ず戻す。
-    original_display_state = tsdraft_capture_export_display_state(
+    original_display_state = _viewstate.tsdraft_capture_export_display_state(
         space,
         context.scene
     )
@@ -1515,7 +1252,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
         "user": bool(getattr(context.scene, "tsdraft_show_bbox_user", True)),
     }
 
-    original_main_rv3d_state = tsdraft_capture_rv3d_state(
+    original_main_rv3d_state = _viewstate.tsdraft_capture_rv3d_state(
         getattr(space, "region_3d", None)
     )
 
@@ -1523,13 +1260,13 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
     try:
         for rv in list(space.region_quadviews):
             original_quad_states.append(
-                (rv, tsdraft_capture_rv3d_state(rv))
+                (rv, _viewstate.tsdraft_capture_rv3d_state(rv))
             )
     except Exception:
         _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
 
     source_obj = tsdraft_resolve_source_object(context)
-    bbox_obj = bpy.data.objects.get(BBOX_NAME)
+    bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
 
     if source_obj is None:
         raise RuntimeError("元オブジェクトを選択してクレメンス")
@@ -1659,7 +1396,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
             "tsdraft_export_background_color",
             (1.0, 1.0, 1.0)
         )
-        configure_drawing_view(
+        _viewstate.configure_drawing_view(
             space,
             export_background,
             export_custom_color
@@ -1761,7 +1498,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
         crop_min_y = bbox_min_y
         crop_max_y = bbox_max_y
 
-        data = bpy.app.driver_namespace.get(DATA_KEY, [])
+        data = bpy.app.driver_namespace.get(_keys.DATA_KEY, [])
         suppress_sheet_dim_text = bool(
             bpy.app.driver_namespace.get("TSDRAFT_SHEET_SUPPRESS_DIM_TEXT", False)
         )
@@ -1833,7 +1570,7 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
             if axis not in visible_axes:
                 continue
 
-            label = get_dimension_text(scene, item)
+            label = _dimension.get_dimension_text(scene, item)
 
             # Mirror draw_size_labels() font fitting exactly.
             blf.size(0, requested_font_size)
@@ -2167,15 +1904,15 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
 
         # 撮影前のビュー方向・位置・倍率・背景・グリッド等へ完全復帰。
         try:
-            tsdraft_restore_rv3d_state(
+            _viewstate.tsdraft_restore_rv3d_state(
                 getattr(space, "region_3d", None),
                 original_main_rv3d_state
             )
 
             for rv, rv_state in original_quad_states:
-                tsdraft_restore_rv3d_state(rv, rv_state)
+                _viewstate.tsdraft_restore_rv3d_state(rv, rv_state)
 
-            tsdraft_restore_export_display_state(
+            _viewstate.tsdraft_restore_export_display_state(
                 space,
                 scene,
                 original_display_state
@@ -2205,41 +1942,12 @@ def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_d
 
 
 
-def dimension_length_mm(item):
-    """Return stored dimension length in millimeters, including older data."""
-    if "length_mm" in item:
-        return float(item["length_mm"])
-
-    # Backward compatibility for 2.4.x data stored only as "12.3 mm"
-    text = str(item.get("text", "")).strip()
-    try:
-        return float(text.replace("mm", "").strip())
-    except Exception:
-        return 0.0
 
 
-def format_dimension_value(length_mm, unit):
-    if unit == 'M':
-        return f"{length_mm / 1000.0:.3f} m"
-    if unit == 'CM':
-        return f"{length_mm / 10.0:.2f} cm"
-    return f"{length_mm:.1f} mm"
 
 
-def get_dimension_text(scene, item):
-    return format_dimension_value(
-        dimension_length_mm(item),
-        scene.tsdraft_dimension_unit
-    )
 
 
-def get_axis_dimension_text(scene, axis, fallback=None):
-    data = bpy.app.driver_namespace.get(DATA_KEY, [])
-    for item in data:
-        if item.get("axis") == axis:
-            return get_dimension_text(scene, item)
-
-    return fallback if fallback is not None else axis
 
 
 # =========================================================
@@ -2247,7 +1955,7 @@ def get_axis_dimension_text(scene, axis, fallback=None):
 # =========================================================
 
 def update_bbox_visibility(self=None, context=None):
-    bbox = bpy.data.objects.get(BBOX_NAME)
+    bbox = bpy.data.objects.get(_keys.BBOX_NAME)
 
     # 実オブジェクトは常時隠し、ビュー別表示はGPU描画へ任せる
     if bbox is not None:
@@ -2343,13 +2051,13 @@ def draw_size_labels():
     if namespace.get("TSDRAFT_SHEET_SUPPRESS_DIM_TEXT", False):
         return
 
-    source_name = namespace.get(SOURCE_KEY)
-    data = namespace.get(DATA_KEY, [])
+    source_name = namespace.get(_keys.SOURCE_KEY)
+    data = namespace.get(_keys.DATA_KEY, [])
 
     if source_name and bpy.data.objects.get(source_name) is None:
         return
 
-    bbox_obj = bpy.data.objects.get(BBOX_NAME)
+    bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
     if bbox_obj is None or not data:
         return
 
@@ -2358,7 +2066,7 @@ def draw_size_labels():
     font_color = scene.tsdraft_font_color
 
     if getattr(scene, "tsdraft_dark_place", False):
-        draw_color = DARK_TEXT
+        draw_color = _keys.DARK_TEXT
     else:
         draw_color = font_color
 
@@ -2372,7 +2080,7 @@ def draw_size_labels():
     )
 
     # Blenderの現在ビュー方向（画面から奥へ向かう方向）
-    view_key, view_dir = get_view_key_from_rv3d(rv3d)
+    view_key, view_dir = _viewstate.get_view_key_from_rv3d(rv3d)
 
     explicit_user_mode = bool(
         getattr(scene, "tsdraft_user_view_mode", False)
@@ -2503,7 +2211,7 @@ def draw_size_labels():
         vx = vx_mm * px_per_mm
         vy = vy_mm * px_per_mm
 
-        display_text = get_dimension_text(scene, item)
+        display_text = _dimension.get_dimension_text(scene, item)
 
         requested_font_size = max(1, int(font_size))
         blf.size(font_id, requested_font_size)
@@ -2636,7 +2344,7 @@ def tsdraft_remove_legacy_draw_handlers():
     """Remove stale pre-Printable/old-version handlers that can double-draw labels."""
     namespace = bpy.app.driver_namespace
 
-    for key in LEGACY_HANDLER_KEYS:
+    for key in _keys.LEGACY_HANDLER_KEYS:
         handler = namespace.get(key)
         if handler is not None:
             try:
@@ -2652,7 +2360,7 @@ def ensure_draw_handler():
     # First kill known stale handlers from older series/versions.
     tsdraft_remove_legacy_draw_handlers()
 
-    old_handler = namespace.get(HANDLER_KEY)
+    old_handler = namespace.get(_keys.HANDLER_KEY)
     if old_handler is not None:
         try:
             bpy.types.SpaceView3D.draw_handler_remove(old_handler, 'WINDOW')
@@ -2665,12 +2373,12 @@ def ensure_draw_handler():
         'WINDOW',
         'POST_PIXEL'
     )
-    namespace[HANDLER_KEY] = handler
+    namespace[_keys.HANDLER_KEY] = handler
 
 
 def remove_draw_handler():
     namespace = bpy.app.driver_namespace
-    handler = namespace.get(HANDLER_KEY)
+    handler = namespace.get(_keys.HANDLER_KEY)
 
     if handler is not None:
         try:
@@ -2681,7 +2389,7 @@ def remove_draw_handler():
         except Exception:
             _debug.swallowed("draft.remove_draw_handler")
 
-    namespace[HANDLER_KEY] = None
+    namespace[_keys.HANDLER_KEY] = None
 
 
 
@@ -2736,26 +2444,26 @@ def tsdraft_update_bbox_from_source(scene, depsgraph, force=False, request_redra
     """
     namespace = bpy.app.driver_namespace
 
-    if namespace.get(AUTO_FOLLOW_GUARD_KEY):
+    if namespace.get(_keys.AUTO_FOLLOW_GUARD_KEY):
         return False
 
     if not getattr(scene, "tsdraft_auto_follow", True):
         return False
 
-    source_name = namespace.get(SOURCE_KEY)
+    source_name = namespace.get(_keys.SOURCE_KEY)
     if not source_name:
         # Fall back to the persistent name stored on the BBox object.
-        bbox_existing = bpy.data.objects.get(BBOX_NAME)
+        bbox_existing = bpy.data.objects.get(_keys.BBOX_NAME)
         if bbox_existing is not None:
             source_name = bbox_existing.get("tsdraft_source_name")
             if source_name:
-                namespace[SOURCE_KEY] = source_name
+                namespace[_keys.SOURCE_KEY] = source_name
 
     if not source_name:
         return False
 
     src = bpy.data.objects.get(source_name)
-    bbox_obj = bpy.data.objects.get(BBOX_NAME)
+    bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
 
     if src is None or bbox_obj is None or src.type != 'MESH':
         return False
@@ -2765,7 +2473,7 @@ def tsdraft_update_bbox_from_source(scene, depsgraph, force=False, request_redra
         return False
 
     signature = tsdraft_auto_follow_signature(src, bounds)
-    if not force and namespace.get(AUTO_FOLLOW_SIGNATURE_KEY) == signature:
+    if not force and namespace.get(_keys.AUTO_FOLLOW_SIGNATURE_KEY) == signature:
         return False
 
     xmin, xmax, ymin, ymax, zmin, zmax = bounds
@@ -2787,7 +2495,7 @@ def tsdraft_update_bbox_from_source(scene, depsgraph, force=False, request_redra
         (0, 4), (1, 5), (2, 6), (3, 7),
     ]
 
-    namespace[AUTO_FOLLOW_GUARD_KEY] = True
+    namespace[_keys.AUTO_FOLLOW_GUARD_KEY] = True
 
     try:
         mesh = bbox_obj.data
@@ -2831,11 +2539,11 @@ def tsdraft_update_bbox_from_source(scene, depsgraph, force=False, request_redra
                 "world_b": tuple(world_b),
             })
 
-        namespace[DATA_KEY] = dimension_data
-        namespace[AUTO_FOLLOW_SIGNATURE_KEY] = signature
+        namespace[_keys.DATA_KEY] = dimension_data
+        namespace[_keys.AUTO_FOLLOW_SIGNATURE_KEY] = signature
 
     finally:
-        namespace[AUTO_FOLLOW_GUARD_KEY] = False
+        namespace[_keys.AUTO_FOLLOW_GUARD_KEY] = False
 
     if request_redraw:
         redraw_viewports()
@@ -2860,28 +2568,28 @@ def size_bbox_auto_follow_handler(scene, depsgraph):
 @persistent
 def size_bbox_cleanup_handler(scene, depsgraph):
     namespace = bpy.app.driver_namespace
-    source_name = namespace.get(SOURCE_KEY)
+    source_name = namespace.get(_keys.SOURCE_KEY)
 
     if not source_name:
         return
 
     source_exists = bpy.data.objects.get(source_name) is not None
-    bbox_exists = bpy.data.objects.get(BBOX_NAME) is not None
+    bbox_exists = bpy.data.objects.get(_keys.BBOX_NAME) is not None
 
     if not source_exists:
-        bbox = bpy.data.objects.get(BBOX_NAME)
+        bbox = bpy.data.objects.get(_keys.BBOX_NAME)
 
         if bbox is not None:
             bpy.data.objects.remove(bbox, do_unlink=True)
 
-        namespace[DATA_KEY] = []
-        namespace[SOURCE_KEY] = None
+        namespace[_keys.DATA_KEY] = []
+        namespace[_keys.SOURCE_KEY] = None
         redraw_viewports()
         return
 
     if not bbox_exists:
-        namespace[DATA_KEY] = []
-        namespace[SOURCE_KEY] = None
+        namespace[_keys.DATA_KEY] = []
+        namespace[_keys.SOURCE_KEY] = None
         redraw_viewports()
 
 
@@ -2921,7 +2629,7 @@ class TSDRAFT_OT_toggle_size_overlay(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        bbox_obj = bpy.data.objects.get(BBOX_NAME)
+        bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
 
         if bbox_obj is None:
             self.report({'WARNING'}, "先にBOX＋寸法を作成してクレメンス")
@@ -2982,7 +2690,7 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
             self.report({'ERROR'}, "メッシュオブジェクトを選択してクレメンス")
             return {'CANCELLED'}
 
-        if src.name == BBOX_NAME:
+        if src.name == _keys.BBOX_NAME:
             self.report({'ERROR'}, "元オブジェクトを選択してクレメンス")
             return {'CANCELLED'}
 
@@ -3001,13 +2709,13 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
                 return {'CANCELLED'}
 
         namespace = bpy.app.driver_namespace
-        namespace[SOURCE_KEY] = src.name
+        namespace[_keys.SOURCE_KEY] = src.name
 
-        old_bbox = bpy.data.objects.get(BBOX_NAME)
+        old_bbox = bpy.data.objects.get(_keys.BBOX_NAME)
         if old_bbox is not None:
             bpy.data.objects.remove(old_bbox, do_unlink=True)
 
-        namespace[DATA_KEY] = []
+        namespace[_keys.DATA_KEY] = []
 
         bbox_obj = src.copy()
 
@@ -3071,7 +2779,7 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
         if node_group.users == 0:
             bpy.data.node_groups.remove(node_group)
 
-        bbox_obj.name = BBOX_NAME
+        bbox_obj.name = _keys.BBOX_NAME
         bbox_obj["tsdraft_source_name"] = src.name
         bbox_obj.display_type = 'BOUNDS'
         bbox_obj.display_bounds_type = 'BOX'
@@ -3136,7 +2844,7 @@ class TSDRAFT_OT_make_size_bbox(bpy.types.Operator):
                 "world_b": tuple(world_b)
             })
 
-        namespace[DATA_KEY] = dimension_data
+        namespace[_keys.DATA_KEY] = dimension_data
 
         # 作成直後は「出た！」が分かるよう、通常斜めビューで必ず表示。
         # 「任意」専用モードはいったん解除する。
@@ -3197,11 +2905,11 @@ class TSDRAFT_OT_delete_bbox(bpy.types.Operator):
 
     def execute(self, context):
         namespace = bpy.app.driver_namespace
-        namespace[DATA_KEY] = []
-        namespace[SOURCE_KEY] = None
-        namespace[AUTO_FOLLOW_SIGNATURE_KEY] = None
+        namespace[_keys.DATA_KEY] = []
+        namespace[_keys.SOURCE_KEY] = None
+        namespace[_keys.AUTO_FOLLOW_SIGNATURE_KEY] = None
 
-        bbox = bpy.data.objects.get(BBOX_NAME)
+        bbox = bpy.data.objects.get(_keys.BBOX_NAME)
         if bbox is not None:
             bpy.data.objects.remove(bbox, do_unlink=True)
 
@@ -3418,7 +3126,7 @@ def tsdraft_sheet_alpha_blit(canvas, rgba, x0, y0):
 def tsdraft_export_canvas_rgba(scene):
     mode = getattr(scene, 'tsdraft_export_background', 'WHITE')
     custom = getattr(scene, 'tsdraft_export_background_color', (1.0, 1.0, 1.0))
-    rgb = tsdraft_background_color(mode, custom)
+    rgb = _viewstate.tsdraft_background_color(mode, custom)
     return (float(rgb[0]), float(rgb[1]), float(rgb[2]), 1.0)
 
 
@@ -3441,7 +3149,7 @@ def tsdraft_sheet_draw_dimension_labels(canvas, scene, positions, view_data, she
     import numpy as np
 
     namespace = bpy.app.driver_namespace
-    data = namespace.get(DATA_KEY, [])
+    data = namespace.get(_keys.DATA_KEY, [])
     if not data:
         return
 
@@ -3449,7 +3157,7 @@ def tsdraft_sheet_draw_dimension_labels(canvas, scene, positions, view_data, she
     for item in data:
         axis = str(item.get("axis", "")).upper()
         if axis in {"X", "Y", "Z"}:
-            axis_text[axis] = get_dimension_text(scene, item)
+            axis_text[axis] = _dimension.get_dimension_text(scene, item)
 
     if not axis_text:
         return
@@ -3538,12 +3246,12 @@ def tsdraft_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
     if not axes:
         return
 
-    data = bpy.app.driver_namespace.get(DATA_KEY, [])
+    data = bpy.app.driver_namespace.get(_keys.DATA_KEY, [])
     axis_text = {}
     for item in data:
         axis = str(item.get("axis", "")).upper()
         if axis in axes:
-            axis_text[axis] = get_dimension_text(scene, item)
+            axis_text[axis] = _dimension.get_dimension_text(scene, item)
 
     horizontal_text = axis_text.get(axes[0])
     vertical_text = axis_text.get(axes[1])
@@ -3820,7 +3528,7 @@ def tsdraft_build_three_view_sheet(context, filepath):
     source_obj = tsdraft_resolve_source_object(context)
     if source_obj is None:
         raise RuntimeError('元オブジェクトを選択してクレメンス')
-    if bpy.data.objects.get(BBOX_NAME) is None:
+    if bpy.data.objects.get(_keys.BBOX_NAME) is None:
         raise RuntimeError('先にBOX＋寸法を作成してクレメンス')
 
     out_dir = os.path.dirname(filepath) or os.getcwd()
@@ -4136,14 +3844,14 @@ class TSDRAFT_OT_dark_place(bpy.types.Operator):
             # 図面ビュー中なら、暗所へ入る前にまず元の通常表示へ戻す。
             if getattr(scene, "tsdraft_drawing_mode", False):
                 try:
-                    restore_view_state(space)
+                    _viewstate.restore_view_state(space)
                 except Exception:
                     _debug.swallowed("draft.TSDRAFT_OT_dark_place.execute")
                 scene.tsdraft_drawing_mode = False
 
             # ここで通常表示を暗所の復帰先として保存してから暗所化。
             scene.tsdraft_dark_place = True
-            apply_dark_place_view(space)
+            _viewstate.apply_dark_place_view(space)
 
             # 暗所中だけ見た目上のグリッドと標準X/Y軸を直接OFF。
             try:
@@ -4161,7 +3869,7 @@ class TSDRAFT_OT_dark_place(bpy.types.Operator):
             scene.tsdraft_dark_place = False
 
             # 暗所に入る直前の背景・グリッド状態へそのまま戻す。
-            restore_dark_place_view(space)
+            _viewstate.restore_dark_place_view(space)
 
         redraw_viewports()
         return {'FINISHED'}
@@ -4188,152 +3896,14 @@ class TSDRAFT_OT_reset_label_offsets(bpy.types.Operator):
 # 図面ビュー：共通
 # =========================================================
 
-def get_view3d_override(context):
-    area = context.area
-
-    if area is None or area.type != 'VIEW_3D':
-        return None
-
-    region = None
-
-    for r in area.regions:
-        if r.type == 'WINDOW':
-            region = r
-            break
-
-    if region is None:
-        return None
-
-    return {
-        "window": context.window,
-        "screen": context.screen,
-        "area": area,
-        "region": region,
-        "space_data": area.spaces.active,
-    }
 
 
-def save_view_state(space):
-    namespace = bpy.app.driver_namespace
-
-    # 既に保存済みなら上書きしない
-    if namespace.get(VIEW_STATE_KEY) is not None:
-        return
-
-    overlay = space.overlay
-    shading = space.shading
-
-    namespace[VIEW_STATE_KEY] = {
-        "shading_type": shading.type,
-        "background_type": getattr(shading, "background_type", None),
-        "background_color": tuple(getattr(shading, "background_color", (0.05, 0.05, 0.05))),
-        "show_axis_x": getattr(overlay, "show_axis_x", True),
-        "show_axis_y": getattr(overlay, "show_axis_y", True),
-        "show_axis_z": getattr(overlay, "show_axis_z", True),
-        "show_cursor": getattr(overlay, "show_cursor", True),
-        "show_object_origins": getattr(overlay, "show_object_origins", False),
-        "show_object_origins_all": getattr(overlay, "show_object_origins_all", False),
-        "show_floor": getattr(overlay, "show_floor", True),
-        "show_ortho_grid": getattr(overlay, "show_ortho_grid", True),
-        "show_text": getattr(overlay, "show_text", True),
-    }
 
 
-def tsdraft_background_color(mode, custom_color=(1.0, 1.0, 1.0)):
-    """Return viewport/page RGB for the selected background preset."""
-    mode = str(mode or 'WHITE').upper()
-    if mode == 'BLACK':
-        return (0.0, 0.0, 0.0)
-    if mode == 'CUSTOM':
-        try:
-            return tuple(float(v) for v in custom_color[:3])
-        except Exception:
-            return (1.0, 1.0, 1.0)
-    # WHITE and GRID both use a white base.
-    return (1.0, 1.0, 1.0)
 
 
-def configure_drawing_view(space, background_mode='WHITE', custom_color=(1.0, 1.0, 1.0)):
-    save_view_state(space)
-
-    mode = str(background_mode or 'WHITE').upper()
-    show_grid = (mode == 'GRID')
-    bg_color = tsdraft_background_color(mode, custom_color)
-
-    shading = space.shading
-    shading.type = 'SOLID'
-
-    if hasattr(shading, "background_type"):
-        shading.background_type = 'VIEWPORT'
-
-    if hasattr(shading, "background_color"):
-        shading.background_color = bg_color
-
-    overlay = space.overlay
-
-    if hasattr(overlay, "show_axis_x"):
-        overlay.show_axis_x = False
-
-    if hasattr(overlay, "show_axis_y"):
-        overlay.show_axis_y = False
-
-    if hasattr(overlay, "show_axis_z"):
-        overlay.show_axis_z = False
-
-    if hasattr(overlay, "show_cursor"):
-        overlay.show_cursor = False
-
-    if hasattr(overlay, "show_object_origins"):
-        overlay.show_object_origins = False
-
-    if hasattr(overlay, "show_object_origins_all"):
-        overlay.show_object_origins_all = False
-
-    if hasattr(overlay, "show_floor"):
-        overlay.show_floor = show_grid
-
-    if hasattr(overlay, "show_ortho_grid"):
-        overlay.show_ortho_grid = show_grid
-
-    # Blender標準の「上」「前」等を隠し、独自の大きいビュー名を使う
-    if hasattr(overlay, "show_text"):
-        overlay.show_text = False
 
 
-def restore_view_state(space):
-    namespace = bpy.app.driver_namespace
-    state = namespace.get(VIEW_STATE_KEY)
-
-    overlay = space.overlay
-    shading = space.shading
-
-    if state is None:
-        # 保存状態がない時は、ユーザーの現在設定を勝手に変更しない
-        return
-
-    shading.type = state["shading_type"]
-
-    if state["background_type"] is not None and hasattr(shading, "background_type"):
-        shading.background_type = state["background_type"]
-
-    if hasattr(shading, "background_color"):
-        shading.background_color = state["background_color"]
-
-    for attr in (
-        "show_axis_x",
-        "show_axis_y",
-        "show_axis_z",
-        "show_cursor",
-        "show_object_origins",
-        "show_object_origins_all",
-        "show_floor",
-        "show_ortho_grid",
-        "show_text",
-    ):
-        if hasattr(overlay, attr):
-            setattr(overlay, attr, state[attr])
-
-    namespace[VIEW_STATE_KEY] = None
 
 
 def update_drawing_background(self, context):
@@ -4342,7 +3912,7 @@ def update_drawing_background(self, context):
         return
 
     if context.area and context.area.type == 'VIEW_3D':
-        configure_drawing_view(
+        _viewstate.configure_drawing_view(
             context.area.spaces.active,
             getattr(context.scene, "tsdraft_drawing_background", 'WHITE'),
             getattr(context.scene, "tsdraft_drawing_background_color", (1.0, 1.0, 1.0))
@@ -4356,7 +3926,7 @@ def tsdraft_fit_quad_for_drawing(context, area, padding_factor=1.28):
     寸法文字のために少し余白を持たせる。
     任意ビューは触らない。
     """
-    bbox_obj = bpy.data.objects.get(BBOX_NAME)
+    bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
     if bbox_obj is None:
         return
 
@@ -4431,7 +4001,7 @@ def tsdraft_fit_quad_for_drawing(context, area, padding_factor=1.28):
     for _key, _region, rv3d in ortho_items:
         rv3d.view_distance = common_distance
 
-    bpy.app.driver_namespace[ZOOM_SYNC_STATE_KEY] = {
+    bpy.app.driver_namespace[_keys.ZOOM_SYNC_STATE_KEY] = {
         key: common_distance
         for key, _region, _rv3d in ortho_items
     }
@@ -4446,14 +4016,14 @@ def is_quad_view(space):
 
 
 def switch_single_view(context, axis_type=None):
-    override = get_view3d_override(context)
+    override = _viewstate.get_view3d_override(context)
 
     if override is None:
         return False
 
     space = override["space_data"]
 
-    configure_drawing_view(
+    _viewstate.configure_drawing_view(
         space,
         getattr(context.scene, "tsdraft_drawing_background", 'WHITE'),
         getattr(context.scene, "tsdraft_drawing_background_color", (1.0, 1.0, 1.0))
@@ -4464,7 +4034,7 @@ def switch_single_view(context, axis_type=None):
         with context.temp_override(**override):
             bpy.ops.screen.region_quadview()
 
-        override = get_view3d_override(context)
+        override = _viewstate.get_view3d_override(context)
 
         if override is None:
             return False
@@ -4489,8 +4059,8 @@ class TSDRAFT_OT_quad_view(bpy.types.Operator):
     bl_label = "三面＋任意ビュー"
 
     def execute(self, context):
-        bpy.app.driver_namespace[ZOOM_SYNC_STATE_KEY] = None
-        override = get_view3d_override(context)
+        bpy.app.driver_namespace[_keys.ZOOM_SYNC_STATE_KEY] = None
+        override = _viewstate.get_view3d_override(context)
 
         if override is None:
             self.report({'ERROR'}, "3Dビュー上で実行してクレメンス")
@@ -4498,7 +4068,7 @@ class TSDRAFT_OT_quad_view(bpy.types.Operator):
 
         space = override["space_data"]
 
-        configure_drawing_view(
+        _viewstate.configure_drawing_view(
             space,
             context.scene.tsdraft_show_grid
         )
@@ -4587,7 +4157,7 @@ class TSDRAFT_OT_apply_drawing_style(bpy.types.Operator):
         if context.area is None or context.area.type != 'VIEW_3D':
             return {'CANCELLED'}
 
-        configure_drawing_view(
+        _viewstate.configure_drawing_view(
             context.area.spaces.active,
             getattr(context.scene, "tsdraft_drawing_background", 'WHITE'),
             getattr(context.scene, "tsdraft_drawing_background_color", (1.0, 1.0, 1.0))
@@ -4604,7 +4174,7 @@ class TSDRAFT_OT_restore_view(bpy.types.Operator):
     bl_description = "図面ビューに入る前のビューポート表示へ戻します"
 
     def execute(self, context):
-        override = get_view3d_override(context)
+        override = _viewstate.get_view3d_override(context)
 
         if override is None:
             self.report({'ERROR'}, "3Dビュー上で実行してクレメンス")
@@ -4617,7 +4187,7 @@ class TSDRAFT_OT_restore_view(bpy.types.Operator):
             with context.temp_override(**override):
                 bpy.ops.screen.region_quadview()
 
-            override = get_view3d_override(context)
+            override = _viewstate.get_view3d_override(context)
             if override is None:
                 return {'CANCELLED'}
 
@@ -4625,9 +4195,9 @@ class TSDRAFT_OT_restore_view(bpy.types.Operator):
 
         if getattr(context.scene, "tsdraft_dark_place", False):
             context.scene.tsdraft_dark_place = False
-            restore_dark_place_view(space)
+            _viewstate.restore_dark_place_view(space)
 
-        restore_view_state(space)
+        _viewstate.restore_view_state(space)
         context.scene.tsdraft_drawing_mode = False
         context.scene.tsdraft_user_view_mode = False
         redraw_viewports()
@@ -4891,7 +4461,7 @@ class TSDRAFT_PT_main(bpy.types.Panel):
                 for axis, fallback_label in axes:
                     row = col.row(align=True)
 
-                    axis_label = get_axis_dimension_text(
+                    axis_label = _dimension.get_axis_dimension_text(
                         context.scene,
                         axis.upper(),
                         fallback_label
@@ -4979,7 +4549,7 @@ def tsdraft_reset_all_scenes_to_defaults():
         tsdraft_reset_scene_settings_to_defaults(scene)
 
     ns = bpy.app.driver_namespace
-    ns[AUTO_FOLLOW_SIGNATURE_KEY] = None
+    ns[_keys.AUTO_FOLLOW_SIGNATURE_KEY] = None
     return True
 
 
@@ -5364,12 +4934,12 @@ def unregister():
     remove_cleanup_handler()
 
     namespace = bpy.app.driver_namespace
-    namespace[DATA_KEY] = []
-    namespace[SOURCE_KEY] = None
-    namespace[VIEW_STATE_KEY] = None
-    namespace[DARK_VIEW_STATE_KEY] = None
-    namespace[AUTO_FOLLOW_SIGNATURE_KEY] = None
-    namespace[AUTO_FOLLOW_GUARD_KEY] = None
+    namespace[_keys.DATA_KEY] = []
+    namespace[_keys.SOURCE_KEY] = None
+    namespace[_keys.VIEW_STATE_KEY] = None
+    namespace[_keys.DARK_VIEW_STATE_KEY] = None
+    namespace[_keys.AUTO_FOLLOW_SIGNATURE_KEY] = None
+    namespace[_keys.AUTO_FOLLOW_GUARD_KEY] = None
 
     for cls in reversed(classes):
         # 登録されていないものは飛ばす。未登録の状態で呼ばれても

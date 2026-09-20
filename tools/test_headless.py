@@ -1351,6 +1351,8 @@ def test_modules_import_without_error():
         "truescale.marking.source", "truescale.marking.storage",
         "truescale.export.outline", "truescale.export.png",
         "truescale.overlay",
+        "truescale.draft.dimension", "truescale.draft.keys",
+        "truescale.draft.viewstate",
         "truescale.unfold.build", "truescale.unfold.ops",
         "truescale.unfold.panel", "truescale.unfold.props",
         "truescale.unfold.status",
