@@ -1,11 +1,12 @@
-"""実寸PNGの書き出しオペレータ。
+"""実寸で書き出すオペレータ。
 
-画面に見えているものではなく、紙に出るものを描く。線を集めるのは
-export.outline、ピクセルにするのは export.png。
+画面に見えているものではなく、紙に出るものを描く。
 
-実寸で出すことが目的なので、用紙に収まらないときは縮めずに
-そのまま大きな画像として出す。300dpi の pHYs を埋めるので、
-印刷側が原寸で刷れる。
+  1枚で出す   … 用紙に収まる型紙。PNG も PDF も選べる
+  分割して出す … 収まらない型紙。紙をまたいで分け、貼り合わせる
+
+実寸で出すことが目的なので、収まらないからといって縮めることは
+決してしない。縮んだ型紙は、黙って間違ったものを刷ることになる。
 """
 
 import bpy
@@ -23,7 +24,11 @@ from ...core import state as _state
 from ...core import units as _units
 from ...core import view as _view
 from ...export import outline as _outline
+from ...export import collect as _collect
 from ...export import png as _png
+from ...export import render as _render
+from ...export import sheets as _sheets
+from ...export import tiling as _tiling
 from ...marking import auto_notch as _auto_notch
 from ...marking import compute as _compute
 from ...marking import interact as _interact
@@ -41,13 +46,49 @@ def _overlay():
     return overlay
 
 
-class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
-    bl_idname = "truescale_unfold.export_png"
-    bl_label = "実寸PNGを書き出し"
-    bl_description = "選択した展開図を実寸PNGとして300dpiで書き出します"
+def _paper_for(context, drawing):
+    """いま選ばれている用紙の寸法。向きの自動も見る。"""
+    return _outline.paper_dimensions(
+        context.scene, drawing.width_mm, drawing.height_mm
+    )
 
-    filename_ext = ".png"
-    filter_glob: StringProperty(default="*.png", options={'HIDDEN'})
+
+def tile_plan(context):
+    """いまの型紙を分割するとどうなるか。書き出さずに調べる。
+
+    パネルが枚数を出すのにも使う。押す前に何枚になるか分かれば、
+    30枚だと気付いた時点で用紙を変えられる。
+    """
+    drawing = _collect.pattern_lines(context)
+    if drawing is None:
+        return None, None
+
+    paper_w, paper_h = _paper_for(context, drawing)
+    scene = context.scene
+
+    plan = _tiling.plan(
+        drawing.width_mm,
+        drawing.height_mm,
+        paper_w,
+        paper_h,
+        margin=float(getattr(scene, "tsunfold_tile_margin_mm", 8.0)),
+        overlap=float(getattr(scene, "tsunfold_tile_overlap_mm", 15.0)),
+    )
+    return drawing, plan
+
+
+class TSUNFOLD_OT_export_sheets(bpy.types.Operator, ExportHelper):
+    """用紙に合わせて書き出す。収まらなければ分割する。"""
+
+    bl_idname = "truescale_unfold.export_sheets"
+    bl_label = "実寸で書き出し"
+    bl_description = (
+        "選択した型紙を実寸で書き出します。用紙に収まらない場合は"
+        "分割し、貼り合わせるための目印を入れます"
+    )
+
+    filename_ext = ""
+    filter_glob: StringProperty(default="*.pdf;*.png", options={'HIDDEN'})
 
     @classmethod
     def poll(cls, context):
@@ -55,239 +96,100 @@ class TSUNFOLD_OT_export_png(bpy.types.Operator, ExportHelper):
 
     def invoke(self, context, event):
         obj = context.active_object
-        filename = bpy.path.clean_name(obj.name) + ".png"
+        suffix = (
+            ".pdf"
+            if str(getattr(context.scene, "tsunfold_export_format", "PDF"))
+            == "PDF"
+            else ".png"
+        )
+        self.filename_ext = suffix
+        name = bpy.path.clean_name(obj.name) + suffix
 
         last_dir = context.scene.get(_session.LAST_EXPORT_DIR, "")
         if last_dir and Path(last_dir).exists():
-            self.filepath = str(Path(last_dir) / filename)
+            self.filepath = str(Path(last_dir) / name)
         else:
-            self.filepath = filename
+            self.filepath = name
 
         return super().invoke(context, event)
 
     def execute(self, context):
-        obj = context.active_object
         scene = context.scene
+        drawing, plan = tile_plan(context)
 
-        segments = _outline.current_finish_segments(context)
-        bbox = _outline.bbox(segments)
-
-        if bbox is None:
-            self.report({'ERROR'}, "印刷できる外周線がありません。")
+        if drawing is None:
+            self.report({'ERROR'}, "書き出せる線がありません。")
             return {'CANCELLED'}
-
-        min_x, min_y, max_x, max_y = bbox
-        bu_to_mm = _units.scene_scale_to_meters(scene) * 1000.0
-
-        shape_w_mm = (max_x - min_x) * bu_to_mm
-        shape_h_mm = (max_y - min_y) * bu_to_mm
-
-        paper_w_mm, paper_h_mm = _outline.paper_dimensions(
-            scene,
-            shape_w_mm,
-            shape_h_mm,
-        )
-
-        if shape_w_mm > paper_w_mm + 1e-6 or shape_h_mm > paper_h_mm + 1e-6:
+        if plan is None:
             self.report(
                 {'ERROR'},
-                f"展開図 {shape_w_mm:.1f}×{shape_h_mm:.1f} mm は "
-                f"{_paper.scene_display_name(scene)} に収まりません。"
+                "余白と重ねしろが用紙に対して大きすぎます。",
             )
             return {'CANCELLED'}
 
-        px_per_mm = _png.PRINT_DPI / 25.4
-        width_px = int(round(paper_w_mm * px_per_mm))
-        height_px = int(round(paper_h_mm * px_per_mm))
-
-        total_pixels = width_px * height_px
-        if total_pixels > 160_000_000:
-            self.report({'ERROR'}, f"画像が大きすぎます ({width_px}×{height_px}px)")
-            return {'CANCELLED'}
-
-        try:
-            buffer = bytearray(b"\xff" * (width_px * height_px * 3))
-        except MemoryError:
-            self.report({'ERROR'}, "PNG作成用のメモリを確保できませんでした。")
-            return {'CANCELLED'}
-
-        # 1) Pattern outline: always black.
-        for (ax, ay), (bx, by) in segments:
-            x1_mm = _units.scene_bu_to_mm(scene, ax)
-            y1_mm = _units.scene_bu_to_mm(scene, ay)
-            x2_mm = _units.scene_bu_to_mm(scene, bx)
-            y2_mm = _units.scene_bu_to_mm(scene, by)
-
-            x1 = x1_mm * px_per_mm
-            y1 = height_px - (y1_mm * px_per_mm)
-            x2 = x2_mm * px_per_mm
-            y2 = height_px - (y2_mm * px_per_mm)
-
-            _png.draw_line(
-                buffer,
-                width_px,
-                height_px,
-                x1,
-                y1,
-                x2,
-                y2,
-                thickness=2,
-                color=(0.0, 0.0, 0.0),
-            )
-
-        source = _objects.source_from_context(context)
-        unfold = _objects.unfold_for_source(source) if source else None
-
-        # 2) Colored geometric annotations.
-        if source is not None and unfold is not None:
-            for wa, wb, color, width_mm in _compute.colored_segments(
-                context,
-                source,
-                unfold,
-            ):
-                x1 = _units.scene_bu_to_mm(scene, wa.x) * px_per_mm
-                y1 = height_px - (_units.scene_bu_to_mm(scene, wa.y) * px_per_mm)
-                x2 = _units.scene_bu_to_mm(scene, wb.x) * px_per_mm
-                y2 = height_px - (_units.scene_bu_to_mm(scene, wb.y) * px_per_mm)
-
-                _png.draw_line(
-                    buffer,
-                    width_px,
-                    height_px,
-                    x1,
-                    y1,
-                    x2,
-                    y2,
-                    thickness=max(
-                        1,
-                        int(round(float(width_mm) * px_per_mm)),
-                    ),
-                    color=color,
-                )
-
-            # 3) Number / arbitrary text as Blender FONT outline geometry.
-            for text, world_pos, size_mm, color in _overlay().flat_text_items(
-                source,
-                unfold,
-                context.scene,
-            ):
-                for wa, wb in _outline.text_segments(
-                    context,
-                    text,
-                    world_pos,
-                    size_mm,
-                ):
-                    x1 = _units.scene_bu_to_mm(scene, wa.x) * px_per_mm
-                    y1 = height_px - (_units.scene_bu_to_mm(scene, wa.y) * px_per_mm)
-                    x2 = _units.scene_bu_to_mm(scene, wb.x) * px_per_mm
-                    y2 = height_px - (_units.scene_bu_to_mm(scene, wb.y) * px_per_mm)
-
-                    _png.draw_line(
-                        buffer,
-                        width_px,
-                        height_px,
-                        x1,
-                        y1,
-                        x2,
-                        y2,
-                        thickness=2,
-                        color=color,
-                    )
-
-
-            # 4) Flat-only memo text.
-            for text, world_pos, size_mm, color, angle in _overlay().flat_memo_text_items(
-                unfold
-            ):
-                for wa, wb in _outline.text_segments(
-                    context,
-                    text,
-                    world_pos,
-                    size_mm,
-                    angle,
-                ):
-                    x1 = _units.scene_bu_to_mm(scene, wa.x) * px_per_mm
-                    y1 = height_px - (_units.scene_bu_to_mm(scene, wa.y) * px_per_mm)
-                    x2 = _units.scene_bu_to_mm(scene, wb.x) * px_per_mm
-                    y2 = height_px - (_units.scene_bu_to_mm(scene, wb.y) * px_per_mm)
-
-                    _png.draw_line(
-                        buffer,
-                        width_px,
-                        height_px,
-                        x1,
-                        y1,
-                        x2,
-                        y2,
-                        thickness=2,
-                        color=color,
-                    )
-
-            # 5) Automatic island IDs / connection labels with orientation.
-            if bool(
-                getattr(
-                    scene,
-                    "tsunfold_auto_island_ids",
-                    True,
-                )
-            ):
-                for (
-                    text,
-                    world_pos,
-                    size_mm,
-                    color,
-                    angle,
-                    _edge_locked,
-                ) in _compute.text_items(
-                    context,
-                    source,
-                    unfold,
-                ):
-                    for wa, wb in _outline.text_segments(
-                        context,
-                        text,
-                        world_pos,
-                        size_mm,
-                        angle,
-                    ):
-                        x1 = _units.scene_bu_to_mm(scene, wa.x) * px_per_mm
-                        y1 = height_px - (_units.scene_bu_to_mm(scene, wa.y) * px_per_mm)
-                        x2 = _units.scene_bu_to_mm(scene, wb.x) * px_per_mm
-                        y2 = height_px - (_units.scene_bu_to_mm(scene, wb.y) * px_per_mm)
-
-                        _png.draw_line(
-                            buffer,
-                            width_px,
-                            height_px,
-                            x1,
-                            y1,
-                            x2,
-                            y2,
-                            thickness=2,
-                            color=color,
-                        )
-
-        filepath = Path(bpy.path.abspath(self.filepath))
-        if filepath.suffix.lower() != ".png":
-            filepath = filepath.with_suffix(".png")
-
-        try:
-            filepath.parent.mkdir(parents=True, exist_ok=True)
-            _png.write_rgb(filepath, width_px, height_px, buffer, _png.PRINT_DPI)
-        except Exception as exc:
-            self.report({'ERROR'}, f"PNGを書き出せませんでした: {exc}")
-            return {'CANCELLED'}
-
-        # Remember the directory used for the latest successful export.
-        context.scene[_session.LAST_EXPORT_DIR] = str(filepath.parent)
-
-        self.report(
-            {'INFO'},
-            f"実寸PNGを書き出しました / {_png.PRINT_DPI}dpi / 次回もこの保存先を開きます"
+        margin = float(getattr(scene, "tsunfold_tile_margin_mm", 8.0))
+        made = _sheets.single(
+            drawing, plan.paper_w, plan.paper_h, margin=margin
         )
+        if made is None:
+            made = _sheets.tiled(drawing, plan)
+
+        if not made:
+            self.report({'ERROR'}, "書き出す紙がありません。")
+            return {'CANCELLED'}
+
+        path = Path(bpy.path.abspath(self.filepath))
+        fmt = str(getattr(scene, "tsunfold_export_format", "PDF"))
+
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if fmt == "PDF":
+                written = self._write_pdf(path, made)
+            else:
+                written = self._write_png(path, made)
+        except Exception as exc:
+            self.report({'ERROR'}, f"書き出せませんでした: {exc}")
+            return {'CANCELLED'}
+
+        scene[_session.LAST_EXPORT_DIR] = str(path.parent)
+
+        size = f"{drawing.width_mm:.0f}×{drawing.height_mm:.0f} mm"
+        if len(made) == 1:
+            self.report({'INFO'}, f"{size} を1枚で書き出しました（{written}）")
+        else:
+            self.report(
+                {'INFO'},
+                f"{size} を {plan.describe()} に分けました（{written}）",
+            )
         return {'FINISHED'}
+
+    def _write_pdf(self, path, made):
+        if path.suffix.lower() != ".pdf":
+            path = path.with_suffix(".pdf")
+        pages = _render.to_pdf(path, made, title=path.stem)
+        return f"{path.name} / {pages} ページ"
+
+    def _write_png(self, path, made):
+        # 作り始めてから落ちるより、先に断る
+        total = _render.estimate_png_pixels(made)
+        if total > 400_000_000:
+            raise MemoryError(
+                f"PNG {len(made)} 枚は大きすぎます（合計 {total / 1e6:.0f} 百万画素）。"
+                "PDF を選ぶか、用紙を大きくしてください"
+            )
+
+        if len(made) == 1:
+            target = path.with_suffix(".png")
+            _render.to_png(target, made[0])
+            return target.name
+
+        stem = path.with_suffix("").name
+        for sheet in made:
+            target = path.with_name(f"{stem}_{sheet.label}.png")
+            _render.to_png(target, sheet)
+        return f"{stem}_*.png / {len(made)} 枚"
 
 
 classes = (
-    TSUNFOLD_OT_export_png,
+    TSUNFOLD_OT_export_sheets,
 )

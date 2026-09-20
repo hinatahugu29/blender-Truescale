@@ -632,11 +632,29 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 depress=scene.tsunfold_preview,
             )
 
+            output.prop(scene, "tsunfold_export_format", text="形式")
+
+            # 押す前に何枚になるかを出す。30枚だと分かれば、
+            # その場で用紙を変えられる。
+            fit = _status.paper_fit_text(context)
+            if fit:
+                for line in fit:
+                    output.label(text=line, icon='INFO')
+
             output.operator(
-                "truescale_unfold.export_png",
-                text="実寸PNGを書き出し（300dpi）",
+                "truescale_unfold.export_sheets",
+                text="実寸で書き出し（300dpi）",
                 icon='EXPORT',
             )
+
+            if _status.needs_tiling(context):
+                tile = output.box()
+                tile.label(text="分割の設定", icon='MOD_BUILD')
+                tile.use_property_split = True
+                tile.prop(scene, "tsunfold_tile_margin_mm", text="用紙の余白")
+                tile.prop(scene, "tsunfold_tile_overlap_mm", text="重ねしろ")
+                tile.label(text="切らずに重ねて貼れます")
+                tile.label(text="刷ったら目盛りを定規で確認")
 
         finish = layout.box()
         finish.operator(

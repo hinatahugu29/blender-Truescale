@@ -152,6 +152,50 @@ def _unregister_scene_props():
 
 def register():
     """UIに出す設定を作る。"""
+    bpy.types.Scene.tsunfold_export_format = EnumProperty(
+        name="形式",
+        description="書き出すファイルの形式",
+        items=[
+            (
+                "PDF",
+                "PDF",
+                "分割しても1つのファイルにまとまる。ページの大きさを"
+                "実寸で持つので、原寸で刷りやすい",
+            ),
+            (
+                "PNG",
+                "PNG",
+                "画像。他のソフトへ持ち込むとき。分割すると枚数分の"
+                "ファイルになる",
+            ),
+        ],
+        default="PDF",
+    )
+
+    bpy.types.Scene.tsunfold_tile_margin_mm = FloatProperty(
+        name="用紙の余白",
+        description=(
+            "プリンタが刷れない縁の幅。機種によって違うので多めに取る。"
+            "足りないと、端の線が切れる"
+        ),
+        default=8.0,
+        min=0.0,
+        max=40.0,
+        unit='LENGTH',
+    )
+
+    bpy.types.Scene.tsunfold_tile_overlap_mm = FloatProperty(
+        name="重ねしろ",
+        description=(
+            "隣の紙と重ねる幅。切らずに重ねて貼るためのもの。"
+            "広くしても枚数はほとんど変わらないので、貼りやすさで決める"
+        ),
+        default=15.0,
+        min=0.0,
+        max=60.0,
+        unit='LENGTH',
+    )
+
     bpy.types.Scene.tsunfold_scale_mode = EnumProperty(
         name="実寸の基準",
         description="1 Blender Unit を何ミリとして扱うかの決め方",

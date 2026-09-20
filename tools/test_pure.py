@@ -25,6 +25,7 @@ if str(REPO_ROOT) not in sys.path:
 from truescale.core import paper, session, state, units
 from truescale.export import png
 from truescale.export import pdf
+from truescale.export import sheets
 from truescale.export import tiling
 from truescale.marking import storage
 
@@ -470,6 +471,139 @@ def test_draw_line_color():
     buf = png.new_buffer(4, 4)
     png.draw_line(buf, 4, 4, 0, 0, 3, 0, 1, (1.0, 0.0, 0.0))
     check(buf[0:3] == b"\xff\x00\x00", f"赤で描かれていない: {bytes(buf[0:3])}")
+
+
+# ============================================================
+# export.sheets
+# ============================================================
+
+class _FakeDrawing:
+    def __init__(self, lines, w, h):
+        self.lines = lines
+        self.width_mm = w
+        self.height_mm = h
+
+
+@test
+def test_clipping_keeps_the_line_straight():
+    """枠で切っても、線は元の直線の上に乗ったまま。
+
+    端点を動かすだけなので、切った結果も同じ直線上にある。
+    ここがずれると、タイルの境目で線が折れる。
+    """
+    box = (0.0, 0.0, 100.0, 100.0)
+    cut = sheets._clip(-50.0, -50.0, 150.0, 150.0, box)
+    check(cut is not None, "45度の線が切り落とされた")
+
+    x0, y0, x1, y1 = cut
+    # 元の直線は y = x
+    check(abs(x0 - y0) < 1e-9, f"始点が直線から外れた: {cut}")
+    check(abs(x1 - y1) < 1e-9, f"終点が直線から外れた: {cut}")
+    check(abs(x0 - 0.0) < 1e-9 and abs(x1 - 100.0) < 1e-9,
+          f"枠の縁で切れていない: {cut}")
+
+
+@test
+def test_clipping_drops_lines_outside():
+    """枠の外の線は落とす。中の線はそのまま。"""
+    box = (0.0, 0.0, 100.0, 100.0)
+    check(sheets._clip(200.0, 200.0, 300.0, 300.0, box) is None,
+          "枠の外の線が残った")
+    check(sheets._clip(-10.0, 50.0, -5.0, 50.0, box) is None,
+          "枠の左外の線が残った")
+
+    inside = sheets._clip(10.0, 10.0, 90.0, 90.0, box)
+    check(inside == (10.0, 10.0, 90.0, 90.0), f"中の線が変わった: {inside}")
+
+
+@test
+def test_tiled_sheets_come_in_reading_order():
+    """タイルは、紙を並べた見た目の順で返る。
+
+    左上から右へ、そして下へ。印刷したものを上から重ねれば
+    そのまま並ぶ。
+    """
+    drawing = _FakeDrawing([(0.0, 0.0, 400.0, 500.0, (0, 0, 0), 0.4)],
+                           400.0, 500.0)
+    plan = tiling.plan(400.0, 500.0, 210.0, 297.0)
+    made = sheets.tiled(drawing, plan)
+
+    check(len(made) == plan.count, f"枚数が違う: {len(made)}")
+    labels = [s.label for s in made]
+    check(labels[0] == "1-A", f"最初が左上でない: {labels}")
+    check(
+        labels == sorted(labels, key=lambda v: (v[-1], int(v.split("-")[0]))),
+        f"並び順が読む順になっていない: {labels}",
+    )
+
+
+@test
+def test_every_sheet_carries_a_ruler():
+    """どの紙にも実寸の目盛りが入る。
+
+    1枚でも欠けると、その紙だけ縮尺を確かめられない。
+    """
+    drawing = _FakeDrawing([(0.0, 0.0, 400.0, 500.0, (0, 0, 0), 0.4)],
+                           400.0, 500.0)
+    plan = tiling.plan(400.0, 500.0, 210.0, 297.0)
+
+    for sheet in sheets.tiled(drawing, plan):
+        horizontal = [
+            abs(x1 - x0)
+            for x0, y0, x1, y1, _, _ in sheet.lines
+            if abs(y1 - y0) < 1e-9
+        ]
+        check(
+            any(abs(value - sheets.RULER_MM) < 1e-9 for value in horizontal),
+            f"{sheet.label} に 100mm の目盛りが無い",
+        )
+
+
+@test
+def test_tiles_do_not_move_the_pattern():
+    """タイルへ移しても、線の長さは変わらない。
+
+    分割は位置をずらすだけ。長さが変われば実寸が崩れる。
+    """
+    import math
+
+    original = (30.0, 40.0, 130.0, 40.0)   # ちょうど100mm の横線
+    drawing = _FakeDrawing(
+        [(original[0], original[1], original[2], original[3], (0, 0, 0), 0.4)],
+        400.0, 500.0,
+    )
+    plan = tiling.plan(400.0, 500.0, 210.0, 297.0)
+
+    total = 0.0
+    for sheet in sheets.tiled(drawing, plan):
+        for x0, y0, x1, y1, _, width in sheet.lines:
+            # 目盛りや枠ではなく、型紙の線だけを見る
+            if abs(width - 0.4) < 1e-9 and abs(y1 - y0) < 1e-9:
+                total += math.hypot(x1 - x0, y1 - y0)
+
+    # 重なりの分だけ二重に数えるので、元の長さ以上にはなるが
+    # 足りないことはあってはならない
+    check(
+        total >= 100.0 - 1e-6,
+        f"分割すると線が短くなった: {total:.4f} mm",
+    )
+
+
+@test
+def test_a_small_pattern_needs_no_tiling():
+    """紙に収まる型紙は、分割せず1枚で返る。"""
+    drawing = _FakeDrawing([(0.0, 0.0, 100.0, 150.0, (0, 0, 0), 0.4)],
+                           100.0, 150.0)
+    made = sheets.single(drawing, 210.0, 297.0)
+    check(made is not None, "収まるはずが 1枚にならない")
+    check(len(made) == 1, f"1枚のはずが {len(made)} 枚")
+
+    too_big = _FakeDrawing([(0.0, 0.0, 400.0, 150.0, (0, 0, 0), 0.4)],
+                           400.0, 150.0)
+    check(
+        sheets.single(too_big, 210.0, 297.0) is None,
+        "収まらないのに 1枚で返した",
+    )
 
 
 # ============================================================

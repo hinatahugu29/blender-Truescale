@@ -137,6 +137,8 @@ def encode_rgb(width, height, rgb_buffer, dpi=PRINT_DPI):
 def write_rgb(filepath, width, height, rgb_buffer, dpi=PRINT_DPI):
     """RGBバッファを PNG ファイルとして書き出す。
 
-    filepath は pathlib.Path を想定する。
+    filepath は文字列でも pathlib.Path でもよい。呼び出し側で
+    どちらを使っているか揃っていないので、ここで吸収する。
     """
-    filepath.write_bytes(encode_rgb(width, height, rgb_buffer, dpi))
+    with open(str(filepath), "wb") as handle:
+        handle.write(encode_rgb(width, height, rgb_buffer, dpi))

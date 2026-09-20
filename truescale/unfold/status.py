@@ -24,6 +24,7 @@ Unit Scale が既定の 1 のままだと 1 BU = 1000 mm となり、デフォ�
 
 import bpy
 
+from .. import debug as _debug
 from ..core import geometry as _geometry
 from ..core import objects as _objects
 from ..core import paper as _paper
@@ -196,6 +197,60 @@ def manual_arrow_count(context):
     return sum(
         1 for item in _storage.load(source) if item.get("type") == "arrow"
     )
+
+
+def _plan(context):
+    """いまの型紙の分割計画。取れなければ (None, None)。"""
+    try:
+        from .ops.export import tile_plan
+        return tile_plan(context)
+    except Exception:
+        _debug.swallowed("unfold.status._plan")
+        return (None, None)
+
+
+def needs_tiling(context):
+    """いまの型紙が用紙に収まらないか。"""
+    drawing, plan = _plan(context)
+    if drawing is None or plan is None:
+        return False
+    return plan.count > 1
+
+
+def paper_fit_text(context):
+    """用紙に対する収まり具合。押す前に知らせる。
+
+    「入らない」とだけ言われても先へ進めない。何枚になるのか、
+    どの用紙なら1枚で済むのかまで出す。
+    """
+    drawing, plan = _plan(context)
+    if drawing is None:
+        return []
+
+    size = f"{drawing.width_mm:.0f} × {drawing.height_mm:.0f} mm"
+
+    if plan is None:
+        return [f"型紙 {size}", "余白と重ねしろが用紙に対して大きすぎます"]
+
+    if plan.count <= 1:
+        return [f"型紙 {size} → 1枚に収まります"]
+
+    lines = [f"型紙 {size} → {plan.describe()}"]
+
+    # 1枚で済む用紙があるなら教える
+    for name, (pw, ph) in sorted(
+        _paper.SIZES_MM.items(), key=lambda kv: kv[1][0] * kv[1][1]
+    ):
+        usable_w = max(pw, ph) - plan.margin * 2.0
+        usable_h = min(pw, ph) - plan.margin * 2.0
+        if (
+            (drawing.width_mm <= usable_h and drawing.height_mm <= usable_w)
+            or (drawing.width_mm <= usable_w and drawing.height_mm <= usable_h)
+        ):
+            lines.append(f"{name} なら1枚で収まります")
+            break
+
+    return lines
 
 
 def active_tool_text(context):
