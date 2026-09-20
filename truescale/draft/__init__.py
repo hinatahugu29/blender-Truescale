@@ -3,6 +3,9 @@ import bpy
 from .. import debug as _debug
 from . import bbox as _bbox
 from . import overlay as _overlay
+from .export import capture as _capture
+from .export import sheet as _sheet
+from . import views as _views
 from . import keys as _keys
 from . import dimension as _dimension
 from . import viewstate as _viewstate
@@ -99,1312 +102,47 @@ SVG_PX_TO_MM = 25.4 / 96.0
 
 
 
-def tsdraft_patch_png_dpi(filepath, dpi):
-    """Insert/replace PNG pHYs chunk so Illustrator reads the intended physical size."""
-    path = Path(filepath)
-    data = path.read_bytes()
 
-    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
-        return False
 
-    ppm = int(round(float(dpi) / 0.0254))  # pixels per meter
-
-    out = bytearray(data[:8])
-    pos = 8
-    inserted = False
-
-    while pos + 8 <= len(data):
-        length = struct.unpack(">I", data[pos:pos + 4])[0]
-        ctype = data[pos + 4:pos + 8]
-        end = pos + 12 + length
-        if end > len(data):
-            break
-
-        chunk = data[pos:end]
-
-        # Drop old pHYs and replace it once.
-        if ctype == b"pHYs":
-            if not inserted:
-                payload = struct.pack(">IIB", ppm, ppm, 1)
-                crc = zlib.crc32(b"pHYs" + payload) & 0xffffffff
-                out += struct.pack(">I", len(payload)) + b"pHYs" + payload + struct.pack(">I", crc)
-                inserted = True
-        else:
-            out += chunk
-
-            # Put pHYs immediately after IHDR when absent.
-            if ctype == b"IHDR" and not inserted:
-                payload = struct.pack(">IIB", ppm, ppm, 1)
-                crc = zlib.crc32(b"pHYs" + payload) & 0xffffffff
-                out += struct.pack(">I", len(payload)) + b"pHYs" + payload + struct.pack(">I", crc)
-                inserted = True
-
-        pos = end
-
-    path.write_bytes(out)
-    return inserted
-
-
-def tsdraft_get_last_export_dir():
-    path = bpy.app.driver_namespace.get(_keys.LAST_EXPORT_DIR_KEY)
-
-    if path and os.path.isdir(path):
-        return path
-
-    # Fall back to current blend directory if available.
-    blend_path = bpy.data.filepath
-    if blend_path:
-        folder = os.path.dirname(blend_path)
-        if folder and os.path.isdir(folder):
-            return folder
-
-    return ""
-
-
-def tsdraft_remember_export_dir(path):
-    if not path:
-        return
-
-    folder = path if os.path.isdir(path) else os.path.dirname(path)
-
-    if folder:
-        try:
-            folder = os.path.abspath(folder)
-        except Exception:
-            _debug.swallowed("draft.tsdraft_remember_export_dir")
-
-        bpy.app.driver_namespace[_keys.LAST_EXPORT_DIR_KEY] = folder
-
-
-def tsdraft_store_export_view_context(context):
-    """Remember the actual 3D editor before Blender opens the file browser."""
-    if context.area is None or context.area.type != 'VIEW_3D':
-        return
-
-    region = next((r for r in context.area.regions if r.type == 'WINDOW'), None)
-    if region is None:
-        return
-
-    bpy.app.driver_namespace[_keys.EXPORT_CONTEXT_KEY] = {
-        "window": context.window,
-        "screen": context.screen,
-        "area": context.area,
-        "region": region,
-    }
-
-
-def tsdraft_get_export_view_context(context):
-    """
-    Return the VIEW_3D context saved at invoke-time.
-    Falls back to scanning open Blender windows if needed.
-    """
-    saved = bpy.app.driver_namespace.get(_keys.EXPORT_CONTEXT_KEY)
-
-    if saved:
-        try:
-            window = saved.get("window")
-            screen = saved.get("screen")
-            area = saved.get("area")
-
-            if (
-                window is not None
-                and screen is not None
-                and area is not None
-                and area.type == 'VIEW_3D'
-                and area in screen.areas
-            ):
-                region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-                if region is not None:
-                    return window, screen, area, region
-        except Exception:
-            _debug.swallowed("draft.tsdraft_get_export_view_context")
-
-    # If execute() runs in File Browser context, search every open window.
-    try:
-        for window in context.window_manager.windows:
-            screen = window.screen
-            if screen is None:
-                continue
-
-            for area in screen.areas:
-                if area.type != 'VIEW_3D':
-                    continue
-
-                region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-                if region is not None:
-                    return window, screen, area, region
-    except Exception:
-        _debug.swallowed("draft.tsdraft_get_export_view_context")
-
-    return None
-
-
-
-def tsdraft_find_view_region(area, wanted_key):
-    """
-    Return (region, rv3d) for the requested orthographic pane.
-    In Quad View, pair WINDOW regions with region_quadviews and select
-    the pane whose actual rotation is top/front/side.
-    """
-    space = area.spaces.active
-    window_regions = [r for r in area.regions if r.type == 'WINDOW']
-
-    try:
-        quadviews = list(space.region_quadviews)
-    except Exception:
-        quadviews = []
-
-    # Quad View: Blender exposes 4 RegionView3D states.
-    if quadviews and len(window_regions) >= len(quadviews):
-        # Pair by WINDOW-region order. This matches Blender's quad layout.
-        pairs = list(zip(window_regions[:len(quadviews)], quadviews))
-
-        for region, rv in pairs:
-            key, _ = _viewstate.get_view_key_from_rv3d(rv)
-            if key == wanted_key:
-                return region, rv
-
-    # Single view fallback.
-    rv = space.region_3d
-    if rv is not None:
-        key, _ = _viewstate.get_view_key_from_rv3d(rv)
-        if key == wanted_key:
-            region = next((r for r in window_regions if r.type == 'WINDOW'), None)
-            if region is not None:
-                return region, rv
-
-    return None, None
-
-
-
-
-
-def tsdraft_frame_export_region(context, window, screen, area, region, rv3d, source_obj, bbox_obj, padding_ratio=0.58):
-    """
-    Export専用の正規化フレーミング。
-    現在のユーザー拡大率が極端でも、まずBlender標準のView Selectedで
-    正常な倍率へ戻し、その後BBox基準で最終フィットする。
-    """
-    if (
-        window is None or screen is None or area is None or region is None
-        or rv3d is None or source_obj is None or bbox_obj is None
-    ):
-        return False
-
-    view_layer = context.view_layer
-    active_before = view_layer.objects.active
-    selected_before = [obj for obj in view_layer.objects if obj.select_get()]
-
-    try:
-        for obj in selected_before:
-            try:
-                obj.select_set(False)
-            except Exception:
-                _debug.swallowed("draft.tsdraft_frame_export_region")
-
-        try:
-            source_obj.select_set(True)
-            view_layer.objects.active = source_obj
-        except Exception:
-            _debug.swallowed("draft.tsdraft_frame_export_region")
-
-        override = {
-            "window": window,
-            "screen": screen,
-            "area": area,
-            "region": region,
-            "space_data": area.spaces.active,
-            "region_data": rv3d,
-        }
-
-        try:
-            with context.temp_override(**override):
-                bpy.ops.view3d.view_selected(use_all_regions=False)
-        except Exception:
-            _debug.swallowed("draft.tsdraft_frame_export_region")
-
-        try:
-            corners_world = [
-                bbox_obj.matrix_world @ Vector(corner)
-                for corner in bbox_obj.bound_box
-            ]
-            if corners_world:
-                rv3d.view_location = (
-                    sum(corners_world, Vector()) / len(corners_world)
-                )
-        except Exception:
-            _debug.swallowed("draft.tsdraft_frame_export_region")
-
-        tsdraft_force_view_redraw(context, area)
-        tsdraft_force_view_redraw(context, area)
-
-        return tsdraft_fit_region_to_bbox(
-            context,
-            area,
-            region,
-            rv3d,
-            bbox_obj,
-            padding_ratio=padding_ratio
-        )
-
-    finally:
-        try:
-            source_obj.select_set(False)
-        except Exception:
-            _debug.swallowed("draft.tsdraft_frame_export_region")
-
-        for obj in selected_before:
-            try:
-                obj.select_set(True)
-            except Exception:
-                _debug.swallowed("draft.tsdraft_frame_export_region")
-
-        try:
-            view_layer.objects.active = active_before
-        except Exception:
-            _debug.swallowed("draft.tsdraft_frame_export_region")
-
-
-def tsdraft_export_bbox_fill_ratio(region, rv3d, bbox_obj, padding_ratio):
-    """BBoxが指定した書き出し占有率にどれくらい近いかを返す。"""
-    try:
-        projected = []
-        for corner in bbox_obj.bound_box:
-            world_co = bbox_obj.matrix_world @ Vector(corner)
-            p2 = view3d_utils.location_3d_to_region_2d(
-                region, rv3d, world_co
-            )
-            if p2 is not None:
-                projected.append(p2)
-
-        if len(projected) < 4:
-            return None
-
-        xs = [float(p.x) for p in projected]
-        ys = [float(p.y) for p in projected]
-        bbox_w = max(xs) - min(xs)
-        bbox_h = max(ys) - min(ys)
-
-        usable_w = max(1.0, float(region.width) * padding_ratio)
-        usable_h = max(1.0, float(region.height) * padding_ratio)
-
-        return max(
-            bbox_w / usable_w,
-            bbox_h / usable_h
-        )
-    except Exception:
-        return None
-
-
-def tsdraft_fit_region_to_bbox(context, area, region, rv3d, bbox_obj, padding_ratio=0.52):
-    """
-    Normalize an orthographic pane to the Bounding Box at a predictable size.
-
-    Important:
-    Older versions only zoomed OUT when the BBox was too large.
-    If the user happened to be zoomed far out, the export inherited that tiny
-    on-screen size and produced a soft / clipped sheet.
-
-    This version actively fits in BOTH directions:
-      - BBox too large  -> zoom out
-      - BBox too small  -> zoom in
-
-    Therefore export scale is independent from the user's current viewport zoom.
-    """
-    if region is None or rv3d is None or bbox_obj is None:
-        return False
-
-    try:
-        corners_world = [
-            bbox_obj.matrix_world @ Vector(corner)
-            for corner in bbox_obj.bound_box
-        ]
-    except Exception:
-        return False
-
-    if not corners_world:
-        return False
-
-    center = sum(corners_world, Vector()) / len(corners_world)
-    rv3d.view_location = center
-    changed = False
-
-    # Aim slightly inside the requested usable rectangle.
-    # This avoids one-pixel edge clipping while keeping the source dense.
-    target_fill = 0.96
-
-    for _ in range(10):
-        try:
-            area.tag_redraw()
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=2)
-        except Exception:
-            _debug.swallowed("draft.tsdraft_fit_region_to_bbox")
-
-        projected = []
-        for world_co in corners_world:
-            p = view3d_utils.location_3d_to_region_2d(
-                region, rv3d, world_co
-            )
-            if p is not None:
-                projected.append(p)
-
-        if len(projected) < 4:
-            break
-
-        xs = [p.x for p in projected]
-        ys = [p.y for p in projected]
-
-        bbox_w = max(xs) - min(xs)
-        bbox_h = max(ys) - min(ys)
-
-        usable_w = max(1.0, float(region.width) * padding_ratio)
-        usable_h = max(1.0, float(region.height) * padding_ratio)
-
-        current_fill = max(
-            bbox_w / usable_w,
-            bbox_h / usable_h
-        )
-
-        if current_fill <= 1e-9:
-            break
-
-        # In ortho view, projected size is approximately inverse to view_distance.
-        # scale < 1 => zoom IN, scale > 1 => zoom OUT.
-        distance_scale = current_fill / target_fill
-
-        if abs(current_fill - target_fill) <= 0.003:
-            break
-
-        # Protect against wild one-frame jumps, while still converging from
-        # extremely zoomed-in / zoomed-out user views.
-        distance_scale = min(20.0, max(0.05, distance_scale))
-        rv3d.view_distance = max(
-            1e-9,
-            float(rv3d.view_distance) * distance_scale
-        )
-        changed = True
-
-    try:
-        area.tag_redraw()
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
-    except Exception:
-        _debug.swallowed("draft.tsdraft_fit_region_to_bbox")
-
-    return changed
-
-
-def tsdraft_enforce_quad_zoom_lock_once():
-    """
-    Global safety pass for drawing-mode Quad Views.
-    Top / Front / Side may zoom out freely, but cannot zoom in far enough
-    for the Bounding Box to exceed ~72% of any pane.
-    """
-    bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
-    if bbox_obj is None:
-        return
-
-    wm = getattr(bpy.context, "window_manager", None)
-    if wm is None:
-        return
-
-    try:
-        windows = list(wm.windows)
-    except Exception:
-        return
-
-    for window in windows:
-        scene = getattr(window, "scene", None)
-        screen = getattr(window, "screen", None)
-
-        if scene is None or screen is None:
-            continue
-
-        if not getattr(scene, "tsdraft_drawing_mode", False):
-            continue
-
-        for area in screen.areas:
-            if area.type != 'VIEW_3D':
-                continue
-
-            space = area.spaces.active
-            try:
-                if not space.region_quadviews:
-                    continue
-            except Exception:
-                continue
-
-            items = []
-            for key in ("top", "front", "side"):
-                region, rv3d = tsdraft_find_view_region(area, key)
-                if region is not None and rv3d is not None:
-                    items.append((key, region, rv3d))
-
-            if not items:
-                continue
-
-            try:
-                corners_world = [
-                    bbox_obj.matrix_world @ Vector(corner)
-                    for corner in bbox_obj.bound_box
-                ]
-            except Exception:
-                continue
-
-            # Find the minimum safe distance required by ALL ortho panes.
-            safe_distance = max(float(rv.view_distance) for _, _, rv in items)
-            need_change = False
-
-            for _key, region, rv3d in items:
-                projected = []
-                for world_co in corners_world:
-                    p = view3d_utils.location_3d_to_region_2d(
-                        region, rv3d, world_co
-                    )
-                    if p is not None:
-                        projected.append(p)
-
-                if len(projected) < 4:
-                    continue
-
-                xs = [p.x for p in projected]
-                ys = [p.y for p in projected]
-                bbox_w = max(xs) - min(xs)
-                bbox_h = max(ys) - min(ys)
-
-                usable_w = max(1.0, float(region.width) * 0.56)
-                usable_h = max(1.0, float(region.height) * 0.56)
-
-                factor = max(
-                    bbox_w / usable_w,
-                    bbox_h / usable_h,
-                    1.0
-                )
-
-                if factor > 1.0005:
-                    proposed = float(rv3d.view_distance) * factor * 1.03
-                    safe_distance = max(safe_distance, proposed)
-                    need_change = True
-
-            if need_change:
-                state = {}
-                for key, _region, rv3d in items:
-                    rv3d.view_distance = safe_distance
-                    state[key] = safe_distance
-
-                bpy.app.driver_namespace[_keys.ZOOM_SYNC_STATE_KEY] = state
-
-                try:
-                    area.tag_redraw()
-                except Exception:
-                    _debug.swallowed("draft.tsdraft_enforce_quad_zoom_lock_once")
-
-
-
-def tsdraft_quad_zoom_lock_timer():
-    try:
-        tsdraft_enforce_quad_zoom_lock_once()
-    except Exception:
-        _debug.swallowed("draft.tsdraft_quad_zoom_lock_timer")
-
-    # Keep watching while add-on is enabled.
-    return 0.10
-
-
-
-def tsdraft_force_view_redraw(context, area):
-    """Force Blender to finish drawing the newly switched view before screenshot."""
-    try:
-        area.tag_redraw()
-    except Exception:
-        _debug.swallowed("draft.tsdraft_force_view_redraw")
-
-    try:
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=10)
-    except Exception:
-        # Some contexts dislike redraw_timer; area.tag_redraw still helps.
-        pass
-
-
-def tsdraft_crop_png_with_blender(src_path, dst_path, x0, y0, width, height):
-    """
-    Crop a PNG using Blender's own Image API.
-    Coordinates are bottom-left based, matching Blender image pixels.
-    """
-    img = bpy.data.images.load(src_path, check_existing=False)
-    try:
-        src_w, src_h = img.size
-        x0 = max(0, min(int(x0), src_w - 1))
-        y0 = max(0, min(int(y0), src_h - 1))
-        width = max(1, min(int(width), src_w - x0))
-        height = max(1, min(int(height), src_h - y0))
-
-        src_pixels = list(img.pixels[:])
-        dst_pixels = [0.0] * (width * height * 4)
-
-        for row in range(height):
-            src_start = ((y0 + row) * src_w + x0) * 4
-            src_end = src_start + width * 4
-            dst_start = row * width * 4
-            dst_pixels[dst_start:dst_start + width * 4] = src_pixels[src_start:src_end]
-
-        out = bpy.data.images.new(
-            name="TSDRAFT_Printable_Crop",
-            width=width,
-            height=height,
-            alpha=False
-        )
-        try:
-            out.pixels[:] = dst_pixels
-            out.filepath_raw = dst_path
-            out.file_format = 'PNG'
-            out.save()
-        finally:
-            bpy.data.images.remove(out)
-    finally:
-        bpy.data.images.remove(img)
-
-
-
-
-
-
-
-
-
-
-
-def tsdraft_export_viewport_exact_png(context, filepath, view_key, common_view_distance=None, fit_padding_ratio=0.58, suppress_dimension_text=False):
-    """
-    Export the requested view by directly using its matching Quad View pane.
-    No fake view switching when Quad View already contains top/front/side.
-    """
-    view_ctx = tsdraft_get_export_view_context(context)
-    if view_ctx is None:
-        raise RuntimeError("書き出し元の3Dビューが見つからんかったンゴ")
-
-    export_window, export_screen, area, _ = view_ctx
-    space = area.spaces.active
-
-    # 書き出しは一時的にビュー方向・背景・オーバーレイを変更するため、
-    # 開始時の状態を丸ごと退避して最後に必ず戻す。
-    original_display_state = _viewstate.tsdraft_capture_export_display_state(
-        space,
-        context.scene
-    )
-
-    # 寸法表示は作業中のON/OFFとは別扱い。
-    # 三面図PNGでは事故防止のため必ず表示して撮影し、
-    # 最後に元の状態へ戻す。
-    original_dimension_state = {
-        "all": bool(getattr(context.scene, "tsdraft_show_dimensions", True)),
-        "top": bool(getattr(context.scene, "tsdraft_show_dimensions_top", True)),
-        "front": bool(getattr(context.scene, "tsdraft_show_dimensions_front", True)),
-        "side": bool(getattr(context.scene, "tsdraft_show_dimensions_side", True)),
-        "user": bool(getattr(context.scene, "tsdraft_show_dimensions_user", True)),
-    }
-
-    # 三面図シートの一時キャプチャでは、寸法文字を最終シート側で描く。
-    # Scene側もOFFにして、描画タイミングのズレによる二重焼き込みを防ぐ。
-    hard_suppress_dimension_text = bool(suppress_dimension_text)
-
-    original_user_view_mode = bool(
-        getattr(context.scene, "tsdraft_user_view_mode", False)
-    )
-
-    original_bbox_state = {
-        "all": bool(getattr(context.scene, "tsdraft_show_bbox", True)),
-        "top": bool(getattr(context.scene, "tsdraft_show_bbox_top", True)),
-        "front": bool(getattr(context.scene, "tsdraft_show_bbox_front", True)),
-        "side": bool(getattr(context.scene, "tsdraft_show_bbox_side", True)),
-        "user": bool(getattr(context.scene, "tsdraft_show_bbox_user", True)),
-    }
-
-    original_main_rv3d_state = _viewstate.tsdraft_capture_rv3d_state(
-        getattr(space, "region_3d", None)
-    )
-
-    original_quad_states = []
-    try:
-        for rv in list(space.region_quadviews):
-            original_quad_states.append(
-                (rv, _viewstate.tsdraft_capture_rv3d_state(rv))
-            )
-    except Exception:
-        _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
-
-    source_obj = _bbox.tsdraft_resolve_source_object(context)
-    bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
-
-    if source_obj is None:
-        raise RuntimeError("元オブジェクトを選択してクレメンス")
-    if bbox_obj is None:
-        raise RuntimeError("先にBOX＋寸法を作成してクレメンス")
-
-    scene = context.scene
-    unit_scale = scene.unit_settings.scale_length or 1.0
-    is_user_view = (view_key == "user")
-
-    # 三面図はグローバル/ビュー単位の寸法表示を撮影中だけ有効化。
-    # 各ビューの軸別ON/OFFはユーザー指定を尊重する。
-    # 任意ビューはイメージ用途があるため現在設定を尊重。
-    if not is_user_view:
-        scene.tsdraft_user_view_mode = False
-
-        # 三面図はクイック非表示中でも、書き出しだけは
-        # BOX＋寸法を必ず有効化して事故を防ぐ。
-        scene.tsdraft_show_bbox = True
-        scene.tsdraft_show_bbox_top = True
-        scene.tsdraft_show_bbox_front = True
-        scene.tsdraft_show_bbox_side = True
-
-        scene.tsdraft_show_dimensions = True
-        scene.tsdraft_show_dimensions_top = True
-        scene.tsdraft_show_dimensions_front = True
-        scene.tsdraft_show_dimensions_side = True
-
-        if hard_suppress_dimension_text:
-            scene.tsdraft_show_dimensions = False
-
-    temp_full = str(Path(filepath).with_name(Path(filepath).stem + "_TEMP_AREA.png"))
-
-    try:
-        # Nパネル/ツールバーは実際には触らない。
-        # 画像側のクロップでUI領域を除外するので、撮影後も表示状態が変わらない。
-        tsdraft_force_view_redraw(context, area)
-
-        # -------------------------------------------------
-        # Quad View: directly grab the requested pane.
-        # Single View: switch that one view to the requested axis.
-        # -------------------------------------------------
-        target_region, target_rv3d = tsdraft_find_view_region(area, view_key)
-
-        # Quad Viewの最新リージョン情報を使う。
-        if target_region is not None:
-            tsdraft_force_view_redraw(context, area)
-            refreshed_region, refreshed_rv3d = tsdraft_find_view_region(area, view_key)
-            if refreshed_region is not None and refreshed_rv3d is not None:
-                target_region, target_rv3d = refreshed_region, refreshed_rv3d
-
-        if target_region is None or target_rv3d is None:
-            # Single-view or unusual layout fallback: switch the main view.
-            main_region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-            if main_region is None:
-                raise RuntimeError("3DビューのWINDOW領域が見つからんかったンゴ")
-
-            target_rv3d = space.region_3d
-            if target_rv3d is None:
-                raise RuntimeError("3Dビュー情報が取れんかったンゴ")
-
-            override = {
-                "window": export_window,
-                "screen": export_screen,
-                "area": area,
-                "region": main_region,
-                "space_data": space,
-                "region_data": target_rv3d,
-            }
-
-            if view_key == "user":
-                # 任意ビューは現在の向きをそのまま使う。
-                target_region = main_region
-                target_rv3d = space.region_3d
-            else:
-                axis_map = {
-                    "top": "TOP",
-                    "front": "FRONT",
-                    "side": "RIGHT",
-                }
-
-                with context.temp_override(**override):
-                    bpy.ops.view3d.view_axis(
-                        type=axis_map.get(view_key, "FRONT"),
-                        align_active=False
-                    )
-
-                tsdraft_force_view_redraw(context, area)
-                target_region = main_region
-
-        # Keep common orthographic zoom if supplied.
-        if common_view_distance is not None and not is_user_view:
-            target_rv3d.view_distance = common_view_distance
-
-        # Center the requested pane on the Bounding Box.
-        world_corners = [bbox_obj.matrix_world @ v.co for v in bbox_obj.data.vertices]
-
-        if not is_user_view:
-            center = sum(world_corners, mathutils.Vector()) / len(world_corners)
-            target_rv3d.view_location = center
-            target_rv3d.view_perspective = 'ORTHO'
-
-            # Export safety net:
-            # even if the user managed to zoom until the object is clipped,
-            # force the bbox back inside this pane before screenshot.
-            try:
-                tsdraft_frame_export_region(
-                    context,
-                    export_window,
-                    export_screen,
-                    area,
-                    target_region,
-                    target_rv3d,
-                    source_obj,
-                    bbox_obj,
-                    padding_ratio=fit_padding_ratio
-                )
-            except Exception:
-                _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
-
-        # Printable styling.
-        # 書き出し背景は白 / グリッド / 黒 / カスタムから選択。
-        # 軸・原点・3Dカーソルはconfigure_drawing_view側で常に非表示。
-        export_background = getattr(scene, "tsdraft_export_background", 'WHITE')
-        export_custom_color = getattr(
-            scene,
-            "tsdraft_export_background_color",
-            (1.0, 1.0, 1.0)
-        )
-        _viewstate.configure_drawing_view(
-            space,
-            export_background,
-            export_custom_color
-        )
-        scene.tsdraft_drawing_mode = True
-
-        tsdraft_force_view_redraw(context, area)
-
-        # 最終スクショ直前でも倍率を検証。
-        # 初期画面が極端なズーム状態でも、ここで必ず一定のBBox占有率へ戻す。
-        if not is_user_view:
-            for _verify in range(3):
-                fill = tsdraft_export_bbox_fill_ratio(
-                    target_region,
-                    target_rv3d,
-                    bbox_obj,
-                    fit_padding_ratio
-                )
-
-                if fill is not None and 0.90 <= fill <= 1.03:
-                    break
-
-                try:
-                    tsdraft_frame_export_region(
-                        context,
-                        export_window,
-                        export_screen,
-                        area,
-                        target_region,
-                        target_rv3d,
-                        source_obj,
-                        bbox_obj,
-                        padding_ratio=fit_padding_ratio
-                    )
-                except Exception:
-                    break
-
-                tsdraft_force_view_redraw(context, area)
-
-        # -------------------------------------------------
-        # Project BBox into the target pane only.
-        # -------------------------------------------------
-        projected = []
-        for co in world_corners:
-            p2 = view3d_utils.location_3d_to_region_2d(
-                target_region,
-                target_rv3d,
-                co
-            )
-            if p2 is not None:
-                projected.append((float(p2.x), float(p2.y)))
-
-        if len(projected) < 4:
-            raise RuntimeError(f"{_dimension.tsdraft_svg_view_label(view_key)}のBounding Boxを投影できんかったンゴ")
-
-        xs = [p[0] for p in projected]
-        ys = [p[1] for p in projected]
-        bbox_min_x = min(xs)
-        bbox_max_x = max(xs)
-        bbox_min_y = min(ys)
-        bbox_max_y = max(ys)
-
-        bbox_px_w = bbox_max_x - bbox_min_x
-        bbox_px_h = bbox_max_y - bbox_min_y
-
-        if is_user_view:
-            # 任意ビューは実寸を保証しない普通のスクショPNG。
-            bbox_mm_w = 0.0
-            bbox_mm_h = 0.0
-            px_per_mm = 1.0
-            dpi = 96.0
-        else:
-            if view_key == "top":
-                vals_u = [co.x for co in world_corners]
-                vals_v = [co.y for co in world_corners]
-            elif view_key == "front":
-                vals_u = [co.x for co in world_corners]
-                vals_v = [co.z for co in world_corners]
-            else:
-                vals_u = [co.y for co in world_corners]
-                vals_v = [co.z for co in world_corners]
-
-            bbox_mm_w = (max(vals_u) - min(vals_u)) * unit_scale * 1000.0
-            bbox_mm_h = (max(vals_v) - min(vals_v)) * unit_scale * 1000.0
-
-            if bbox_px_w <= 1 or bbox_px_h <= 1 or bbox_mm_w <= 0 or bbox_mm_h <= 0:
-                raise RuntimeError(f"{_dimension.tsdraft_svg_view_label(view_key)}の実寸対応が取れんかったンゴ")
-
-            px_per_mm_x = bbox_px_w / bbox_mm_w
-            px_per_mm_y = bbox_px_h / bbox_mm_h
-            px_per_mm = (px_per_mm_x + px_per_mm_y) * 0.5
-            dpi = px_per_mm * 25.4
-
-        # -------------------------------------------------
-        # Crop bounds: BBox + dimension labels.
-        # -------------------------------------------------
-        crop_min_x = bbox_min_x
-        crop_max_x = bbox_max_x
-        crop_min_y = bbox_min_y
-        crop_max_y = bbox_max_y
-
-        data = bpy.app.driver_namespace.get(_keys.DATA_KEY, [])
-        suppress_sheet_dim_text = bool(
-            bpy.app.driver_namespace.get("TSDRAFT_SHEET_SUPPRESS_DIM_TEXT", False)
-        )
-        visible_axes = set() if (is_user_view or suppress_sheet_dim_text) else {
-            axis for axis in _dimension.tsdraft_svg_dimension_axes(view_key)
-            if _dimension.tsdraft_dimension_axis_enabled(scene, view_key, axis)
-        }
-
-        # Export crop must use the SAME automatic label layout as the viewport.
-        # Otherwise the PNG can crop labels that are correctly visible on screen.
-        sheet_layout_mode = bool(
-            bpy.app.driver_namespace.get("TSDRAFT_SHEET_LAYOUT_MODE", False)
-        )
-        if sheet_layout_mode:
-            auto_axis_layout = {
-                "top": {
-                    "X": "TOP",
-                    "Y": "LEFT",
-                },
-                "front": {
-                    "X": "BOTTOM",
-                    "Z": "RIGHT",
-                },
-                "side": {
-                    "Y": "BOTTOM",
-                    "Z": "LEFT",
-                },
-            }
-        else:
-            auto_axis_layout = {
-                "top": {
-                    "X": "TOP",
-                    "Y": "LEFT",
-                },
-                "front": {
-                    "X": "TOP",
-                    "Z": "LEFT",
-                },
-                "side": {
-                    "Y": "TOP",
-                    "Z": "LEFT",
-                },
-            }
-
-        requested_font_size = max(1, int(scene.tsdraft_font_size))
-
-        # text_heightは各ラベルを測るまで存在しないため、
-        # ここでは文字サイズから安全余白の初期値を作る。
-        base_margin_x = max(
-            20.0,
-            float(requested_font_size) * 0.75
-        )
-        base_margin_y = max(
-            32.0,
-            float(requested_font_size) * 1.15
-        )
-
-        available_w = max(
-            1.0,
-            float(target_region.width) - base_margin_x * 2.0
-        )
-        available_h = max(
-            1.0,
-            float(target_region.height) - base_margin_y * 2.0
-        )
-
-        for item in data:
-            axis = item.get("axis", "X")
-            if axis not in visible_axes:
-                continue
-
-            label = _dimension.get_dimension_text(scene, item)
-
-            # Mirror _overlay.draw_size_labels() font fitting exactly.
-            blf.size(0, requested_font_size)
-            text_width, text_height = blf.dimensions(0, label)
-
-            if text_width > available_w or text_height > available_h:
-                fit_scale = min(
-                    available_w / max(1.0, float(text_width)),
-                    available_h / max(1.0, float(text_height)),
-                    1.0
-                )
-                effective_size = max(
-                    8,
-                    int(requested_font_size * fit_scale)
-                )
-                blf.size(0, effective_size)
-                text_width, text_height = blf.dimensions(0, label)
-
-            axis_lower = axis.lower()
-            off_x_mm = getattr(
-                scene,
-                f"tsdraft_{view_key}_{axis_lower}_offset_x_mm",
-                0.0
-            )
-            off_y_mm = getattr(
-                scene,
-                f"tsdraft_{view_key}_{axis_lower}_offset_y_mm",
-                0.0
-            )
-
-            off_x_px = off_x_mm * px_per_mm
-            off_y_px = off_y_mm * px_per_mm
-
-            layout_type = auto_axis_layout.get(view_key, {}).get(axis)
-
-            rotate_vertical_text = layout_type in {"LEFT", "RIGHT"}
-
-            if layout_type == "TOP":
-                gap = max(10.0, float(text_height) * 0.35)
-                text_x = (
-                    (bbox_min_x + bbox_max_x) * 0.5
-                    - float(text_width) * 0.5
-                    + off_x_px
-                )
-                text_y = bbox_max_y + gap + off_y_px
-
-            elif layout_type == "BOTTOM":
-                gap = max(10.0, float(text_height) * 0.35)
-                text_x = (
-                    (bbox_min_x + bbox_max_x) * 0.5
-                    - float(text_width) * 0.5
-                    + off_x_px
-                )
-                text_y = (
-                    bbox_min_y
-                    - gap
-                    - float(text_height)
-                    + off_y_px
-                )
-
-            elif layout_type == "RIGHT":
-                gap = max(10.0, float(text_height) * 0.35)
-                text_x = bbox_max_x + gap + off_x_px
-                text_y = (
-                    (bbox_min_y + bbox_max_y) * 0.5
-                    - float(text_width) * 0.5
-                    + off_y_px
-                )
-
-            elif layout_type == "LEFT":
-                gap = max(10.0, float(text_height) * 0.35)
-                text_x = (
-                    bbox_min_x
-                    - gap
-                    - float(text_height)
-                    + off_x_px
-                )
-                text_y = (
-                    (bbox_min_y + bbox_max_y) * 0.5
-                    - float(text_width) * 0.5
-                    + off_y_px
-                )
-
-            else:
-                # Fallback for unusual layouts.
-                loc = item.get("location")
-                if loc is None:
-                    continue
-
-                p2 = view3d_utils.location_3d_to_region_2d(
-                    target_region,
-                    target_rv3d,
-                    loc
-                )
-                if p2 is None:
-                    continue
-
-                text_x = (
-                    float(p2.x)
-                    - float(text_width) * 0.5
-                    + off_x_px
-                )
-                text_y = (
-                    float(p2.y)
-                    - float(text_height) * 0.5
-                    + off_y_px
-                )
-
-            # Mirror viewport clamping as well.
-            # ここでは実際に測定済みのtext_heightから余白を決める。
-            safe_margin_x = max(
-                base_margin_x,
-                float(text_height) * 0.75
-            )
-            safe_margin_y = max(
-                base_margin_y,
-                float(text_height) * 1.15
-            )
-
-            visual_w = float(text_height) if rotate_vertical_text else float(text_width)
-            visual_h = float(text_width) if rotate_vertical_text else float(text_height)
-
-            max_text_x = max(
-                safe_margin_x,
-                float(target_region.width)
-                - visual_w
-                - safe_margin_x
-            )
-            max_text_y = max(
-                safe_margin_y,
-                float(target_region.height)
-                - visual_h
-                - safe_margin_y
-            )
-
-            text_x = min(
-                max(text_x, safe_margin_x),
-                max_text_x
-            )
-            text_y = min(
-                max(text_y, safe_margin_y),
-                max_text_y
-            )
-
-            crop_min_x = min(crop_min_x, text_x)
-            crop_max_x = max(
-                crop_max_x,
-                text_x + visual_w
-            )
-            crop_min_y = min(crop_min_y, text_y)
-            crop_max_y = max(
-                crop_max_y,
-                text_y + visual_h
-            )
-
-        # Small breathing room around the real rendered bounds.
-        # If dimension text is suppressed (sheet / batch source capture),
-        # font size must not affect crop size or apparent object magnification.
-        if suppress_sheet_dim_text or hard_suppress_dimension_text:
-            # 三面図シート / 3面まとめての元画像は、文字サイズと完全分離した固定余白。
-            # BBoxぎりぎりで切らず、モデル本体も確実に残す。
-            pad_px = 72.0
-        else:
-            pad_px = max(56.0, scene.tsdraft_font_size * 1.45)
-        crop_min_x -= pad_px
-        crop_max_x += pad_px
-        crop_min_y -= pad_px
-        crop_max_y += pad_px
-
-        # クロップ範囲は3Dビューの描画部分だけに限定する。
-        # Nパネル(UI)や左ツールバー(TOOLS)が表示中でも画像には入れない。
-        safe_left = 14.0
-        safe_right = 14.0
-        safe_bottom = 18.0
-
-        # screenshot_areaはエリア上端のUI帯を拾う場合があるため、
-        # 上端は明示的に大きめの侵入禁止帯を設ける。
-        if suppress_sheet_dim_text or hard_suppress_dimension_text:
-            safe_top = 30.0
-        else:
-            safe_top = max(
-                30.0,
-                float(scene.tsdraft_font_size) * 0.95
-            )
-
-        target_x0 = float(target_region.x)
-        target_x1 = float(target_region.x + target_region.width)
-
-        for ui_region in area.regions:
-            if ui_region == target_region:
-                continue
-
-            rx0 = float(ui_region.x)
-            rx1 = float(ui_region.x + ui_region.width)
-
-            # Nパネル/右サイドバーがターゲットリージョン右端へ重なる場合
-            if ui_region.type == 'UI':
-                if rx0 < target_x1 and rx1 > target_x0:
-                    overlap = max(0.0, target_x1 - rx0)
-                    safe_right = max(safe_right, overlap + 6.0)
-
-            # 左ツールバーがターゲットリージョン左端へ重なる場合
-            elif ui_region.type == 'TOOLS':
-                if rx0 < target_x1 and rx1 > target_x0:
-                    overlap = max(0.0, rx1 - target_x0)
-                    safe_left = max(safe_left, overlap + 6.0)
-
-        crop_min_x = max(safe_left, crop_min_x)
-        crop_min_y = max(safe_bottom, crop_min_y)
-        crop_max_x = min(float(target_region.width) - safe_right, crop_max_x)
-        crop_max_y = min(float(target_region.height) - safe_top, crop_max_y)
-
-        if crop_max_x <= crop_min_x or crop_max_y <= crop_min_y:
-            raise RuntimeError("書き出し範囲を計算できんかったンゴ")
-
-        if is_user_view:
-            # 任意ビューは図面クロップではなく、任意ペインそのものを普通の画像として保存。
-            # 左上にBlenderのUI端が写り込むことがあるため、
-            # 任意ビューだけ少し内側へクロップする。
-            user_safe_left = max(safe_left, 34.0)
-            user_safe_top = max(safe_top, 52.0)
-            user_safe_right = max(safe_right, 18.0)
-            user_safe_bottom = max(safe_bottom, 20.0)
-
-            crop_min_x = user_safe_left
-            crop_min_y = user_safe_bottom
-            crop_max_x = float(target_region.width) - user_safe_right
-            crop_max_y = float(target_region.height) - user_safe_top
-
-        # -------------------------------------------------
-        # Screenshot entire editor area once; crop requested pane coordinates.
-        # Temporarily hide viewport chrome that can bleed into the PNG,
-        # then restore every state directly afterwards.
-        # -------------------------------------------------
-        # IMPORTANT:
-        # Do not toggle N-panel / toolbar here because that changes region geometry
-        # after crop coordinates were calculated. That was causing header/UI bleed.
-        # WINDOW-region cropping already excludes those regions.
-        old_show_gizmo = getattr(space, "show_gizmo", None)
-
-        try:
-            if hasattr(space, "show_gizmo"):
-                space.show_gizmo = False
-
-            # Make absolutely sure zoom/layout and text-suppression changes
-            # have reached the screen before the screenshot.
-            tsdraft_force_view_redraw(context, area)
-            tsdraft_force_view_redraw(context, area)
-            if hard_suppress_dimension_text:
-                tsdraft_force_view_redraw(context, area)
-
-            with context.temp_override(
-                window=export_window,
-                screen=export_screen,
-                area=area
-            ):
-                bpy.ops.screen.screenshot_area(
-                    filepath=temp_full,
-                    hide_props_region=False
-                )
-        finally:
-            if old_show_gizmo is not None and hasattr(space, "show_gizmo"):
-                space.show_gizmo = old_show_gizmo
-
-            tsdraft_force_view_redraw(context, area)
-
-        if not Path(temp_full).exists():
-            raise RuntimeError("画面スクショを書き出せんかったンゴ")
-
-        region_offset_x = target_region.x - area.x
-        region_offset_y = target_region.y - area.y
-
-        crop_x = region_offset_x + crop_min_x
-        crop_y = region_offset_y + crop_min_y
-        crop_w = crop_max_x - crop_min_x
-        crop_h = crop_max_y - crop_min_y
-
-        tsdraft_crop_png_with_blender(
-            temp_full,
-            filepath,
-            round(crop_x),
-            round(crop_y),
-            round(crop_w),
-            round(crop_h)
-        )
-
-        if not Path(filepath).exists():
-            raise RuntimeError("クロップ済みPNGを書き出せんかったンゴ")
-
-        if not tsdraft_patch_png_dpi(filepath, dpi):
-            raise RuntimeError("PNGへ実寸dpi情報を書き込めんかったンゴ")
-
-        return {
-            "bbox_width_mm": bbox_mm_w,
-            "bbox_height_mm": bbox_mm_h,
-            "bbox_px_w": bbox_px_w,
-            "bbox_px_h": bbox_px_h,
-            "dpi": dpi,
-            "image_w_px": round(crop_w),
-            "image_h_px": round(crop_h),
-            "bbox_left_px": float(bbox_min_x - crop_min_x),
-            "bbox_right_px": float(crop_max_x - bbox_max_x),
-            "bbox_bottom_px": float(bbox_min_y - crop_min_y),
-            "bbox_top_px": float(crop_max_y - bbox_max_y),
-            "view_distance": target_rv3d.view_distance,
-        }
-
-    finally:
-
-        # 撮影前の任意ビューモードへ戻す。
-        try:
-            scene.tsdraft_user_view_mode = original_user_view_mode
-        except Exception:
-            _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
-
-        # 撮影前のBOX＋寸法表示状態へ戻す。
-        try:
-            scene.tsdraft_show_bbox = original_bbox_state["all"]
-            scene.tsdraft_show_bbox_top = original_bbox_state["top"]
-            scene.tsdraft_show_bbox_front = original_bbox_state["front"]
-            scene.tsdraft_show_bbox_side = original_bbox_state["side"]
-            scene.tsdraft_show_bbox_user = original_bbox_state["user"]
-
-            scene.tsdraft_show_dimensions = original_dimension_state["all"]
-            scene.tsdraft_show_dimensions_top = original_dimension_state["top"]
-            scene.tsdraft_show_dimensions_front = original_dimension_state["front"]
-            scene.tsdraft_show_dimensions_side = original_dimension_state["side"]
-            scene.tsdraft_show_dimensions_user = original_dimension_state["user"]
-        except Exception:
-            _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
-
-        # 撮影前のビュー方向・位置・倍率・背景・グリッド等へ完全復帰。
-        try:
-            _viewstate.tsdraft_restore_rv3d_state(
-                getattr(space, "region_3d", None),
-                original_main_rv3d_state
-            )
-
-            for rv, rv_state in original_quad_states:
-                _viewstate.tsdraft_restore_rv3d_state(rv, rv_state)
-
-            _viewstate.tsdraft_restore_export_display_state(
-                space,
-                scene,
-                original_display_state
-            )
-        except Exception:
-            _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
-
-        try:
-            if Path(temp_full).exists():
-                Path(temp_full).unlink()
-        except Exception:
-            _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
-
-        # 描画状態を更新
-        try:
-            area.tag_redraw()
-        except Exception:
-            _debug.swallowed("draft.tsdraft_export_viewport_exact_png")
-
-        try:
-            tsdraft_force_view_redraw(context, area)
-            tsdraft_force_view_redraw(context, area)
-            tsdraft_force_view_redraw(context, area)
-        except Exception:
-            _bbox.redraw_viewports()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1763,654 +501,28 @@ class TSDRAFT_OT_delete_bbox(bpy.types.Operator):
 
 
 
-def tsdraft_sheet_scale_denominator(scene):
-    scale_key = getattr(scene, 'tsdraft_sheet_scale', '1_1')
-    fixed = {
-        '1_1': 1.0,
-        '1_2': 2.0,
-        '1_5': 5.0,
-        '1_10': 10.0,
-    }
-    if scale_key == 'CUSTOM':
-        return max(1.0, float(getattr(scene, 'tsdraft_sheet_custom_scale', 1.0)))
-    return fixed.get(scale_key, 1.0)
 
 
-def tsdraft_sheet_layout_aligned(view_data, page_w, page_h, margin=12.0, gutter=10.0, footer=12.0):
-    """
-    Conventional three-view layout using BBox FRAME positions as the alignment reference:
-      TOP directly above FRONT, same frame left/right.
-      SIDE directly left of FRONT, same frame top/bottom.
-    Cropped PNG margins are allowed to differ without breaking projection alignment.
-    """
-    top = view_data['top']
-    front = view_data['front']
-    side = view_data['side']
 
-    # Frame-space origin: front frame top-left = (0, top frame height + gutter).
-    front_frame_x = 0.0
-    front_frame_y = top['frame_h_mm'] + gutter
-    top_frame_x = 0.0
-    top_frame_y = 0.0
-    side_frame_x = -(side['frame_w_mm'] + gutter)
-    side_frame_y = front_frame_y
 
-    frame_origins = {
-        'top': (top_frame_x, top_frame_y),
-        'front': (front_frame_x, front_frame_y),
-        'side': (side_frame_x, side_frame_y),
-    }
 
-    # Convert frame origins to image top-left positions using each image's crop margins.
-    raw = {}
-    for key, item in view_data.items():
-        fx, fy = frame_origins[key]
-        raw[key] = (
-            fx - item['left_mm'],
-            fy - item['top_mm'],
-        )
 
-    min_x = min(raw[k][0] for k in raw)
-    min_y = min(raw[k][1] for k in raw)
-    max_x = max(raw[k][0] + view_data[k]['image_w_mm'] for k in raw)
-    max_y = max(raw[k][1] + view_data[k]['image_h_mm'] for k in raw)
 
-    content_w = max_x - min_x
-    content_h = max_y - min_y
 
-    avail_w = page_w - margin * 2.0
-    avail_h = page_h - margin * 2.0 - footer
-    if content_w > avail_w + 1e-6 or content_h > avail_h + 1e-6:
-        return None, (content_w, content_h + footer)
 
-    offset_x = (page_w - content_w) * 0.5 - min_x
-    offset_y = margin + (avail_h - content_h) * 0.5 - min_y
 
-    positions = {
-        key: (raw[key][0] + offset_x, raw[key][1] + offset_y)
-        for key in raw
-    }
-    return positions, (content_w, content_h + footer)
 
 
-_TSDRAFT_BITMAP_FONT = {
-    'S': ("11111","10000","10000","11111","00001","00001","11111"),
-    'C': ("11111","10000","10000","10000","10000","10000","11111"),
-    'A': ("01110","10001","10001","11111","10001","10001","10001"),
-    'L': ("10000","10000","10000","10000","10000","10000","11111"),
-    'E': ("11111","10000","10000","11110","10000","10000","11111"),
-    '0': ("01110","10001","10011","10101","11001","10001","01110"),
-    '1': ("00100","01100","00100","00100","00100","00100","01110"),
-    '2': ("01110","10001","00001","00010","00100","01000","11111"),
-    '3': ("11110","00001","00001","01110","00001","00001","11110"),
-    '4': ("00010","00110","01010","10010","11111","00010","00010"),
-    '5': ("11111","10000","10000","11110","00001","00001","11110"),
-    '6': ("01110","10000","10000","11110","10001","10001","01110"),
-    '7': ("11111","00001","00010","00100","01000","01000","01000"),
-    '8': ("01110","10001","10001","01110","10001","10001","01110"),
-    '9': ("01110","10001","10001","01111","00001","00001","01110"),
-    ':': ("00000","00100","00100","00000","00100","00100","00000"),
-    '.': ("00000","00000","00000","00000","00000","00100","00100"),
-    ' ': ("00000","00000","00000","00000","00000","00000","00000"),
-}
 
 
-def tsdraft_draw_bitmap_text(canvas, text, x, y_top, scale=3):
-    """Tiny dependency-free black bitmap label, top-left coordinate."""
-    h, w, _ = canvas.shape
-    x = int(x)
-    y_top = int(y_top)
-    cursor = x
-    for ch in text.upper():
-        glyph = _TSDRAFT_BITMAP_FONT.get(ch, _TSDRAFT_BITMAP_FONT[' '])
-        for gy, row in enumerate(glyph):
-            for gx, bit in enumerate(row):
-                if bit != '1':
-                    continue
-                x0 = cursor + gx * scale
-                y0_top = y_top + gy * scale
-                # Canvas uses Blender bottom-up rows.
-                y0 = h - (y0_top + scale)
-                x1 = min(w, x0 + scale)
-                y1 = min(h, y0 + scale)
-                if x1 > x0 and y1 > y0 and x0 >= 0 and y0 >= 0:
-                    canvas[y0:y1, x0:x1, 0:3] = 0.0
-                    canvas[y0:y1, x0:x1, 3] = 1.0
-        cursor += 6 * scale
 
 
 
-def tsdraft_sheet_text_rgba(text, font_size_px, color_rgba):
-    """Render one text label to an RGBA numpy array using Blender's default font."""
-    import numpy as np
-    import imbuf
 
-    font_id = 0
-    font_size_px = max(8, int(round(font_size_px)))
-    blf.size(font_id, font_size_px)
-    text_w, text_h = blf.dimensions(font_id, text)
 
-    pad = max(4, int(round(font_size_px * 0.28)))
-    width = max(1, int(math.ceil(text_w)) + pad * 2)
-    height = max(1, int(math.ceil(text_h)) + pad * 2)
 
-    ib = imbuf.new((width, height), planes=32, buffer_type='BYTE')
-    try:
-        # Explicit transparent background.
-        with ib.with_buffer(write=True) as buf:
-            flat = buf.cast('B')
-            flat[:] = bytes(len(flat))
 
-        blf.size(font_id, font_size_px)
-        blf.color(
-            font_id,
-            float(color_rgba[0]),
-            float(color_rgba[1]),
-            float(color_rgba[2]),
-            float(color_rgba[3]),
-        )
-        blf.position(font_id, pad, pad, 0)
 
-        with blf.bind_imbuf(font_id, ib, display_name="sRGB"):
-            blf.draw_buffer(font_id, text)
-
-        with ib.with_buffer() as buf:
-            arr = np.asarray(buf, dtype=np.uint8).copy()
-        return arr.astype(np.float32) / 255.0
-    finally:
-        try:
-            ib.free()
-        except Exception:
-            _debug.swallowed("draft.tsdraft_sheet_text_rgba")
-
-
-def tsdraft_sheet_alpha_blit(canvas, rgba, x0, y0):
-    """Alpha-composite RGBA onto Blender-style bottom-up float canvas."""
-    x0 = int(round(x0))
-    y0 = int(round(y0))
-    h, w = rgba.shape[0], rgba.shape[1]
-    ch, cw = canvas.shape[0], canvas.shape[1]
-
-    sx0 = 0
-    sy0 = 0
-    sx1 = w
-    sy1 = h
-
-    if x0 < 0:
-        sx0 = -x0
-        x0 = 0
-    if y0 < 0:
-        sy0 = -y0
-        y0 = 0
-
-    x1 = min(cw, x0 + (sx1 - sx0))
-    y1 = min(ch, y0 + (sy1 - sy0))
-    if x1 <= x0 or y1 <= y0:
-        return
-
-    sx1 = sx0 + (x1 - x0)
-    sy1 = sy0 + (y1 - y0)
-
-    src = rgba[sy0:sy1, sx0:sx1, :]
-    dst = canvas[y0:y1, x0:x1, :]
-
-    alpha = src[..., 3:4]
-    dst[..., :3] = src[..., :3] * alpha + dst[..., :3] * (1.0 - alpha)
-    dst[..., 3:4] = 1.0
-
-
-def tsdraft_export_canvas_rgba(scene):
-    mode = getattr(scene, 'tsdraft_export_background', 'WHITE')
-    custom = getattr(scene, 'tsdraft_export_background_color', (1.0, 1.0, 1.0))
-    rgb = _viewstate.tsdraft_background_color(mode, custom)
-    return (float(rgb[0]), float(rgb[1]), float(rgb[2]), 1.0)
-
-
-def tsdraft_new_background_canvas(np, height, width, rgba):
-    canvas = np.empty((int(height), int(width), 4), dtype=np.float32)
-    canvas[..., 0] = rgba[0]
-    canvas[..., 1] = rgba[1]
-    canvas[..., 2] = rgba[2]
-    canvas[..., 3] = rgba[3]
-    return canvas
-
-
-def tsdraft_sheet_draw_dimension_labels(canvas, scene, positions, view_data, sheet_dpi, page_h_mm):
-    """
-    Draw sheet dimensions directly on the final raster.
-    Horizontal dimensions remain horizontal.
-    Vertical dimensions are raster-rotated 90 degrees, so no viewport BLF
-    rotation/cropping ambiguity can occur.
-    """
-    import numpy as np
-
-    namespace = bpy.app.driver_namespace
-    data = namespace.get(_keys.DATA_KEY, [])
-    if not data:
-        return
-
-    axis_text = {}
-    for item in data:
-        axis = str(item.get("axis", "")).upper()
-        if axis in {"X", "Y", "Z"}:
-            axis_text[axis] = _dimension.get_dimension_text(scene, item)
-
-    if not axis_text:
-        return
-
-    # 図面シート文字は物理mm基準で描くが、UIの「文字サイズ」に素直に追従させる。
-    # 20px -> 約3.0mm を基準に比例。極端値だけ広めに安全制限する。
-    design_px = max(4.0, float(getattr(scene, "tsdraft_font_size", 20)))
-    font_mm = min(12.0, max(1.2, design_px * 0.15))
-    font_px = max(6.0, font_mm / 25.4 * float(sheet_dpi))
-
-    color = getattr(scene, "tsdraft_font_color", (0.05, 0.05, 0.05, 1.0))
-    gap_mm = max(1.2, font_mm * 0.42)
-
-    # Same outside-edge convention as the sheet layout.
-    specs = {
-        "top":   (("X", "TOP"),    ("Y", "LEFT")),
-        "front": (("X", "BOTTOM"), ("Z", "RIGHT")),
-        "side":  (("Y", "BOTTOM"), ("Z", "LEFT")),
-    }
-
-    for view_key, dim_specs in specs.items():
-        if view_key not in positions or view_key not in view_data:
-            continue
-
-        image_x_mm, image_y_top_mm = positions[view_key]
-        vd = view_data[view_key]
-
-        frame_left_mm = image_x_mm + vd["left_mm"]
-        frame_top_mm = image_y_top_mm + vd["top_mm"]
-        frame_right_mm = frame_left_mm + vd["frame_w_mm"]
-        frame_bottom_mm = frame_top_mm + vd["frame_h_mm"]
-
-        for axis, side in dim_specs:
-            text = axis_text.get(axis)
-            if not text:
-                continue
-
-            label = tsdraft_sheet_text_rgba(text, font_px, color)
-
-            if side in {"LEFT", "RIGHT"}:
-                # np.rot90 rotates the actual glyph raster. This is deterministic
-                # even if viewport BLF rotation behaves differently by version.
-                label = np.rot90(label, k=1).copy()
-
-            label_h, label_w = label.shape[0], label.shape[1]
-            label_w_mm = label_w / sheet_dpi * 25.4
-            label_h_mm = label_h / sheet_dpi * 25.4
-
-            if side == "TOP":
-                x_mm = (frame_left_mm + frame_right_mm) * 0.5 - label_w_mm * 0.5
-                y_top_mm = frame_top_mm - gap_mm - label_h_mm
-
-            elif side == "BOTTOM":
-                x_mm = (frame_left_mm + frame_right_mm) * 0.5 - label_w_mm * 0.5
-                y_top_mm = frame_bottom_mm + gap_mm
-
-            elif side == "LEFT":
-                x_mm = frame_left_mm - gap_mm - label_w_mm
-                y_top_mm = (frame_top_mm + frame_bottom_mm) * 0.5 - label_h_mm * 0.5
-
-            else:  # RIGHT
-                x_mm = frame_right_mm + gap_mm
-                y_top_mm = (frame_top_mm + frame_bottom_mm) * 0.5 - label_h_mm * 0.5
-
-            x_px = x_mm / 25.4 * sheet_dpi
-            # Convert top-down sheet coordinate to bottom-up canvas coordinate.
-            y_px = (page_h_mm - y_top_mm - label_h_mm) / 25.4 * sheet_dpi
-
-            tsdraft_sheet_alpha_blit(canvas, label, x_px, y_px)
-
-
-def tsdraft_add_dimension_labels_to_exact_png(scene, filepath, view_key, info):
-    """
-    Add dimension text to an already exported exact-size PNG.
-    Used by '3面まとめて書き出し' so vertical dimension text is rotated
-    and the canvas can grow to avoid clipping.
-    """
-    import numpy as np
-
-    axis_map = {
-        "top": ("X", "Y"),
-        "front": ("X", "Z"),
-        "side": ("Y", "Z"),
-    }
-    axes = axis_map.get(view_key)
-    if not axes:
-        return
-
-    data = bpy.app.driver_namespace.get(_keys.DATA_KEY, [])
-    axis_text = {}
-    for item in data:
-        axis = str(item.get("axis", "")).upper()
-        if axis in axes:
-            axis_text[axis] = _dimension.get_dimension_text(scene, item)
-
-    horizontal_text = axis_text.get(axes[0])
-    vertical_text = axis_text.get(axes[1])
-    if not horizontal_text and not vertical_text:
-        return
-
-    image = bpy.data.images.load(filepath, check_existing=False)
-    try:
-        src_w, src_h = int(image.size[0]), int(image.size[1])
-        src = np.empty(src_w * src_h * 4, dtype=np.float32)
-        image.pixels.foreach_get(src)
-        src = src.reshape((src_h, src_w, 4))
-
-        bbox_left = float(info.get("bbox_left_px", 0.0))
-        bbox_right = float(src_w) - float(info.get("bbox_right_px", 0.0))
-        bbox_bottom = float(info.get("bbox_bottom_px", 0.0))
-        bbox_top = float(src_h) - float(info.get("bbox_top_px", 0.0))
-
-        font_px = max(4.0, float(getattr(scene, "tsdraft_font_size", 20)))
-        color = getattr(scene, "tsdraft_font_color", (0.05, 0.05, 0.05, 1.0))
-        gap_px = max(8.0, font_px * 0.40)
-        outer_pad = max(8.0, font_px * 0.35)
-
-        labels = []
-
-        if horizontal_text:
-            label = tsdraft_sheet_text_rgba(horizontal_text, font_px, color)
-            lh, lw = label.shape[0], label.shape[1]
-            x = (bbox_left + bbox_right) * 0.5 - lw * 0.5
-            y = bbox_top + gap_px
-            labels.append((label, x, y))
-
-        if vertical_text:
-            label = tsdraft_sheet_text_rgba(vertical_text, font_px, color)
-            # Actual raster rotation, independent of viewport BLF rotation.
-            label = np.rot90(label, k=1).copy()
-            lh, lw = label.shape[0], label.shape[1]
-            x = bbox_left - gap_px - lw
-            y = (bbox_bottom + bbox_top) * 0.5 - lh * 0.5
-            labels.append((label, x, y))
-
-        min_x = min([0.0] + [x for _lab, x, _y in labels]) - outer_pad
-        min_y = min([0.0] + [y for _lab, _x, y in labels]) - outer_pad
-        max_x = max([float(src_w)] + [x + lab.shape[1] for lab, x, _y in labels]) + outer_pad
-        max_y = max([float(src_h)] + [y + lab.shape[0] for lab, _x, y in labels]) + outer_pad
-
-        shift_x = max(0, int(math.ceil(-min_x)))
-        shift_y = max(0, int(math.ceil(-min_y)))
-        out_w = max(1, int(math.ceil(max_x + shift_x)))
-        out_h = max(1, int(math.ceil(max_y + shift_y)))
-
-        canvas = tsdraft_new_background_canvas(
-            np,
-            out_h,
-            out_w,
-            tsdraft_export_canvas_rgba(scene)
-        )
-        canvas[shift_y:shift_y + src_h, shift_x:shift_x + src_w, :] = src
-
-        for label, x, y in labels:
-            tsdraft_sheet_alpha_blit(
-                canvas,
-                label,
-                x + shift_x,
-                y + shift_y
-            )
-
-        out_image = bpy.data.images.new(
-            name="TSDRAFT_Batch_Dimensioned_View",
-            width=out_w,
-            height=out_h,
-            alpha=False,
-            float_buffer=False
-        )
-        try:
-            out_image.pixels.foreach_set(canvas.ravel())
-            out_image.file_format = 'PNG'
-            out_image.filepath_raw = filepath
-            out_image.save()
-        finally:
-            bpy.data.images.remove(out_image)
-
-        # Expanding the canvas must not change the BBox's physical scale.
-        if not tsdraft_patch_png_dpi(filepath, float(info["dpi"])):
-            raise RuntimeError("まとめ書き出しPNGへDPI情報を書き戻せんかったンゴ")
-
-    finally:
-        try:
-            bpy.data.images.remove(image)
-        except Exception:
-            _debug.swallowed("draft.tsdraft_add_dimension_labels_to_exact_png")
-
-def tsdraft_make_three_view_sheet_png(scene, filepath, exported):
-    """Compose three exact-size PNGs into a clean, aligned, print-scale PNG sheet."""
-    try:
-        import numpy as np
-    except Exception as exc:
-        raise RuntimeError("図面シートPNGの作成に必要なNumPyを読み込めんかったンゴ") from exc
-
-    denominator = tsdraft_sheet_scale_denominator(scene)
-    paper = getattr(scene, 'tsdraft_sheet_paper_size', 'A4')
-    orientation = getattr(scene, 'tsdraft_sheet_orientation', 'AUTO')
-
-    paper_sizes = {
-        'A4': (210.0, 297.0),
-        'A3': (297.0, 420.0),
-        'A2': (420.0, 594.0),
-        'A1': (594.0, 841.0),
-        'A0': (841.0, 1189.0),
-    }
-    if paper == 'CUSTOM':
-        base_w = max(10.0, float(getattr(scene, 'tsdraft_sheet_custom_width_mm', 210.0)))
-        base_h = max(10.0, float(getattr(scene, 'tsdraft_sheet_custom_height_mm', 297.0)))
-    else:
-        base_w, base_h = paper_sizes.get(paper, (210.0, 297.0))
-
-    view_data = {}
-    source_effective_dpis = []
-    for key, item in exported.items():
-        info = item['info']
-        src_dpi = max(1.0, float(info['dpi']))
-        mm_per_px = 25.4 / src_dpi / denominator
-
-        frame_w = float(info['bbox_width_mm']) / denominator
-        frame_h = float(info['bbox_height_mm']) / denominator
-
-        view_data[key] = {
-            'image_w_mm': float(info['image_w_px']) * mm_per_px,
-            'image_h_mm': float(info['image_h_px']) * mm_per_px,
-            'frame_w_mm': frame_w,
-            'frame_h_mm': frame_h,
-            'left_mm': float(info.get('bbox_left_px', 0.0)) * mm_per_px,
-            'right_mm': float(info.get('bbox_right_px', 0.0)) * mm_per_px,
-            'top_mm': float(info.get('bbox_top_px', 0.0)) * mm_per_px,
-            'bottom_mm': float(info.get('bbox_bottom_px', 0.0)) * mm_per_px,
-        }
-        source_effective_dpis.append(src_dpi * denominator)
-
-    if orientation == 'AUTO':
-        candidates = [
-            ('PORTRAIT', min(base_w, base_h), max(base_w, base_h)),
-            ('LANDSCAPE', max(base_w, base_h), min(base_w, base_h)),
-        ]
-    elif orientation == 'LANDSCAPE':
-        candidates = [('LANDSCAPE', max(base_w, base_h), min(base_w, base_h))]
-    else:
-        candidates = [('PORTRAIT', min(base_w, base_h), max(base_w, base_h))]
-
-    chosen = None
-    required = None
-    for orient_name, page_w, page_h in candidates:
-        positions, needed = tsdraft_sheet_layout_aligned(view_data, page_w, page_h)
-        if positions is not None:
-            chosen = (orient_name, page_w, page_h, positions)
-            break
-        required = needed
-
-    if chosen is None:
-        need_w, need_h = required or (0.0, 0.0)
-        raise RuntimeError(
-            f'{paper}・1:{denominator:g}では三面図が収まらんかったンゴ '
-            f'（必要目安 {need_w + 24.0:.1f}×{need_h + 24.0:.1f}mm）。'
-            '用紙を大きくするか縮率を下げてクレメンス'
-        )
-
-    orient_name, page_w, page_h, positions = chosen
-
-    # 図面シートは印刷品質を優先。
-    # 元ビューポートのDPIでページ全体を低解像度化しない。
-    # A4/A3/A2は最大300dpi、A1/A0/巨大カスタムだけ
-    # 約36MPを上限に自動でDPIを下げてメモリを守る。
-    page_area_in2 = max(1e-6, (page_w / 25.4) * (page_h / 25.4))
-    memory_safe_dpi = math.sqrt(36_000_000.0 / page_area_in2)
-    sheet_dpi = max(96.0, min(300.0, memory_safe_dpi))
-
-    page_px_w = max(1, int(round(page_w / 25.4 * sheet_dpi)))
-    page_px_h = max(1, int(round(page_h / 25.4 * sheet_dpi)))
-    canvas = tsdraft_new_background_canvas(
-        np,
-        page_px_h,
-        page_px_w,
-        tsdraft_export_canvas_rgba(scene)
-    )
-
-    loaded_images = []
-    try:
-        for key in ('top', 'side', 'front'):
-            item = exported[key]
-            x_mm, y_top_mm = positions[key]
-            w_mm = view_data[key]['image_w_mm']
-            h_mm = view_data[key]['image_h_mm']
-
-            dst_w = max(1, int(round(w_mm / 25.4 * sheet_dpi)))
-            dst_h = max(1, int(round(h_mm / 25.4 * sheet_dpi)))
-
-            image = bpy.data.images.load(item['path'], check_existing=False)
-            loaded_images.append(image)
-            image.scale(dst_w, dst_h)
-
-            src = np.empty(dst_w * dst_h * 4, dtype=np.float32)
-            image.pixels.foreach_get(src)
-            src = src.reshape((dst_h, dst_w, 4))
-
-            x0 = int(round(x_mm / 25.4 * sheet_dpi))
-            y0 = int(round((page_h - y_top_mm - h_mm) / 25.4 * sheet_dpi))
-            x1 = min(page_px_w, x0 + dst_w)
-            y1 = min(page_px_h, y0 + dst_h)
-            if x1 <= x0 or y1 <= y0:
-                continue
-
-            src = src[:y1 - y0, :x1 - x0, :]
-            dst = canvas[y0:y1, x0:x1, :]
-            alpha = src[..., 3:4]
-            dst[..., :3] = src[..., :3] * alpha + dst[..., :3] * (1.0 - alpha)
-            dst[..., 3:4] = 1.0
-
-        # Sheet dimensions are drawn here, not baked into the viewport screenshots.
-        tsdraft_sheet_draw_dimension_labels(
-            canvas,
-            scene,
-            positions,
-            view_data,
-            sheet_dpi,
-            page_h
-        )
-
-        # Keep scale notation on the actual sheet.
-        label = f"SCALE 1:{denominator:g}"
-        label_scale = max(2, int(round(sheet_dpi / 100.0)))
-        label_x = int(round(12.0 / 25.4 * sheet_dpi))
-        label_y_top = int(round((page_h - 10.0) / 25.4 * sheet_dpi))
-        tsdraft_draw_bitmap_text(canvas, label, label_x, label_y_top, label_scale)
-
-        out_image = bpy.data.images.new(
-            name="TSDRAFT_Three_View_Sheet",
-            width=page_px_w,
-            height=page_px_h,
-            alpha=False,
-            float_buffer=False
-        )
-        try:
-            out_image.pixels.foreach_set(canvas.ravel())
-            out_image.file_format = 'PNG'
-            out_image.filepath_raw = filepath
-
-            # save(), not save_render(): avoid applying the scene view transform a second time.
-            out_image.save()
-        finally:
-            bpy.data.images.remove(out_image)
-
-        if not tsdraft_patch_png_dpi(filepath, sheet_dpi):
-            raise RuntimeError("図面シートPNGへDPI情報を書き込めんかったンゴ")
-    finally:
-        for image in loaded_images:
-            try:
-                bpy.data.images.remove(image)
-            except Exception:
-                _debug.swallowed("draft.tsdraft_make_three_view_sheet_png")
-
-    return {
-        'paper': paper,
-        'orientation': orient_name,
-        'page_w_mm': page_w,
-        'page_h_mm': page_h,
-        'scale_denominator': denominator,
-        'dpi': sheet_dpi,
-        'pixel_width': page_px_w,
-        'pixel_height': page_px_h,
-    }
-
-
-def tsdraft_build_three_view_sheet(context, filepath):
-    """Shared builder for preview and final export."""
-    source_obj = _bbox.tsdraft_resolve_source_object(context)
-    if source_obj is None:
-        raise RuntimeError('元オブジェクトを選択してクレメンス')
-    if bpy.data.objects.get(_keys.BBOX_NAME) is None:
-        raise RuntimeError('先にBOX＋寸法を作成してクレメンス')
-
-    out_dir = os.path.dirname(filepath) or os.getcwd()
-    os.makedirs(out_dir, exist_ok=True)
-
-    # 2.4.13: intermediate view PNGs belong in the OS temp area, not beside
-    # the user's exported drawing.  The old .tsdraft_sheet_temp directory could
-    # survive on Windows when a file handle was released a little late.
-    import tempfile
-    import shutil
-    temp_dir = Path(tempfile.mkdtemp(prefix='zoukei_helper_sheet_'))
-
-    exported = {}
-    namespace = bpy.app.driver_namespace
-    old_sheet_layout_mode = namespace.get("TSDRAFT_SHEET_LAYOUT_MODE", False)
-    old_suppress_dim_text = namespace.get("TSDRAFT_SHEET_SUPPRESS_DIM_TEXT", False)
-    namespace["TSDRAFT_SHEET_LAYOUT_MODE"] = True
-    namespace["TSDRAFT_SHEET_SUPPRESS_DIM_TEXT"] = True
-
-    try:
-        for key, label in (('top', '上面'), ('front', '前面'), ('side', '側面')):
-            tmp = temp_dir / f'__tsdraft_{os.getpid()}_{key}.png'
-            info = tsdraft_export_viewport_exact_png(
-                context,
-                str(tmp),
-                key,
-                fit_padding_ratio=0.60,
-                suppress_dimension_text=True
-            )
-            exported[key] = {'path': str(tmp), 'info': info, 'label': label}
-        return tsdraft_make_three_view_sheet_png(context.scene, filepath, exported)
-    finally:
-        namespace["TSDRAFT_SHEET_LAYOUT_MODE"] = old_sheet_layout_mode
-        namespace["TSDRAFT_SHEET_SUPPRESS_DIM_TEXT"] = old_suppress_dim_text
-        for item in exported.values():
-            try:
-                Path(item['path']).unlink(missing_ok=True)
-            except Exception:
-                _debug.swallowed("draft.tsdraft_build_three_view_sheet")
-        # Remove the whole temporary work tree.  ignore_errors=True is
-        # intentional here: export success must not be turned into an error
-        # merely because Windows releases a temporary image handle late.
-        try:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-        except Exception:
-            _debug.swallowed("draft.tsdraft_build_three_view_sheet")
 
 
 class TSDRAFT_OT_preview_three_view_sheet(bpy.types.Operator):
@@ -2431,7 +543,7 @@ class TSDRAFT_OT_preview_three_view_sheet(bpy.types.Operator):
         filepath = preview_dir / '三面図プレビュー.png'
 
         try:
-            info = tsdraft_build_three_view_sheet(context, str(filepath))
+            info = _sheet.tsdraft_build_three_view_sheet(context, str(filepath))
             bpy.ops.wm.path_open(filepath=str(filepath))
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
@@ -2453,12 +565,12 @@ class TSDRAFT_OT_export_three_view_sheet(bpy.types.Operator, ExportHelper):
     filter_glob: bpy.props.StringProperty(default='*.png', options={'HIDDEN'})
 
     def invoke(self, context, event):
-        tsdraft_store_export_view_context(context)
+        _capture.tsdraft_store_export_view_context(context)
         source_obj = _bbox.tsdraft_resolve_source_object(context)
         base = source_obj.name if source_obj is not None else 'drawing'
         safe_base = ''.join(c if c not in '\\/:*?"<>|' else '_' for c in base)
-        last_dir = tsdraft_get_last_export_dir()
-        default_name = f'{safe_base}_三面図_{context.scene.tsdraft_sheet_paper_size}_1-{tsdraft_sheet_scale_denominator(context.scene):g}.png'
+        last_dir = _capture.tsdraft_get_last_export_dir()
+        default_name = f'{safe_base}_三面図_{context.scene.tsdraft_sheet_paper_size}_1-{_sheet.tsdraft_sheet_scale_denominator(context.scene):g}.png'
         self.filepath = os.path.join(last_dir, default_name) if last_dir else default_name
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
@@ -2469,12 +581,12 @@ class TSDRAFT_OT_export_three_view_sheet(bpy.types.Operator, ExportHelper):
             filepath += '.png'
 
         try:
-            sheet_info = tsdraft_build_three_view_sheet(context, filepath)
+            sheet_info = _sheet.tsdraft_build_three_view_sheet(context, filepath)
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 
-        tsdraft_remember_export_dir(filepath)
+        _capture.tsdraft_remember_export_dir(filepath)
         self.report(
             {'INFO'},
             f"{sheet_info['paper']} / 1:{sheet_info['scale_denominator']:g} / {sheet_info['dpi']:.0f}dpi の三面図PNGを書き出したで"
@@ -2505,14 +617,14 @@ class TSDRAFT_OT_export_actual_png(bpy.types.Operator, ExportHelper):
     )
 
     def invoke(self, context, event):
-        tsdraft_store_export_view_context(context)
+        _capture.tsdraft_store_export_view_context(context)
 
         source_obj = _bbox.tsdraft_resolve_source_object(context)
         base = source_obj.name if source_obj is not None else "drawing"
         safe_base = "".join(c if c not in '\\/:*?"<>|' else "_" for c in base)
 
         default_name = f"{safe_base}_{_dimension.tsdraft_svg_view_label(self.view_key)}.png"
-        last_dir = tsdraft_get_last_export_dir()
+        last_dir = _capture.tsdraft_get_last_export_dir()
 
         if last_dir:
             self.filepath = os.path.join(last_dir, default_name)
@@ -2524,7 +636,7 @@ class TSDRAFT_OT_export_actual_png(bpy.types.Operator, ExportHelper):
 
     def execute(self, context):
         try:
-            info = tsdraft_export_viewport_exact_png(
+            info = _capture.tsdraft_export_viewport_exact_png(
                 context,
                 self.filepath,
                 self.view_key
@@ -2533,7 +645,7 @@ class TSDRAFT_OT_export_actual_png(bpy.types.Operator, ExportHelper):
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 
-        tsdraft_remember_export_dir(self.filepath)
+        _capture.tsdraft_remember_export_dir(self.filepath)
 
         self.report(
             {'INFO'},
@@ -2559,7 +671,7 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
     )
 
     def invoke(self, context, event):
-        tsdraft_store_export_view_context(context)
+        _capture.tsdraft_store_export_view_context(context)
 
         source_obj = _bbox.tsdraft_resolve_source_object(context)
         base = source_obj.name if source_obj is not None else "drawing"
@@ -2568,7 +680,7 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
             for c in base
         )
 
-        last_dir = tsdraft_get_last_export_dir()
+        last_dir = _capture.tsdraft_get_last_export_dir()
         default_name = f"{safe_base}.png"
 
         if last_dir:
@@ -2589,7 +701,7 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
         target_dir = os.path.dirname(chosen_path)
 
         if not target_dir:
-            target_dir = tsdraft_get_last_export_dir() or os.getcwd()
+            target_dir = _capture.tsdraft_get_last_export_dir() or os.getcwd()
 
         os.makedirs(target_dir, exist_ok=True)
 
@@ -2619,7 +731,7 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
 
         # 3面まとめて書き出しは現在表示に依存せず、
         # 上面・前面・側面を内部で1面ずつ切り替え、個別フィットして出力する。
-        view_ctx = tsdraft_get_export_view_context(context)
+        view_ctx = _capture.tsdraft_get_export_view_context(context)
         if view_ctx is None:
             self.report({'ERROR'}, "書き出し元の3Dビューが見つからんかったンゴ")
             return {'CANCELLED'}
@@ -2630,14 +742,14 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
                 f"{safe_base}_{view_label}.png"
             )
             try:
-                info = tsdraft_export_viewport_exact_png(
+                info = _capture.tsdraft_export_viewport_exact_png(
                     context,
                     filepath,
                     view_key,
                     common_view_distance=None,
                     suppress_dimension_text=True
                 )
-                tsdraft_add_dimension_labels_to_exact_png(
+                _sheet.tsdraft_add_dimension_labels_to_exact_png(
                     context.scene,
                     filepath,
                     view_key,
@@ -2653,7 +765,7 @@ class TSDRAFT_OT_export_all_actual_png(bpy.types.Operator, ExportHelper):
         if done == 0:
             return {'CANCELLED'}
 
-        tsdraft_remember_export_dir(target_dir)
+        _capture.tsdraft_remember_export_dir(target_dir)
 
         self.report(
             {'INFO'},
@@ -2742,148 +854,13 @@ class TSDRAFT_OT_reset_label_offsets(bpy.types.Operator):
 
 
 
-def update_drawing_background(self, context):
-    if not getattr(context.scene, "tsdraft_drawing_mode", False):
-        # 通常Blender表示では背景やoverlayを勝手に変更しない。
-        return
-
-    if context.area and context.area.type == 'VIEW_3D':
-        _viewstate.configure_drawing_view(
-            context.area.spaces.active,
-            getattr(context.scene, "tsdraft_drawing_background", 'WHITE'),
-            getattr(context.scene, "tsdraft_drawing_background_color", (1.0, 1.0, 1.0))
-        )
-        _bbox.redraw_viewports()
-
-
-def tsdraft_fit_quad_for_drawing(context, area, padding_factor=1.28):
-    """
-    Quad Viewの上面・前面・側面をBBox中心へ寄せ、
-    寸法文字のために少し余白を持たせる。
-    任意ビューは触らない。
-    """
-    bbox_obj = bpy.data.objects.get(_keys.BBOX_NAME)
-    if bbox_obj is None:
-        return
-
-    try:
-        corners_world = [
-            bbox_obj.matrix_world @ Vector(corner)
-            for corner in bbox_obj.bound_box
-        ]
-    except Exception:
-        return
-
-    if not corners_world:
-        return
-
-    center = sum(corners_world, Vector()) / len(corners_world)
-
-    ortho_items = []
-    for key in ("top", "front", "side"):
-        region, rv3d = tsdraft_find_view_region(area, key)
-        if region is None or rv3d is None:
-            continue
-        ortho_items.append((key, region, rv3d))
-
-    if not ortho_items:
-        return
-
-    # まず中心を揃える。
-    for _key, _region, rv3d in ortho_items:
-        rv3d.view_location = center
-
-    # 現在倍率で投影し、BBoxが各paneへ収まるための倍率を求める。
-    required_scale = 1.0
-
-    for _key, region, rv3d in ortho_items:
-        projected = []
-        for world_co in corners_world:
-            p = view3d_utils.location_3d_to_region_2d(
-                region,
-                rv3d,
-                world_co
-            )
-            if p is not None:
-                projected.append(p)
-
-        if not projected:
-            continue
-
-        xs = [p.x for p in projected]
-        ys = [p.y for p in projected]
-
-        bbox_w_px = max(xs) - min(xs)
-        bbox_h_px = max(ys) - min(ys)
-
-        usable_w = max(1.0, float(region.width) / padding_factor)
-        usable_h = max(1.0, float(region.height) / padding_factor)
-
-        scale_w = bbox_w_px / usable_w
-        scale_h = bbox_h_px / usable_h
-
-        required_scale = max(required_scale, scale_w, scale_h)
-
-    if required_scale > 1.0:
-        for _key, _region, rv3d in ortho_items:
-            rv3d.view_distance *= required_scale
-
-    # 最低限の寸法余白を常に確保。
-    for _key, _region, rv3d in ortho_items:
-        rv3d.view_distance *= 1.08
-
-    # 3面は同倍率を維持する。
-    common_distance = max(rv3d.view_distance for _, _, rv3d in ortho_items)
-    for _key, _region, rv3d in ortho_items:
-        rv3d.view_distance = common_distance
-
-    bpy.app.driver_namespace[_keys.ZOOM_SYNC_STATE_KEY] = {
-        key: common_distance
-        for key, _region, _rv3d in ortho_items
-    }
 
 
 
-def is_quad_view(space):
-    try:
-        return len(space.region_quadviews) > 0
-    except Exception:
-        return False
 
 
-def switch_single_view(context, axis_type=None):
-    override = _viewstate.get_view3d_override(context)
 
-    if override is None:
-        return False
 
-    space = override["space_data"]
-
-    _viewstate.configure_drawing_view(
-        space,
-        getattr(context.scene, "tsdraft_drawing_background", 'WHITE'),
-        getattr(context.scene, "tsdraft_drawing_background_color", (1.0, 1.0, 1.0))
-    )
-    context.scene.tsdraft_drawing_mode = True
-
-    if is_quad_view(space):
-        with context.temp_override(**override):
-            bpy.ops.screen.region_quadview()
-
-        override = _viewstate.get_view3d_override(context)
-
-        if override is None:
-            return False
-
-    if axis_type is not None:
-        with context.temp_override(**override):
-            bpy.ops.view3d.view_axis(
-                type=axis_type,
-                align_active=False
-            )
-
-    _bbox.redraw_viewports()
-    return True
 
 
 # =========================================================
@@ -2921,13 +898,13 @@ class TSDRAFT_OT_quad_view(bpy.types.Operator):
         context.scene.tsdraft_show_bbox_user = False
         context.scene.tsdraft_show_dimensions_user = False
 
-        if not is_quad_view(space):
+        if not _views.is_quad_view(space):
             with context.temp_override(**override):
                 bpy.ops.screen.region_quadview()
 
         # Quad View生成直後にBBox＋寸法の余白を確保。
         try:
-            tsdraft_fit_quad_for_drawing(context, override["area"])
+            _views.tsdraft_fit_quad_for_drawing(context, override["area"])
         except Exception:
             _debug.swallowed("draft.TSDRAFT_OT_quad_view.execute")
 
@@ -2946,7 +923,7 @@ class TSDRAFT_OT_front_view(bpy.types.Operator):
 
     def execute(self, context):
         context.scene.tsdraft_user_view_mode = False
-        if not switch_single_view(context, 'FRONT'):
+        if not _views.switch_single_view(context, 'FRONT'):
             return {'CANCELLED'}
         return {'FINISHED'}
 
@@ -2957,7 +934,7 @@ class TSDRAFT_OT_top_view(bpy.types.Operator):
 
     def execute(self, context):
         context.scene.tsdraft_user_view_mode = False
-        if not switch_single_view(context, 'TOP'):
+        if not _views.switch_single_view(context, 'TOP'):
             return {'CANCELLED'}
         return {'FINISHED'}
 
@@ -2968,7 +945,7 @@ class TSDRAFT_OT_side_view(bpy.types.Operator):
 
     def execute(self, context):
         context.scene.tsdraft_user_view_mode = False
-        if not switch_single_view(context, 'RIGHT'):
+        if not _views.switch_single_view(context, 'RIGHT'):
             return {'CANCELLED'}
         return {'FINISHED'}
 
@@ -2979,7 +956,7 @@ class TSDRAFT_OT_user_view(bpy.types.Operator):
 
     def execute(self, context):
         context.scene.tsdraft_user_view_mode = True
-        if not switch_single_view(context, None):
+        if not _views.switch_single_view(context, None):
             return {'CANCELLED'}
         _bbox.redraw_viewports()
         return {'FINISHED'}
@@ -3019,7 +996,7 @@ class TSDRAFT_OT_restore_view(bpy.types.Operator):
         space = override["space_data"]
 
         # Quad Viewなら先に解除
-        if is_quad_view(space):
+        if _views.is_quad_view(space):
             with context.temp_override(**override):
                 bpy.ops.screen.region_quadview()
 
@@ -3586,7 +1563,7 @@ def register():
         description="図面ビューの背景表示",
         items=background_items,
         default='WHITE',
-        update=update_drawing_background
+        update=_views.update_drawing_background
     )
 
     bpy.types.Scene.tsdraft_drawing_background_color = bpy.props.FloatVectorProperty(
@@ -3596,7 +1573,7 @@ def register():
         default=(0.18, 0.18, 0.18),
         min=0.0,
         max=1.0,
-        update=update_drawing_background
+        update=_views.update_drawing_background
     )
 
     bpy.types.Scene.tsdraft_export_background = bpy.props.EnumProperty(
@@ -3722,9 +1699,9 @@ def register():
         _debug.swallowed("draft.register")
 
     try:
-        if not bpy.app.timers.is_registered(tsdraft_quad_zoom_lock_timer):
+        if not bpy.app.timers.is_registered(_views.tsdraft_quad_zoom_lock_timer):
             bpy.app.timers.register(
-                tsdraft_quad_zoom_lock_timer,
+                _views.tsdraft_quad_zoom_lock_timer,
                 first_interval=0.10,
                 persistent=True
             )
@@ -3759,8 +1736,8 @@ def unregister():
         _debug.swallowed("draft.unregister")
 
     try:
-        if bpy.app.timers.is_registered(tsdraft_quad_zoom_lock_timer):
-            bpy.app.timers.unregister(tsdraft_quad_zoom_lock_timer)
+        if bpy.app.timers.is_registered(_views.tsdraft_quad_zoom_lock_timer):
+            bpy.app.timers.unregister(_views.tsdraft_quad_zoom_lock_timer)
     except Exception:
         _debug.swallowed("draft.unregister")
 

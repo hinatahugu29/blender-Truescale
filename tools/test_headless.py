@@ -1353,6 +1353,8 @@ def test_modules_import_without_error():
         "truescale.overlay",
         "truescale.draft.bbox", "truescale.draft.dimension",
         "truescale.draft.keys", "truescale.draft.overlay",
+        "truescale.draft.views", "truescale.draft.export.capture",
+        "truescale.draft.export.sheet",
         "truescale.draft.viewstate",
         "truescale.unfold.build", "truescale.unfold.ops",
         "truescale.unfold.panel", "truescale.unfold.props",
