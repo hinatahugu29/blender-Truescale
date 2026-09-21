@@ -2234,6 +2234,36 @@ def test_pattern_inset_pushes_the_guide_outward():
 
 
 @test
+def test_guide_measures_the_allowance_that_is_printed():
+    """用紙ガイドの外形は、刷る線の外形と一致する。
+
+    以前のガイドは、四方へ一番大きい代の幅を足して見積もっていた。
+    糊代の付かない辺でもそのぶん広がり、ガイドの枠の原点が刷るものと
+    ずれた。鋭い角では逆に、マイターの伸びに足りなかった。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import collect as C
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_pattern_inset_mm = 0.0
+
+    for tab, seam in ((True, False), (False, True), (True, True)):
+        scene.tsunfold_tab_enable = tab
+        scene.tsunfold_seam_enable = seam
+        guide = C.pattern_extent(bpy.context)
+        drawing = C.pattern_lines(bpy.context)
+        check(guide is not None and drawing is not None, "外形が取れない")
+        label = f"糊代={tab} 縫い代={seam}"
+        close(guide[0], drawing.width_mm, 0.5, f"{label}: 横幅がずれる")
+        close(guide[1], drawing.height_mm, 0.5, f"{label}: 縦幅がずれる")
+
+
+@test
 def test_pattern_inset_keeps_the_export_consistent():
     """余白を入れても、書き出す線と外形の見積もりが食い違わない。
 

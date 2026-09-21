@@ -91,25 +91,7 @@ def pattern_lines(context):
     segments = _outline.current_finish_segments(
         context, skip=allow.suppress
     )
-    box = _outline.bbox(segments)
-
-    if extra["cut"] or extra["fold"]:
-        points = [
-            (v[0], v[1]) for v in extra["cut"] + extra["fold"]
-        ] + [
-            (v[2], v[3]) for v in extra["cut"] + extra["fold"]
-        ]
-        if box is None:
-            xs = [p[0] for p in points]
-            ys = [p[1] for p in points]
-            box = (min(xs), min(ys), max(xs), max(ys))
-        else:
-            box = (
-                min(box[0], min(p[0] for p in points)),
-                min(box[1], min(p[1] for p in points)),
-                max(box[2], max(p[0] for p in points)),
-                max(box[3], max(p[1] for p in points)),
-            )
+    box = _cut_box(segments, extra)
 
     if box is None:
         return None
@@ -192,6 +174,34 @@ def pattern_lines(context):
     return Drawing(lines, width_mm, height_mm)
 
 
+def _cut_box(segments, extra):
+    """外周と縫い代・糊代の線を合わせた外接矩形。ワールド、BU。
+
+    書き出しはこの左下を紙の原点にする。用紙ガイドも同じ関数で
+    原点を決める。別々に見積もると、画面の枠と実際の切れ目が
+    ずれる（ガイドだけ四方へ代の幅を足していて、代の無い辺で
+    その幅ぶんずれていた）。
+    """
+    from . import outline as _outline
+
+    box = _outline.bbox(segments)
+
+    lines = extra["cut"] + extra["fold"]
+    if not lines:
+        return box
+
+    xs = [v[0] for v in lines] + [v[2] for v in lines]
+    ys = [v[1] for v in lines] + [v[3] for v in lines]
+    if box is None:
+        return (min(xs), min(ys), max(xs), max(ys))
+    return (
+        min(box[0], min(xs)),
+        min(box[1], min(ys)),
+        max(box[2], max(xs)),
+        max(box[3], max(ys)),
+    )
+
+
 def _world_allowance(unfold, allow):
     """縫い代・糊代の線を、型紙のローカルからワールドへ直す。
 
@@ -260,52 +270,35 @@ def pattern_bounds(context):
     from ..core import objects as _objects
     from ..core import units as _units
     from ..marking import compute as _compute
+    from . import allowance as _allowance
     from . import outline as _outline
 
     scene = context.scene
 
-    box = _outline.bbox(_outline.current_finish_segments(context))
+    source = _objects.source_from_context(context)
+    unfold = _objects.unfold_for_source(source) if source else None
+
+    # 縫い代・糊代は実際に起こした線で測る。build は結果を控えて
+    # いるので毎フレーム呼んでよい。幅で見積もると、鋭い角では
+    # 足りず（マイターは幅の 2.5 倍まで伸びる）、代の無い辺では
+    # 余って原点がずれる。
+    allow = _allowance.build(context, source, unfold)
+    box = _cut_box(
+        _outline.current_finish_segments(context, skip=allow.suppress),
+        _world_allowance(unfold, allow),
+    )
     if box is None:
         return None
 
     min_x, min_y, max_x, max_y = box
 
-    # 縫い代と糊代のぶん。実際に形を起こすと重いので、四方へ
-    # 一番大きい幅だけ広げて見積もる。少し大きめに見るので、
-    # 実際より枚数が減ることはない。減るほうへ間違えると、
-    # 用紙ガイドが「収まる」と言ったものが刷ると収まらない。
-    from . import allowance as _allowance
-
-    conf = _allowance.settings(scene)
-    pad_mm = 0.0
-    if conf["tab"]:
-        pad_mm = max(pad_mm, conf["tab_mm"])
-    if conf["seam"]:
-        pad_mm = max(pad_mm, conf["seam_mm"])
-
-    # 型紙のまわりに空ける余白。pattern_lines と同じ値を足す。
-    # ここが食い違うと、画面のガイドと刷ったものがずれる。
-    pad_mm += max(0.0, float(
-        getattr(scene, "tsunfold_pattern_inset_mm", 0.0)
-    ))
-
-    if pad_mm > 0.0:
-        pad = _units.scene_mm_to_bu(scene, pad_mm)
-        min_x -= pad
-        min_y -= pad
-        max_x += pad
-        max_y += pad
-
-    source = _objects.source_from_context(context)
-    unfold = _objects.unfold_for_source(source) if source else None
-
+    # 印と文字は、右と上にだけ広げる。書き出しは原点を外周と代
+    # だけで決めるので、左と下へ広げるとガイドの枠がずれる。
     if source is not None and unfold is not None:
         for wa, wb, _color, _width in _compute.colored_segments(
             context, source, unfold
         ):
-            min_x = min(min_x, wa.x, wb.x)
             max_x = max(max_x, wa.x, wb.x)
-            min_y = min(min_y, wa.y, wb.y)
             max_y = max(max_y, wa.y, wb.y)
 
         for text, pos, size_mm, _color, _angle in text_sources(
@@ -316,10 +309,21 @@ def pattern_bounds(context):
             reach = _units.scene_mm_to_bu(
                 scene, float(size_mm) * max(1.0, len(str(text))) * 0.7
             )
-            min_x = min(min_x, pos.x - reach)
             max_x = max(max_x, pos.x + reach)
-            min_y = min(min_y, pos.y - reach)
             max_y = max(max_y, pos.y + reach)
+
+    # 型紙のまわりに空ける余白。pattern_lines と同じく、原点の側は
+    # 外周と代から、反対側は文字まで含めた端から空ける。
+    # ここが食い違うと、画面のガイドと刷ったものがずれる。
+    inset_mm = max(0.0, float(
+        getattr(scene, "tsunfold_pattern_inset_mm", 0.0)
+    ))
+    if inset_mm > 0.0:
+        pad = _units.scene_mm_to_bu(scene, inset_mm)
+        min_x -= pad
+        min_y -= pad
+        max_x += pad
+        max_y += pad
 
     return (min_x, min_y, max_x, max_y)
 
