@@ -3029,6 +3029,149 @@ def test_settings_that_always_apply_are_always_shown():
     )
 
 
+@test
+def test_leaving_edit_mode_clears_the_manual_layout_flag():
+    """編集モードを抜けたら、手動レイアウトの印も下りる。
+
+    以前は「レイアウト確定」を押したときしか下りなかった。Tab で
+    抜けるとフラグが立ったまま残り、描画側が「まだ動かしている
+    最中」と思い込む。控えをずらすには BMesh が要るが、編集モードを
+    抜けているので取れない。例外は握り潰されるので、エラーも出ない
+    まま印だけが消える。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import session as SS
+    from truescale.marking import dragging as DR
+    from truescale import overlay as OV
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+
+    # 「手動で調整」が立てる状態を作る。
+    scene[SS.MANUAL_LAYOUT_ACTIVE] = True
+    DR.take_snapshot(bpy.context, obj, unfold)
+    bpy.ops.object.mode_set(mode='EDIT')
+
+    check(OV.manual_layout_active(scene), "手動レイアウト中になっていない")
+
+    # Tab で抜ける。modal はこれを見て _finish を呼ぶ。
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    from truescale.unfold.ops import layout as LO
+    LO.TSUNFOLD_OT_layout_edit._finish(
+        LO.TSUNFOLD_OT_layout_edit, bpy.context
+    )
+
+    check(
+        not OV.manual_layout_active(scene),
+        "編集モードを抜けても手動レイアウトの印が残っている",
+    )
+    check(not DR._snapshot["segments"], "控えが残っている")
+
+
+@test
+def test_marks_survive_a_stuck_manual_layout_flag():
+    """フラグが残っていても、印が全部消えたりしない。
+
+    フラグが残る道が他にもありうる。残ったときに控えが使えないと、
+    以前は黙って何も描かなくなっていた。控えが使えないなら、
+    普通の描画へ落とす。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import session as SS
+    from truescale import overlay as OV
+    from truescale.marking import dragging as DR
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    bpy.context.view_layer.objects.active = unfold
+    for other in bpy.context.selected_objects:
+        other.select_set(False)
+    unfold.select_set(True)
+
+    # 控えを取らないままフラグだけ立てる（残ってしまった状態）。
+    DR.clear()
+    bpy.context.scene[SS.MANUAL_LAYOUT_ACTIVE] = True
+
+    _unfold, segments, texts = OV.dragging_marks(bpy.context)
+
+    check(
+        segments is None and texts is None,
+        f"使えない控えを、空の一覧として返している: {segments} / {texts}",
+    )
+
+    # 空の一覧（印が1つも無い）と区別が付いていること。
+    DR.take_snapshot(bpy.context, obj, unfold)
+    bpy.ops.object.mode_set(mode='EDIT')
+    try:
+        _unfold, segments, texts = OV.dragging_marks(bpy.context)
+        check(
+            segments is not None,
+            "控えが取れているのに使えない扱いになっている",
+        )
+    finally:
+        bpy.ops.object.mode_set(mode='OBJECT')
+        DR.clear()
+        bpy.context.scene[SS.MANUAL_LAYOUT_ACTIVE] = False
+
+
+@test
+def test_failed_entry_does_not_leave_the_flag_set():
+    """編集モードへ入れなかったときに、印を立てたままにしない。
+
+    手動レイアウトの印を invoke の先頭で立てていた。途中で失敗して
+    CANCELLED を返す道が2つあり、そのとき立ったまま残る。残ると
+    印が全部消える。入れたあとで立てる。
+    """
+    reset_scene()
+    import ast
+    import inspect
+    import textwrap
+    import truescale
+    from truescale.unfold.ops import layout as LO
+    truescale.register()
+
+    source = textwrap.dedent(
+        inspect.getsource(LO.TSUNFOLD_OT_layout_edit.invoke)
+    )
+    tree = ast.parse(source)
+
+    # フラグを立てる行と、return CANCELLED の行を数える。
+    set_at = None
+    cancels = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Subscript):
+                    key = ast.dump(target.slice)
+                    if "MANUAL_LAYOUT_ACTIVE" in key:
+                        set_at = node.lineno
+        if isinstance(node, ast.Return) and node.value is not None:
+            if "CANCELLED" in ast.dump(node.value):
+                cancels.append(node.lineno)
+
+    check(set_at is not None, "フラグを立てる行が見つからない")
+    check(cancels, "CANCELLED を返す行が見つからない")
+
+    late = [line for line in cancels if line > set_at]
+    check(
+        not late,
+        f"フラグ（行 {set_at}）のあとに CANCELLED がある: 行 {late}",
+    )
+
+
 def main():
     print()
     print("=" * 72)

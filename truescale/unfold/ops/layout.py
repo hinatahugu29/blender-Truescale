@@ -89,7 +89,9 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
         return _objects.resolve_unfold_for_layout(context) is not None
 
     def invoke(self, context, event):
-        context.scene[_session.MANUAL_LAYOUT_ACTIVE] = True
+        # 手動レイアウトの印は、編集モードへ入れたあとで立てる。
+        # ここで立てると、途中で失敗して CANCELLED を返す道が
+        # 2つあり、そのとき立ったまま残る。残ると印が消える。
         _interact.clear_island_highlight()
         _interact.clear_live_preview()
         _view.tag_redraw()
@@ -145,6 +147,10 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
             return {'CANCELLED'}
 
         _view.focus_selected(context, top_view=False)
+
+        # ここまで来て初めて、手動レイアウト中になる。
+        context.scene[_session.MANUAL_LAYOUT_ACTIVE] = True
+        _view.tag_redraw()
 
         self._last_selected = frozenset()
         wm = context.window_manager
@@ -246,6 +252,10 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
 
     def _finish(self, context):
         obj = context.active_object
+
+        # 先に BMesh の内容をメッシュへ書き戻す。このあと手動
+        # レイアウトの印を下ろすので、その時点でメッシュが最新で
+        # ないと、印が動かす前の位置に出る。
         if (
             obj is not None
             and obj.type == 'MESH'
@@ -261,6 +271,16 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
                 )
             except Exception:
                 _debug.swallowed("ops.TSUNFOLD_OT_layout_edit._finish")
+
+        # 手動レイアウト中の印を下ろす。以前はここで下ろしておらず、
+        # 「レイアウト確定」を押さずに Tab で抜けると立ったまま
+        # 残った。残ると描画側が「まだ動かしている最中」と思い込み、
+        # 控えをずらそうとして BMesh を取りに行く。編集モードを
+        # 抜けているので取れず、例外は握り潰され、印だけが黙って
+        # 消える。
+        context.scene[_session.MANUAL_LAYOUT_ACTIVE] = False
+        _dragging.clear()
+        _interact.invalidate_layout_cache()
 
         _view.tag_redraw()
 

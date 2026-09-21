@@ -825,9 +825,15 @@ def dragging_marks(context):
 
     unfold = _objects.resolve_unfold_for_layout(context)
     if unfold is None:
-        return (None, [], [])
+        return (None, None, None)
 
+    # 使えないときは None のまま返す。空の一覧と区別が要る。
+    # 「印が1つも無い」と「控えが使えない」は別のことで、後者は
+    # 普通の描画へ落とさないと、画面から印が全部消える。
     segments, texts = _dragging.current(unfold)
+    if segments is None and texts is None:
+        return (unfold, None, None)
+
     return (unfold, segments or [], texts or [])
 
 
@@ -965,7 +971,13 @@ def draw_marks_3d():
         # 1フレーム 39〜205ms かかり、ドラッグが止まって見える。
         try:
             unfold, segments, _texts = dragging_marks(context)
-            if unfold is not None:
+
+            if unfold is None or segments is None:
+                # 控えが使えない。編集モードを抜けたのにフラグが
+                # 残っている、などのとき。普通の描画へ落とす。
+                # ここで黙って何も描かないと、印が全部消える。
+                dragging = False
+            else:
                 gpu.state.depth_test_set('LESS_EQUAL')
 
                 if segments:
@@ -988,6 +1000,7 @@ def draw_marks_3d():
                 gpu.state.depth_test_set('NONE')
         except Exception:
             _debug.swallowed("overlay.draw_marks_3d.dragging")
+            dragging = False
 
     try:
         shader = gpu.shader.from_builtin('UNIFORM_COLOR')
@@ -1508,8 +1521,13 @@ def _draw_text_2d_inner():
             # 消える。元モデルは編集中ではないので、消す理由がない。
             # 型紙側の文字だけを、下で出さないようにする。
             _unfold, _segments, texts = dragging_marks(context)
-            for text, world_pos, size_mm, color, angle in texts:
-                draw_label(text, world_pos, size_mm, color, angle)
+
+            if texts is None:
+                # 控えが使えない。普通の描画へ落とす。
+                dragging = False
+            else:
+                for text, world_pos, size_mm, color, angle in texts:
+                    draw_label(text, world_pos, size_mm, color, angle)
 
         if source is None:
             return
