@@ -643,6 +643,53 @@ def test_a_single_sheet_needs_no_marks():
 
 
 @test
+def test_either_way_picks_the_orientation_with_fewer_sheets():
+    """向きが「自動」なら、枚数の少ない向きを選ぶ。
+
+    250×150 は A4 縦だと2枚、横なら1枚。
+    """
+    portrait = tiling.plan(250.0, 150.0, 210.0, 297.0)
+    check(portrait.count == 2, f"縦で {portrait.count} 枚（2枚のはず）")
+
+    chosen = tiling.plan_either_way(250.0, 150.0, 210.0, 297.0)
+    check(chosen.count == 1, f"自動で {chosen.count} 枚（1枚のはず）")
+    check(chosen.paper_w == 297.0, "横向きを選んでいない")
+
+    # 同じ枚数なら、渡した向きのまま
+    same = tiling.plan_either_way(100.0, 100.0, 210.0, 297.0)
+    check(same.paper_w == 210.0, "同じ枚数なのに向きを変えた")
+
+
+@test
+def test_single_sheet_hint_counts_the_printable_area():
+    """「この用紙なら1枚」は、刷れる範囲で確かめる。
+
+    200×285 は A4 の外形（210×297）には入るが、余白と目盛りの帯を
+    引いた範囲（194×269）には入らない。外形で比べていたころは
+    「A4 なら収まる」と案内し、刷ると2枚になっていた。
+    """
+    name = tiling.smallest_single_sheet(200.0, 285.0, paper.SIZES_BY_AREA)
+    check(name != "A4", "刷れる範囲に入らない A4 を案内している")
+    check(name == "B4", f"{name} を案内した（B4 のはず）")
+
+    found = tiling.plan_either_way(200.0, 285.0, *paper.SIZES_MM[name])
+    check(found.count == 1, "案内した用紙で1枚にならない")
+
+    # 向きを変えれば入るものは、小さいほうの用紙を案内する
+    check(
+        tiling.smallest_single_sheet(250.0, 150.0, paper.SIZES_BY_AREA)
+        == "A4",
+        "横向きなら A4 に入るのに案内しない",
+    )
+
+    check(
+        tiling.smallest_single_sheet(5000.0, 5000.0, paper.SIZES_BY_AREA)
+        is None,
+        "どの用紙にも入らないのに案内した",
+    )
+
+
+@test
 def test_marks_sit_inside_the_overlap():
     """合わせの印は、隣と重なっている帯の中にある。
 

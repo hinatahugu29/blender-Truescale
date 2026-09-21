@@ -122,18 +122,19 @@ def scale_warnings(context, unfold_obj):
             f"用紙 {_paper.scene_display_name(context.scene)} の約 {ratio:.1f} 倍です"
         )
 
-        fits = [
-            name for name, (pw, ph) in sorted(
-                _paper.SIZES_MM.items(),
-                key=lambda kv: kv[1][0] * kv[1][1],
-            )
-            if width_mm <= max(pw, ph) and height_mm <= min(pw, ph)
-            or width_mm <= min(pw, ph) and height_mm <= max(pw, ph)
-        ]
-        if fits:
-            lines.append(f"{fits[0]} なら収まります")
+        from ..export import tiling as _tiling
+        from .ops.export import tile_options
+
+        # 何の用紙なら収まるかは、分割と同じ計算で確かめる。
+        # 紙の外形で比べると、余白のぶん「収まる」と言いすぎる。
+        single = _tiling.smallest_single_sheet(
+            width_mm, height_mm, _paper.SIZES_BY_AREA,
+            **tile_options(context.scene)
+        )
+        if single is not None:
+            lines.append(f"{single} なら1枚で収まります")
         else:
-            lines.append("A0でも収まりません。分割が必要です")
+            lines.append("A0でも1枚には収まりません。分割して刷ります")
 
     # 合印が小さすぎて見えない
     notch_mm = float(getattr(context.scene, "tsunfold_notch_length_mm", 6.0))
@@ -237,21 +238,44 @@ def paper_fit_text(context):
         return [f"型紙 {size} → 1枚に収まります"]
 
     lines = [f"型紙 {size} → {plan.describe()}"]
-
-    # 1枚で済む用紙があるなら教える
-    for name, (pw, ph) in sorted(
-        _paper.SIZES_MM.items(), key=lambda kv: kv[1][0] * kv[1][1]
-    ):
-        usable_w = max(pw, ph) - plan.margin * 2.0
-        usable_h = min(pw, ph) - plan.margin * 2.0
-        if (
-            (width_mm <= usable_h and height_mm <= usable_w)
-            or (width_mm <= usable_w and height_mm <= usable_h)
-        ):
-            lines.append(f"{name} なら1枚で収まります")
-            break
-
+    lines.extend(_fewer_sheets_hints(context, width_mm, height_mm, plan))
     return lines
+
+
+def _fewer_sheets_hints(context, width_mm, height_mm, plan):
+    """枚数を減らす手立て。実寸は変えない。
+
+    縮めて1枚に収めることは勧めない。黙って縮んだ型紙は、切って
+    から気付く。変えてよいのは紙の向きと大きさだけ。
+
+    どちらも分割と同じ計算（export.tiling）で確かめてから出す。
+    紙の外形で比べると、余白と目盛りの帯のぶん「収まる」と
+    言いすぎる。
+    """
+    from ..export import tiling as _tiling
+    from .ops.export import tile_options
+
+    scene = context.scene
+    options = tile_options(scene)
+    hints = []
+
+    key = str(getattr(scene, _paper.PAPER_SIZE_PROP, "A4"))
+    orientation = str(getattr(scene, _paper.ORIENTATION_PROP, "PORTRAIT"))
+    if key != "CUSTOM" and orientation in ("PORTRAIT", "LANDSCAPE"):
+        turned = _tiling.plan(
+            width_mm, height_mm, plan.paper_h, plan.paper_w, **options
+        )
+        if turned is not None and turned.count < plan.count:
+            other = "横" if orientation == "PORTRAIT" else "縦"
+            hints.append(f"{other}向きにすると {turned.count} 枚になります")
+
+    single = _tiling.smallest_single_sheet(
+        width_mm, height_mm, _paper.SIZES_BY_AREA, **options
+    )
+    if single is not None:
+        hints.append(f"{single} なら1枚で収まります")
+
+    return hints
 
 
 def active_tool_text(context):

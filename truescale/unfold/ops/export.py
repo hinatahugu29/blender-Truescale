@@ -46,20 +46,38 @@ def _overlay():
     return overlay
 
 
+def tile_options(scene):
+    """分割の計算に渡す、紙のとりかたの設定。
+
+    計画を立てる場所と、「どの用紙なら1枚で済むか」を答える場所で
+    同じ値を使う。別々に読むと、案内した用紙で刷ると2枚になる。
+    """
+    return {
+        "margin": float(getattr(scene, "tsunfold_tile_margin_mm", 8.0)),
+        "overlap": float(getattr(scene, "tsunfold_tile_overlap_mm", 15.0)),
+    }
+
+
 def _plan_for_size(context, width_mm, height_mm):
-    """その大きさの型紙を、いまの用紙設定で分割する計画。"""
+    """その大きさの型紙を、いまの用紙設定で分割する計画。
+
+    向きが「自動」なら、枚数の少ないほうを選ぶ。以前は紙の外形に
+    入るかで選んでいたので、外形には入るが刷れる範囲に入らない向きを
+    選び、1枚で済むものを2枚にしていた。
+    """
     scene = context.scene
-    paper_w, paper_h = _outline.paper_dimensions(
-        scene, width_mm, height_mm
+    paper_w, paper_h = _paper.scene_dimensions_mm(scene)
+    options = tile_options(scene)
+
+    auto = (
+        str(getattr(scene, _paper.PAPER_SIZE_PROP, "A4")) != "CUSTOM"
+        and str(getattr(scene, _paper.ORIENTATION_PROP, "PORTRAIT")) == "AUTO"
     )
-    return _tiling.plan(
-        width_mm,
-        height_mm,
-        paper_w,
-        paper_h,
-        margin=float(getattr(scene, "tsunfold_tile_margin_mm", 8.0)),
-        overlap=float(getattr(scene, "tsunfold_tile_overlap_mm", 15.0)),
-    )
+    if auto:
+        return _tiling.plan_either_way(
+            width_mm, height_mm, paper_w, paper_h, **options
+        )
+    return _tiling.plan(width_mm, height_mm, paper_w, paper_h, **options)
 
 
 def tile_plan(context):

@@ -43,40 +43,6 @@ def bbox(segments):
     return min(xs), min(ys), max(xs), max(ys)
 
 
-def paper_dimensions(scene, shape_w_mm, shape_h_mm):
-    paper_key = str(getattr(scene, "tsunfold_paper_size", "A4"))
-
-    if paper_key == "CUSTOM":
-        return _paper.scene_dimensions_mm(scene)
-
-    orientation = str(
-        getattr(scene, "tsunfold_orientation", "PORTRAIT")
-    )
-    base_w, base_h = _paper.SIZES_MM[paper_key]
-    portrait = (min(base_w, base_h), max(base_w, base_h))
-    landscape = (portrait[1], portrait[0])
-
-    if orientation == "PORTRAIT":
-        return portrait
-    if orientation == "LANDSCAPE":
-        return landscape
-
-    fitting = [
-        p for p in (portrait, landscape)
-        if shape_w_mm <= p[0] + 1e-6 and shape_h_mm <= p[1] + 1e-6
-    ]
-    if fitting:
-        return min(
-            fitting,
-            key=lambda p: (p[0] - shape_w_mm) * (p[1] - shape_h_mm)
-        )
-
-    def overflow(p):
-        return max(0.0, shape_w_mm - p[0]) + max(0.0, shape_h_mm - p[1])
-
-    return min((portrait, landscape), key=overflow)
-
-
 def current_finish_segments(context, skip=None):
     """いま表示している仕上がりの外周線。
 

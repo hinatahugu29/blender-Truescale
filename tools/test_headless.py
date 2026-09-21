@@ -554,6 +554,49 @@ def test_no_scale_warning_at_sane_scale():
 
 
 @test
+def test_paper_hints_offer_only_what_actually_fits():
+    """枚数を減らす案内は、分割と同じ計算で確かめたものだけ出す。
+
+    250×150 は A4 縦で2枚、横で1枚。200×285 は A4 の外形には入るが、
+    刷れる範囲には入らない（B4 なら入る）。
+    減らない向きは案内しない（250×150 を横にしたあとで確かめる）。
+    """
+    from truescale.export import tiling
+    from truescale.unfold import status as STATUS
+    reset_scene()
+    import truescale
+    truescale.register()
+
+    scene = bpy.context.scene
+    scene.tsunfold_paper_size = "A4"
+    scene.tsunfold_orientation = "PORTRAIT"
+
+    plan = tiling.plan(250.0, 150.0, 210.0, 297.0)
+    hints = STATUS._fewer_sheets_hints(bpy.context, 250.0, 150.0, plan)
+    joined = " / ".join(hints)
+    check("横向きにすると 1 枚" in joined, f"向きの案内が無い: {joined}")
+    check("A4 なら1枚" in joined, f"用紙の案内が無い: {joined}")
+
+    scene.tsunfold_orientation = "LANDSCAPE"
+    plan = tiling.plan(250.0, 150.0, 297.0, 210.0)
+    hints = STATUS._fewer_sheets_hints(bpy.context, 250.0, 150.0, plan)
+    check(
+        not any("向きにすると" in h for h in hints),
+        f"減らない向きを案内している: {hints}",
+    )
+
+    scene.tsunfold_orientation = "PORTRAIT"
+    plan = tiling.plan(200.0, 285.0, 210.0, 297.0)
+    hints = STATUS._fewer_sheets_hints(bpy.context, 200.0, 285.0, plan)
+    joined = " / ".join(hints)
+    check("A4 なら" not in joined, f"入らない A4 を案内している: {joined}")
+    check("B4 なら1枚" in joined, f"B4 の案内が無い: {joined}")
+    # 縦では縦横どちらもはみ出して 2×2 = 4 枚、横なら 2 枚
+    check(plan.count == 4, f"縦で {plan.count} 枚（4枚のはず）")
+    check("横向きにすると 2 枚" in joined, f"向きの案内が違う: {joined}")
+
+
+@test
 def test_manual_scale_overrides_scene():
     """アドオン指定モードではシーンの Unit Scale を使わない。"""
     reset_scene()

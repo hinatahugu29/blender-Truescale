@@ -163,6 +163,40 @@ def plan(shape_w, shape_h, paper_w, paper_h, margin=8.0, overlap=15.0,
     )
 
 
+def _sheets(found):
+    return found.count if found is not None else math.inf
+
+
+def plan_either_way(shape_w, shape_h, paper_w, paper_h, **options):
+    """縦と横のうち、枚数の少ないほうの計画。同じなら渡した向き。
+
+    向きを「自動」にしたとき、紙の外形で比べると間違える。余白と
+    目盛りの帯を引いた残りで比べないと、外形には入るが刷れる範囲に
+    入らない向きを選び、1枚で済むものを2枚にする。枚数そのもので
+    比べれば、その食い違いは起きない。
+    """
+    given = plan(shape_w, shape_h, paper_w, paper_h, **options)
+    turned = plan(shape_w, shape_h, paper_h, paper_w, **options)
+    if _sheets(turned) < _sheets(given):
+        return turned
+    return given
+
+
+def smallest_single_sheet(shape_w, shape_h, sizes, **options):
+    """1枚で刷れる、いちばん小さい用紙の名前。無ければ None。
+
+    sizes は (名前, (幅, 高さ)) を小さい順に並べたもの
+    （core.paper.SIZES_BY_AREA）。向きはどちらでもよい。
+    紙の外形ではなく、分割と同じ計算で1枚になるかを見る。
+    外形で見ると、余白と帯のぶん「収まる」と言いすぎる。
+    """
+    for name, (paper_w, paper_h) in sizes:
+        found = plan_either_way(shape_w, shape_h, paper_w, paper_h, **options)
+        if found is not None and found.count == 1:
+            return name
+    return None
+
+
 def covers(plan_obj, x, y):
     """型紙上の点 (x, y) が、少なくとも1枚のタイルに入っているか。
 
