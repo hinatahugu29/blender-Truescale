@@ -12,11 +12,16 @@ for %%F in ("%~dp0..\truescale\unfold\ops\*.py") do "%BLENDER_PY%" "%~dp0check_a
 "%BLENDER_PY%" "%~dp0check_addon.py" "%~dp0..\truescale\unfold\__init__.py" "%~dp0..\truescale\draft\__init__.py"
 
 echo.
-echo === 2. Blender非依存の単体テスト ===
+echo === 2. 手引きの数字 ===
+REM 数字は放っておくと必ずずれる。人が見比べるのをやめる。
+"%BLENDER_PY%" "%~dp0check_docs.py"
+
+echo.
+echo === 3. Blender非依存の単体テスト ===
 "%BLENDER_PY%" "%~dp0test_pure.py"
 if errorlevel 1 exit /b 1
 
 echo.
-echo === 3. ヘッドレステスト ===
+echo === 4. ヘッドレステスト ===
 "%BLENDER%" --background --factory-startup --python "%~dp0test_headless.py"
 exit /b %ERRORLEVEL%
