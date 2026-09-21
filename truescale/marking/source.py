@@ -96,12 +96,19 @@ def notch_segment(context, source_obj, item):
     return p1, p2
 
 
-def seam_segments(source_obj):
-    """World-space seam edges for the source model, using live Edit Mode data."""
+def seam_edges(source_obj):
+    """シームの辺を (始点, 終点, 辺番号) で返す。ワールド座標。
+
+    編集モード中は BMesh から読む。obj.data は編集中の変更を
+    反映しないので、そのまま読むと古い形が出る。
+
+    辺番号を一緒に返すのは、糊代の指示（消した／入れ替えた）が
+    辺番号で記録されているため。色を分けるのに要る。
+    """
     if source_obj is None or source_obj.type != 'MESH':
         return []
 
-    mw = source_obj.matrix_world
+    matrix = source_obj.matrix_world
     result = []
 
     if source_obj.mode == 'EDIT':
@@ -112,27 +119,58 @@ def seam_segments(source_obj):
             for edge in bm.edges:
                 if not bool(getattr(edge, "seam", False)):
                     continue
-                a = mw @ edge.verts[0].co
-                b = mw @ edge.verts[1].co
-                result.append((a, b))
+                result.append((
+                    matrix @ edge.verts[0].co,
+                    matrix @ edge.verts[1].co,
+                    int(edge.index),
+                ))
 
             return result
         except Exception:
-            _debug.swallowed("_pattern_source_seam_segments")
+            _debug.swallowed("marking.source.seam_edges")
 
     try:
         source_obj.update_from_editmode()
     except Exception:
-        _debug.swallowed("_pattern_source_seam_segments")
+        _debug.swallowed("marking.source.seam_edges")
 
-    for edge in source_obj.data.edges:
+    mesh = source_obj.data
+    for edge in mesh.edges:
         if not edge.use_seam:
             continue
-        a = mw @ source_obj.data.vertices[edge.vertices[0]].co
-        b = mw @ source_obj.data.vertices[edge.vertices[1]].co
-        result.append((a, b))
+        result.append((
+            matrix @ mesh.vertices[edge.vertices[0]].co,
+            matrix @ mesh.vertices[edge.vertices[1]].co,
+            int(edge.index),
+        ))
 
     return result
+
+
+def seam_groups(source_obj, disabled=(), flipped=()):
+    """シームの辺を、糊代の状態ごとに分ける。
+
+    戻り値は {"plain": [...], "off": [...], "flip": [...]}。
+    中身は (始点, 終点)。
+
+    分けるのは、選んでいる最中に「この辺はもう触ってある」が
+    見えるようにするため。全部同じ色だと、指示が入っているか
+    どうかを確かめる手立てが無い。
+    """
+    off = {int(v) for v in disabled}
+    flip = {int(v) for v in flipped}
+
+    groups = {"plain": [], "off": [], "flip": []}
+
+    for a, b, index in seam_edges(source_obj):
+        if index in off:
+            groups["off"].append((a, b))
+        elif index in flip:
+            groups["flip"].append((a, b))
+        else:
+            groups["plain"].append((a, b))
+
+    return groups
 
 
 def colored_segments(context, source_obj):

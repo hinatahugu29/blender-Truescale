@@ -3305,6 +3305,124 @@ def test_flip_is_in_the_cache_key():
     check(third is not first, "入れ替えたのに控えを使い回している")
 
 
+@test
+def test_seam_lines_show_which_edges_were_touched():
+    """シーム線が、糊代の状態で分かれる。
+
+    全部同じ赤だと、「この辺はもう触ってある」が見えない。選んで
+    いる最中に見えないと、どの辺を選んだのか確かめようがない。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    from truescale.marking import source as SRC
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    seams = sorted(int(e.index) for e in obj.data.edges if e.use_seam)
+    check(len(seams) >= 3, "シームが足りない")
+
+    A.toggle_disabled(obj, seams[0], off=True)
+    A.toggle_flipped(obj, seams[1])
+
+    groups = SRC.seam_groups(
+        obj, A.disabled_edges(obj), A.flipped_edges(obj)
+    )
+
+    check(len(groups["off"]) == 1, f"消した辺が {len(groups['off'])} 本")
+    check(len(groups["flip"]) == 1, f"入れ替えた辺が {len(groups['flip'])} 本")
+    check(
+        len(groups["plain"]) == len(seams) - 2,
+        f"残りが合わない: {len(groups['plain'])} / {len(seams) - 2}",
+    )
+
+    # 3つとも違う色であること。同じ色なら分けた意味がない。
+    from truescale import overlay as OV
+
+    colors = {OV.SEAM_COLORS[key] for key in ("plain", "off", "flip")}
+    check(len(colors) == 3, f"色が重なっている: {colors}")
+
+
+@test
+def test_seam_groups_cover_every_seam_once():
+    """どのシームも、ちょうど1つの組に入る。
+
+    取りこぼすと線が消え、重なると二重に描かれる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    from truescale.marking import source as SRC
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    seams = sorted(int(e.index) for e in obj.data.edges if e.use_seam)
+
+    A.toggle_disabled(obj, seams[0], off=True)
+    A.toggle_flipped(obj, seams[0])   # 同じ辺に両方入れてみる
+
+    groups = SRC.seam_groups(
+        obj, A.disabled_edges(obj), A.flipped_edges(obj)
+    )
+
+    total = sum(len(v) for v in groups.values())
+    check(
+        total == len(seams),
+        f"シーム {len(seams)} 本に対して {total} 本描こうとしている",
+    )
+
+    # 両方入っている辺は「消した」を優先する。付かない辺の
+    # 入れ替え先を示しても意味がない。
+    check(len(groups["off"]) == 1, "消したほうが優先されていない")
+    check(len(groups["flip"]) == 0, "同じ辺が二重に入っている")
+
+
+@test
+def test_flip_reports_where_the_tab_moved():
+    """入れ替えたとき、どの型紙へ移ったかを答えられる。
+
+    押したあと型紙を探しに行かないと結果が分からない、という状態を
+    なくす。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    from truescale.unfold.ops import allowance as OPS
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+    bpy.context.scene.tsunfold_tab_enable = True
+
+    seams = sorted(int(e.index) for e in obj.data.edges if e.use_seam)
+    target = {seams[0]}
+
+    before = OPS._island_labels(bpy.context, obj, target)
+    check(before, "移す前の型紙が分からない")
+
+    A.toggle_flipped(obj, seams[0])
+    after = OPS._island_labels(bpy.context, obj, target)
+    check(after, "移した後の型紙が分からない")
+
+    check(
+        before[seams[0]] != after[seams[0]],
+        f"移っていない: {before} -> {after}",
+    )
+
+    text = OPS._moved_text(before, after, target)
+    check("→" in text, f"移り先の文字が出ていない: {text!r}")
+    check(before[seams[0]] in text, "移る前の呼び名が入っていない")
+    check(after[seams[0]] in text, "移った先の呼び名が入っていない")
+
+    # 動かなかったときは何も言わない。嘘を言うより黙るほうがよい。
+    check(
+        OPS._moved_text(before, before, target) == "",
+        "動いていないのに移ったと言っている",
+    )
+
+
 def main():
     print()
     print("=" * 72)

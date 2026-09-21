@@ -43,6 +43,63 @@ def _source(context):
     return _objects.seam_source(context)
 
 
+def _island_labels(context, source_obj, edges):
+    """その辺の糊代が、いまどの型紙に乗っているか。辺番号 -> 呼び名。
+
+    呼び名（A / B / C）は marking 側が決めている。export 側は面番号
+    までしか知らないので、ここで突き合わせる。
+
+    型紙が無い、まだ糊代を出していない、などのときは空を返す。
+    答えられないときに黙って嘘の名前を出すより、何も言わないほうが
+    よい。
+    """
+    from ...core import objects as _obj
+    from ...export import allowance as _al
+    from ...marking import compute as _compute
+
+    unfold = _obj.unfold_for_source(source_obj)
+    if unfold is None:
+        return {}
+
+    try:
+        made = _al.build(context, source_obj, unfold)
+        records, face_to_island, _adjacency = _compute.island_metadata(
+            context, source_obj, unfold
+        )
+    except Exception:
+        return {}
+
+    labels = {}
+    for index in edges:
+        face = made.placed.get(int(index))
+        if face is None:
+            continue
+        island = face_to_island.get(int(face))
+        if island is None or island >= len(records):
+            continue
+        labels[int(index)] = records[island]["label"]
+
+    return labels
+
+
+def _moved_text(before, after, edges):
+    """移り先を「A → C」の形にまとめる。答えられなければ空。"""
+    moves = []
+    for index in sorted(edges):
+        was = before.get(index)
+        now = after.get(index)
+        if was and now and was != now:
+            moves.append(f"{was} → {now}")
+
+    if not moves:
+        return ""
+
+    unique = sorted(set(moves))
+    if len(unique) <= 3:
+        return "（" + "、".join(unique) + "）"
+    return f"（{unique[0]} ほか {len(unique) - 1} 通り）"
+
+
 def _selected_seam_edges(obj):
     """選択されている辺のうち、シームが立っているものの番号。
 
@@ -125,10 +182,20 @@ class TSUNFOLD_OT_flip_tab_edges(bpy.types.Operator):
             self.report({'INFO'}, "シームの辺が選択されていません")
             return {'CANCELLED'}
 
+        before = _island_labels(context, obj, edges)
+
         for index in edges:
             _allowance.toggle_flipped(obj, index)
 
-        self.report({'INFO'}, f"{len(edges)} 本の糊代を入れ替えました")
+        after = _island_labels(context, obj, edges)
+
+        # 押したあと型紙を探しに行かなくて済むよう、移り先を言う。
+        # 置けなくて元の側のままだったときは、何も出ない。
+        moved = _moved_text(before, after, edges)
+
+        self.report(
+            {'INFO'}, f"{len(edges)} 本の糊代を入れ替えました{moved}"
+        )
         return {'FINISHED'}
 
 

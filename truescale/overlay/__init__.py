@@ -837,6 +837,21 @@ def dragging_marks(context):
     return (unfold, segments or [], texts or [])
 
 
+# 元モデルのシーム線の色。糊代の状態で塗り分ける。
+#
+#   plain  ふつうのシーム。糊代は自動で付く
+#   off    糊代を消した辺
+#   flip   糊代を反対側へ移した辺
+#
+# 全部同じ赤だと、指示が入っているかどうかを確かめる手立てが無い。
+# 選んでいる最中に見えることが大事なので、はっきり違う色にする。
+SEAM_COLORS = {
+    "plain": (1.0, 0.05, 0.02, 1.0),
+    "off": (0.45, 0.45, 0.45, 1.0),
+    "flip": (1.0, 0.62, 0.05, 1.0),
+}
+
+
 # 画面での色の既定。設定で変えられる。
 #
 # 以前は切る線を黒に近い色にしていたが、背景が暗いビューポートでは
@@ -1112,11 +1127,18 @@ def draw_marks_3d():
 
             # Heavy source-side calculations are skipped entirely while the
             # original model is hidden.
-            seam_segments = (
-                _source.seam_segments(source)
-                if show_seam_overlay
-                else []
-            )
+            # シームは糊代の状態で塗り分ける。全部同じ色だと、
+            # 「この辺はもう触ってある」が見えない。
+            if show_seam_overlay:
+                from ..export import allowance as _allowance
+
+                seam_groups = _source.seam_groups(
+                    source,
+                    _allowance.disabled_edges(source),
+                    _allowance.flipped_edges(source),
+                )
+            else:
+                seam_groups = {"plain": [], "off": [], "flip": []}
             source_colored = (
                 _source.colored_segments(
                     context,
@@ -1135,27 +1157,27 @@ def draw_marks_3d():
                 else []
             )
 
-            if seam_segments:
-                seam_verts = []
-                for pa, pb in seam_segments:
-                    seam_verts.extend((pa, pb))
-
-                seam_batch = batch_for_shader(
-                    shader,
-                    'LINES',
-                    {"pos": seam_verts},
-                )
+            if any(seam_groups.values()):
                 # シームの赤線はビューポート確認用の目印であって、
                 # 印刷される合印とは別物。以前は線の太さを
                 # 「合印の太さ」から取っていたため、合印の設定を変えると
                 # シーム線まで太くなり、両者が同じものに見えてしまっていた。
                 gpu.state.line_width_set(2.0)
                 shader.bind()
-                shader.uniform_float(
-                    "color",
-                    (1.0, 0.05, 0.02, 1.0),
-                )
-                seam_batch.draw(shader)
+
+                for key in ("plain", "off", "flip"):
+                    items = seam_groups.get(key) or []
+                    if not items:
+                        continue
+
+                    verts = []
+                    for pa, pb in items:
+                        verts.extend((pa, pb))
+
+                    shader.uniform_float("color", SEAM_COLORS[key])
+                    batch_for_shader(
+                        shader, 'LINES', {"pos": verts}
+                    ).draw(shader)
 
             # Do not ray-cast every mark on every viewport redraw.
             # GPU depth testing already hides lines behind the mesh and is

@@ -111,11 +111,6 @@ def flipped_edges(source_obj):
     return edge_set(source_obj, TAB_FLIP_PROP)
 
 
-def set_disabled_edges(source_obj, indices):
-    """タブを消してある辺を書き戻す。"""
-    set_edge_set(source_obj, TAB_OFF_PROP, indices)
-
-
 def toggle_disabled(source_obj, source_edge_index, off=None):
     """1本の辺のタブを消す／戻す。戻り値は消した状態かどうか。"""
     return toggle_edge(source_obj, TAB_OFF_PROP, source_edge_index, off)
@@ -269,15 +264,21 @@ class Allowance:
               折り線なので、元の実線が残っていると切られてしまう
     stitched  元の外周を縫い線として破線にするか。縫い代を付けた
               ときだけ真。外側が裁断線、内側が縫い線になる
+    placed    元メッシュの辺番号 -> タブが乗った型紙の面番号。
+              「どちらの型紙へ付いたか」を答えるのに使う。面番号を
+              返すのは、島の呼び名（A / B / C）を知っているのが
+              marking 側だけで、ここからは引けないため
     """
 
-    __slots__ = ("cut", "fold", "suppress", "stitched")
+    __slots__ = ("cut", "fold", "suppress", "stitched", "placed")
 
-    def __init__(self, cut=None, fold=None, suppress=None, stitched=False):
+    def __init__(self, cut=None, fold=None, suppress=None, stitched=False,
+                 placed=None):
         self.cut = cut or []
         self.fold = fold or []
         self.suppress = suppress or set()
         self.stitched = bool(stitched)
+        self.placed = placed or {}
 
     def __bool__(self):
         return bool(self.cut or self.fold or self.suppress)
@@ -433,6 +434,7 @@ def _build(context, source_obj, unfold_obj):
     cut = []
     fold = []
     suppress = set()
+    placed = {}
 
     # --- 縫い代 --------------------------------------------------------
     if conf["seam"] and seam_bu > 0.0:
@@ -501,9 +503,16 @@ def _build(context, source_obj, unfold_obj):
                 tuple(sorted((int(edge.vertices[0]), int(edge.vertices[1]))))
             )
 
+            # どの型紙へ乗ったかを覚えておく。境界辺なので、接する
+            # 面はちょうど1つ。
+            faces = _mapping.flat_edge_faces(unfold_obj).get(chosen[1], [])
+            if faces:
+                placed[int(source_edge)] = int(faces[0])
+
     return Allowance(
         cut=cut,
         fold=fold,
         suppress=suppress,
         stitched=bool(conf["seam"] and seam_bu > 0.0),
+        placed=placed,
     )

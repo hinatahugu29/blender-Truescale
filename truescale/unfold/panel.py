@@ -510,6 +510,8 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             hint = glue.column(align=True)
             hint.scale_y = 0.8
             hint.label(text="移した先に置けないときは、元の側のままです")
+            hint.label(text="元モデルのシーム線の色で、状態が分かります")
+            hint.label(text="　赤=そのまま　灰=消した　橙=入れ替えた")
 
         sew = box.box()
         sew.prop(scene, "tsunfold_seam_enable")
