@@ -107,17 +107,6 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
         if source is not None:
             _dragging.take_snapshot(context, source, obj)
 
-        # Smooth finishing is a separate Curve. Manual layout edits operate
-        # on the real flat Mesh, so temporarily return to POLY display.
-        context.scene[_session.DISPLAY_MODE] = "POLY"
-        for candidate in bpy.data.objects:
-            if (
-                candidate.type == 'CURVE'
-                and bool(candidate.get("tsunfold_smooth_generated", False))
-            ):
-                candidate.hide_viewport = True
-                candidate.hide_set(True)
-
         obj.hide_viewport = False
         obj.hide_set(False)
 

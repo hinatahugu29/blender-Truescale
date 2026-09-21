@@ -43,19 +43,6 @@ def source_from_context(context):
         if src is not None and src.type == 'MESH':
             return src
 
-    if (
-        obj is not None
-        and obj.type == 'CURVE'
-        and bool(obj.get("tsunfold_smooth_generated", False))
-    ):
-        unfold_name = obj.get("tsunfold_smooth_source", "")
-        unfold = bpy.data.objects.get(unfold_name)
-        if unfold is not None:
-            name = unfold.get("tsunfold_source", "")
-            src = bpy.data.objects.get(name)
-            if src is not None and src.type == 'MESH':
-                return src
-
     return None
 
 
@@ -97,33 +84,6 @@ def resolve_unfold_for_layout(context):
     ):
         return obj
 
-    # Smooth Curve selected: resolve back to its source unfold Mesh.
-    if (
-        obj is not None
-        and obj.type == 'CURVE'
-        and bool(obj.get("tsunfold_smooth_generated", False))
-    ):
-        source_name = obj.get("tsunfold_source", "")
-        if source_name:
-            candidate = bpy.data.objects.get(source_name)
-            if (
-                candidate is not None
-                and candidate.type == 'MESH'
-                and bool(candidate.get("tsunfold_generated", False))
-            ):
-                return candidate
-
-        # Fallback: smooth object may carry source unfold name under another key.
-        source_name = obj.get("tsunfold_unfold_source", "")
-        if source_name:
-            candidate = bpy.data.objects.get(source_name)
-            if (
-                candidate is not None
-                and candidate.type == 'MESH'
-                and bool(candidate.get("tsunfold_generated", False))
-            ):
-                return candidate
-
     # Fallback to any visible generated unfold Mesh.
     for candidate in bpy.data.objects:
         if (
@@ -133,7 +93,7 @@ def resolve_unfold_for_layout(context):
         ):
             return candidate
 
-    # Last resort: any generated unfold Mesh, even if hidden by smooth display.
+    # Last resort: any generated unfold Mesh, even if hidden.
     for candidate in bpy.data.objects:
         if (
             candidate.type == 'MESH'
@@ -226,17 +186,6 @@ def seam_source(context):
     return None
 
 
-def active_smooth(context):
-    obj = context.active_object
-    if (
-        obj
-        and obj.type == 'CURVE'
-        and bool(obj.get("tsunfold_smooth_generated", False))
-    ):
-        return obj
-    return None
-
-
 def delete_generated_for_source(context, source_obj):
     """Delete stale generated pattern/layout objects before regeneration."""
     if source_obj is None:
@@ -252,29 +201,7 @@ def delete_generated_for_source(context, source_obj):
         )
     ]
 
-    old_names = {obj.name for obj in old_meshes}
-
-    old_curves = [
-        obj
-        for obj in list(bpy.data.objects)
-        if (
-            obj.type == 'CURVE'
-            and bool(obj.get("tsunfold_smooth_generated", False))
-            and (
-                obj.get("tsunfold_smooth_source", "") in old_names
-                or obj.get("tsunfold_source", "") == source_obj.name
-            )
-        )
-    ]
-
     total = 0
-
-    for obj in old_curves:
-        data = obj.data
-        bpy.data.objects.remove(obj, do_unlink=True)
-        if data is not None and data.users == 0:
-            bpy.data.curves.remove(data)
-        total += 1
 
     for obj in old_meshes:
         data = obj.data
@@ -286,7 +213,6 @@ def delete_generated_for_source(context, source_obj):
     context.scene.tsunfold_pattern_preview = False
     context.scene.tsunfold_preview = False
     context.scene[_session.PREVIEW_PREV_ACTIVE] = ""
-    context.scene[_session.DISPLAY_MODE] = "POLY"
     _invalidate_caches()
 
     return total

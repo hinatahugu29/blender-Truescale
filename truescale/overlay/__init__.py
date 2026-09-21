@@ -156,30 +156,7 @@ def draw_thick_segments(rows, unfold_obj, scene):
 
 
 def preview_outline_segments(context):
-    """Return the outline matching the currently displayed finish mode."""
-    mode = context.scene.get(_session.DISPLAY_MODE, "POLY")
-
-    if mode == "SMOOTH":
-        # Prefer active smooth object.
-        obj = context.active_object
-        if (
-            obj
-            and obj.type == 'CURVE'
-            and bool(obj.get("tsunfold_smooth_generated", False))
-            and not obj.hide_viewport
-        ):
-            return _compute.smooth_curve_segments_world_xy(obj)
-
-        # Fallback to any visible generated smooth curve.
-        for candidate in bpy.data.objects:
-            if (
-                candidate.type == 'CURVE'
-                and bool(candidate.get("tsunfold_smooth_generated", False))
-                and not candidate.hide_viewport
-            ):
-                return _compute.smooth_curve_segments_world_xy(candidate)
-
-    # POLY or fallback.
+    """Return the outline of the displayed pattern."""
     obj = _objects.active_unfold(context)
     if obj is not None and not obj.hide_viewport:
         return _objects.boundary_segments_world_xy(obj)
@@ -1214,13 +1191,7 @@ def draw_marks_3d():
                 # 手動レイアウト中は、控えたものを上で描いている。
                 # ここで描き直すと動かす前の位置に出る。
                 and not dragging
-                and (
-                    not unfold.hide_viewport
-                    or context.scene.get(
-                        _session.DISPLAY_MODE,
-                        "POLY",
-                    ) == "SMOOTH"
-                )
+                and not unfold.hide_viewport
             )
 
             if show_transferred:
@@ -1298,36 +1269,19 @@ def draw_marks_3d():
                     if (
                         unfold is not None
                         and not dragging
-                        and (
-                            not unfold.hide_viewport
-                            or context.scene.get(
-                                _session.DISPLAY_MODE,
-                                "POLY",
-                            ) == "SMOOTH"
-                        )
+                        and not unfold.hide_viewport
                     ):
                         preview_item = {
                             "type": "notch_edge",
                             "edge": int(_interact.live_preview["notch_edge"]),
                             "t": float(_interact.live_preview["notch_t"]),
                         }
-                        if context.scene.get(
-                            _session.DISPLAY_MODE,
-                            "POLY",
-                        ) == "SMOOTH":
-                            preview_notches = _compute.smooth_notch_segments(
-                                context,
-                                source,
-                                unfold,
-                                preview_item,
-                            )
-                        else:
-                            preview_notches = _compute.flat_notch_segments(
-                                context,
-                                source,
-                                unfold,
-                                preview_item,
-                            )
+                        preview_notches = _compute.flat_notch_segments(
+                            context,
+                            source,
+                            unfold,
+                            preview_item,
+                        )
 
                         for fa, fb in preview_notches:
                             batch = batch_for_shader(
@@ -1614,13 +1568,7 @@ def _draw_text_2d_inner():
             # 手動レイアウト中は、控えたものを上で描いている。
             # ここで描き直すと動かす前の位置に出る。
             and not dragging
-            and (
-                not unfold.hide_viewport
-                or context.scene.get(
-                    _session.DISPLAY_MODE,
-                    "POLY",
-                ) == "SMOOTH"
-            )
+            and not unfold.hide_viewport
         ):
             flat_labels = flat_text_items(
                 source,

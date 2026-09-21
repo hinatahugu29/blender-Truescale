@@ -117,7 +117,7 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
             return {'CANCELLED'}
 
         # Current seam state is the only source of truth.
-        # Delete stale pattern/layout/smooth output before rebuilding.
+        # Delete stale pattern/layout output before rebuilding.
         _objects.delete_generated_for_source(context, src_obj)
 
         result = _build.flat_mesh(
@@ -299,7 +299,7 @@ class TSUNFOLD_OT_finalize_pattern(bpy.types.Operator):
 class TSUNFOLD_OT_delete_unfold(bpy.types.Operator):
     bl_idname = "truescale_unfold.delete_unfold"
     bl_label = "展開図を削除"
-    bl_description = "生成されたローポリ展開図となめらか線をまとめて削除します"
+    bl_description = "生成された展開図をまとめて削除します"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -316,19 +316,7 @@ class TSUNFOLD_OT_delete_unfold(bpy.types.Operator):
             if obj.type == 'MESH' and bool(obj.get("tsunfold_generated", False))
         ]
 
-        curve_targets = [
-            obj for obj in list(bpy.data.objects)
-            if obj.type == 'CURVE' and bool(obj.get("tsunfold_smooth_generated", False))
-        ]
-
         total = 0
-
-        for obj in curve_targets:
-            data = obj.data
-            bpy.data.objects.remove(obj, do_unlink=True)
-            if data and data.users == 0:
-                bpy.data.curves.remove(data)
-            total += 1
 
         for obj in mesh_targets:
             data = obj.data
@@ -428,13 +416,6 @@ class TSUNFOLD_OT_toggle_pattern_preview(bpy.types.Operator):
             unfold.hide_viewport = False
             unfold.select_set(True)
             context.view_layer.objects.active = unfold
-
-            for obj in bpy.data.objects:
-                if (
-                    obj.type == 'CURVE'
-                    and bool(obj.get("tsunfold_smooth_generated", False))
-                ):
-                    obj.hide_viewport = True
 
             scene.tsunfold_pattern_preview = True
 

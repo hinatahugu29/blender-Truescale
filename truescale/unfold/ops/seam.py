@@ -279,36 +279,9 @@ class TSUNFOLD_OT_calibrate_scale(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class TSUNFOLD_OT_select_unfold_source(bpy.types.Operator):
-    bl_idname = "truescale_unfold.select_unfold_source"
-    bl_label = "元の展開図を選択"
-    bl_description = "なめらか線の元になった展開図Meshを選択します"
-
-    @classmethod
-    def poll(cls, context):
-        return _objects.active_smooth(context) is not None
-
-    def execute(self, context):
-        smooth = context.active_object
-        source_name = smooth.get("tsunfold_smooth_source", "")
-        source = bpy.data.objects.get(source_name)
-
-        if source is None:
-            self.report({'ERROR'}, "元の展開図が見つかりません")
-            return {'CANCELLED'}
-
-        for o in context.selected_objects:
-            o.select_set(False)
-        source.select_set(True)
-        context.view_layer.objects.active = source
-
-        return {'FINISHED'}
-
-
 classes = (
     TSUNFOLD_OT_clear_seam,
     TSUNFOLD_OT_mark_seam,
     TSUNFOLD_OT_load_seamed_object,
     TSUNFOLD_OT_calibrate_scale,
-    TSUNFOLD_OT_select_unfold_source,
 )

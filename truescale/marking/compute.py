@@ -24,12 +24,9 @@ import math
 
 from mathutils import Vector
 
-import bpy
-
 from .. import debug as _debug
 from ..core import geometry as _geometry
 from ..core import mapping as _mapping
-from ..core import session as _session
 from ..core import solve as _solve
 from ..core import state as _state
 from ..core import units as _units
@@ -664,70 +661,6 @@ def connection_label_inside_position(
     return mid + inward * start_offset
 
 
-def visible_smooth_for_unfold(unfold_obj):
-    if unfold_obj is None:
-        return None
-
-    for candidate in bpy.data.objects:
-        if (
-            candidate.type == 'CURVE'
-            and bool(candidate.get("tsunfold_smooth_generated", False))
-            and candidate.get("tsunfold_smooth_source", "") == unfold_obj.name
-            and not candidate.hide_viewport
-        ):
-            return candidate
-
-    return None
-
-
-def smooth_curve_segments_world_xy(obj, samples_per_segment=32):
-    """Sample generated Bezier curve splines into world-space XY line segments."""
-    if (
-        obj is None
-        or obj.type != 'CURVE'
-        or not bool(obj.get("tsunfold_smooth_generated", False))
-    ):
-        return []
-
-    segments = []
-
-    for spline in obj.data.splines:
-        if spline.type != 'BEZIER':
-            continue
-
-        bps = spline.bezier_points
-        n = len(bps)
-        if n < 2:
-            continue
-
-        seg_count = n if spline.use_cyclic_u else n - 1
-
-        for i in range(seg_count):
-            a = bps[i]
-            b = bps[(i + 1) % n]
-
-            p0 = a.co.copy()
-            p1 = a.handle_right.copy()
-            p2 = b.handle_left.copy()
-            p3 = b.co.copy()
-
-            prev_local = p0
-            prev_world = obj.matrix_world @ prev_local
-
-            for s in range(1, samples_per_segment + 1):
-                t = s / samples_per_segment
-                cur_local = _solve.bezier_point(p0, p1, p2, p3, t)
-                cur_world = obj.matrix_world @ cur_local
-
-                segments.append(
-                    ((prev_world.x, prev_world.y), (cur_world.x, cur_world.y))
-                )
-
-                prev_world = cur_world
-
-    return segments
-
-
 def flat_notch_segments(
     context,
     source_obj,
@@ -817,102 +750,6 @@ def flat_notch_segments(
         q = p + perp * length
 
         result.append((mw @ p, mw @ q))
-
-    return result
-
-
-def smooth_notch_segments(context, source_obj, unfold_obj, item):
-    """Project poly-notch positions to nearest visible smooth outline.
-
-    The original seam correspondence still determines WHICH location the notch
-    belongs to. Only the final boundary point/tangent is moved to the smooth
-    finishing curve.
-    """
-    poly_segments = flat_notch_segments(
-        context,
-        source_obj,
-        unfold_obj,
-        item,
-    )
-
-    if not poly_segments:
-        return []
-
-    smooth_obj = visible_smooth_for_unfold(unfold_obj)
-    if smooth_obj is None:
-        return poly_segments
-
-    sampled = smooth_curve_segments_world_xy(
-        smooth_obj,
-        samples_per_segment=24,
-    )
-    if not sampled:
-        return poly_segments
-
-    notch_length = _units.scene_mm_to_bu(
-        context.scene,
-        float(
-            getattr(
-                context.scene,
-                "tsunfold_notch_length_mm",
-                6.0,
-            )
-        ),
-    )
-
-    result = []
-
-    for poly_a, poly_b in poly_segments:
-        base = Vector((poly_a.x, poly_a.y, 0.0))
-        inward = Vector(
-            (
-                poly_b.x - poly_a.x,
-                poly_b.y - poly_a.y,
-                0.0,
-            )
-        )
-
-        if inward.length <= 1e-12:
-            continue
-        inward.normalize()
-
-        best_point = None
-        best_tangent = None
-        best_dist = None
-
-        for (ax, ay), (bx, by) in sampled:
-            sa = Vector((ax, ay, 0.0))
-            sb = Vector((bx, by, 0.0))
-            nearest, _t = _solve.nearest_point_on_xy_segment(
-                base,
-                sa,
-                sb,
-            )
-            dist = (nearest - base).length
-
-            if best_dist is None or dist < best_dist:
-                tangent = sb - sa
-                if tangent.length <= 1e-12:
-                    continue
-
-                best_dist = dist
-                best_point = nearest
-                best_tangent = tangent.normalized()
-
-        if best_point is None or best_tangent is None:
-            result.append((poly_a, poly_b))
-            continue
-
-        perp = Vector(
-            (-best_tangent.y, best_tangent.x, 0.0)
-        )
-
-        # Keep the notch pointing to the same side as the original poly notch.
-        if perp.dot(inward) < 0.0:
-            perp.negate()
-
-        end = best_point + perp * notch_length
-        result.append((best_point, end))
 
     return result
 
@@ -1201,28 +1038,13 @@ def compute_colored_segments(context, source_obj, unfold_obj):
         color = _storage.scene_item_color(item, context.scene)
 
         if kind == "notch_edge":
-            if context.scene.get(_session.DISPLAY_MODE, "POLY") == "SMOOTH":
-                # なめらか表示はワールド空間のカーブへ投影するため、
-                # 結果をローカルへ戻してから他と揃える。
-                inverse = unfold_obj.matrix_world.inverted_safe()
-                notch_segments = transform_rows(
-                    smooth_notch_segments(
-                        context,
-                        source_obj,
-                        unfold_obj,
-                        item,
-                    ),
-                    inverse,
-                    (0, 1),
-                )
-            else:
-                notch_segments = flat_notch_segments(
-                    context,
-                    source_obj,
-                    unfold_obj,
-                    item,
-                    matrix=_identity(),
-                )
+            notch_segments = flat_notch_segments(
+                context,
+                source_obj,
+                unfold_obj,
+                item,
+                matrix=_identity(),
+            )
 
             notch_thickness = float(
                 getattr(
@@ -1313,7 +1135,6 @@ def colored_segments(context, source_obj, unfold_obj):
             )
             for prop in sorted(_storage.COLOR_PROP.values())
         ),
-        str(scene.get(_session.DISPLAY_MODE, "POLY")),
     )
 
     cached = _state.get(key)

@@ -3,12 +3,10 @@
 画面に見えているものと印刷されるものは同じではない。ここが決めるのは
 「紙に出る線」だけで、用紙ガイドや島のハイライトは含めない。
 
-■ 何を書き出すかは表示モードで決まる
+■ 何を書き出すか
 
-  ポリゴン仕上げ … 生成した型紙メッシュの外周
-  なめらか仕上げ … 生成したカーブ
-
-選択中のオブジェクトを優先し、無ければ表示されている生成物を探す。
+生成した型紙メッシュの外周。選択中のオブジェクトを優先し、無ければ
+表示されている型紙を探す。
 「選んでいないと書き出せない」を避けるため。
 
 ■ 文字は一度メッシュにしてから輪郭を取る
@@ -22,9 +20,7 @@ import bpy
 
 from .. import debug as _debug
 from ..core import paper as _paper
-from ..core import session as _session
 from ..core import units as _units
-from ..marking import compute as _compute
 
 
 def _objects():
@@ -44,37 +40,12 @@ def bbox(segments):
 
 
 def current_finish_segments(context, skip=None):
-    """いま表示している仕上がりの外周線。
+    """いま表示している型紙の外周線。
 
     skip は外周から外す辺（頂点番号の組）。糊代のタブが付いた辺は
     根元が折り線になるので、元の実線を残すと切られてしまう。
-    なめらか仕上げ（カーブ）にはメッシュの辺が無いので効かない。
     """
-    mode = context.scene.get(_session.DISPLAY_MODE, "POLY")
     obj = context.active_object
-
-    if (
-        mode == "SMOOTH"
-        or (
-            obj
-            and obj.type == 'CURVE'
-            and bool(obj.get("tsunfold_smooth_generated", False))
-        )
-    ):
-        if (
-            obj
-            and obj.type == 'CURVE'
-            and bool(obj.get("tsunfold_smooth_generated", False))
-        ):
-            return _compute.smooth_curve_segments_world_xy(obj)
-
-        for candidate in bpy.data.objects:
-            if (
-                candidate.type == 'CURVE'
-                and bool(candidate.get("tsunfold_smooth_generated", False))
-                and not candidate.hide_viewport
-            ):
-                return _compute.smooth_curve_segments_world_xy(candidate)
 
     if (
         obj
@@ -99,13 +70,7 @@ def can_export(context):
     if obj is None:
         return False
 
-    if obj.type == 'MESH' and bool(obj.get("tsunfold_generated", False)):
-        return True
-
-    if obj.type == 'CURVE' and bool(obj.get("tsunfold_smooth_generated", False)):
-        return True
-
-    return False
+    return obj.type == 'MESH' and bool(obj.get("tsunfold_generated", False))
 
 
 def text_segments(context, text, world_pos, size_mm, angle=0.0):

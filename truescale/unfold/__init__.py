@@ -48,11 +48,6 @@ _pattern_text_handle = None
 # PNG helpers
 
 
-# Smooth finishing-line helpers
-
-SMOOTH_SUFFIX = "_なめらか線"
-
-
 # Annotation -> rough seam helpers
 
 # Annotation -> clean curve -> knife helpers

@@ -39,7 +39,6 @@ MARKING_PREV_MODE = "tsunfold_marking_prev_mode"
 
 # --- レイアウト・表示 ---
 MANUAL_LAYOUT_ACTIVE = "tsunfold_manual_layout_active"
-DISPLAY_MODE = "tsunfold_display_mode"
 
 # --- 印刷プレビュー中に退避する情報 ---
 PREVIEW_PREV_ACTIVE = "tsunfold_preview_prev_active"
