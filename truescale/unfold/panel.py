@@ -356,18 +356,31 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
 
         box.prop(scene, "tsunfold_show_paper", text="用紙ガイドを表示")
 
-        if _status.needs_tiling(context):
-            tile = box.box()
-            tile.label(text="分割の設定", icon='MOD_BUILD')
-            tile.use_property_split = True
-            tile.prop(scene, "tsunfold_tile_margin_mm", text="用紙の余白 (mm)")
-            tile.prop(scene, "tsunfold_tile_overlap_mm", text="重ねしろ (mm)")
-            tile.prop(
-                scene, "tsunfold_pattern_inset_mm",
-                text="型紙のまわり (mm)",
+        # 余白は常に出す。以前は分割が要るときだけ出していたが、
+        # 用紙の余白と型紙のまわりは1枚に収まるときも効いている。
+        # 効いているのに見えない設定があると、「なぜか小さく刷られる」
+        # の原因に辿り着けない。
+        tiling = _status.needs_tiling(context)
+
+        paper = box.box()
+        paper.label(text="紙のとりかた", icon='MOD_BUILD')
+        paper.use_property_split = True
+        paper.prop(scene, "tsunfold_tile_margin_mm", text="用紙の余白 (mm)")
+        paper.prop(
+            scene, "tsunfold_pattern_inset_mm",
+            text="型紙のまわり (mm)",
+        )
+
+        # 重ねしろは分割するときだけ意味がある。出したままだと
+        # 「効いていない設定」に見えるので、そのときだけ出す。
+        if tiling:
+            paper.prop(
+                scene, "tsunfold_tile_overlap_mm", text="重ねしろ (mm)"
             )
-            tile.label(text="切らずに重ねて貼れます")
-            tile.label(text="刷ったら目盛りを定規で確認")
+            note = paper.column(align=True)
+            note.scale_y = 0.8
+            note.label(text="切らずに重ねて貼れます")
+            note.label(text="刷ったら目盛りを定規で確認")
 
         box.separator()
 

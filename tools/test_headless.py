@@ -2942,6 +2942,93 @@ def test_sheet_view_data_applies_the_scale():
     close(half["left_mm"], 1.27, 1e-6, "1:2 の左余白")
 
 
+@test
+def test_margins_apply_even_on_a_single_sheet():
+    """1枚に収まるときも、余白の設定は効いている。
+
+    以前は「分割が要るとき」だけパネルに出していた。効いているのに
+    見えない設定があると、「なぜか小さく刷られる」の原因に辿り
+    着けない。効いていることをここで確かめ、UI でも常に出す。
+    """
+    reset_scene()
+    import truescale
+    from truescale.unfold import build as B
+    from truescale.export import collect as C
+    truescale.register()
+
+    obj = make_seamed_cube(size=0.2)
+    build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_paper_size = "A4"
+    scene.tsunfold_pattern_inset_mm = 0.0
+
+    # 用紙の余白は、島を詰め込める範囲を決めている。
+    scene.tsunfold_tile_margin_mm = 5.0
+    narrow = B.content_size(scene)
+
+    scene.tsunfold_tile_margin_mm = 25.0
+    wide = B.content_size(scene)
+
+    close(narrow[0] - wide[0], 40.0, 0.01, "余白が横に効いていない")
+    close(narrow[1] - wide[1], 40.0, 0.01, "余白が縦に効いていない")
+
+    # 型紙のまわりも、1枚のときから外形に含まれる。
+    scene.tsunfold_tile_margin_mm = 8.0
+    scene.tsunfold_pattern_inset_mm = 0.0
+    plain = C.pattern_extent(bpy.context)
+
+    scene.tsunfold_pattern_inset_mm = 15.0
+    inset = C.pattern_extent(bpy.context)
+
+    close(inset[0] - plain[0], 30.0, 0.5, "型紙のまわりが横に効いていない")
+    close(inset[1] - plain[1], 30.0, 0.5, "型紙のまわりが縦に効いていない")
+
+
+@test
+def test_settings_that_always_apply_are_always_shown():
+    """常に効いている設定が、条件つきで隠れていないか。
+
+    分割が要るときだけ出していた3つのうち、2つは1枚のときも
+    効いていた。パネルのコードを読んで、それらが
+    needs_tiling の中だけに入っていないことを確かめる。
+    """
+    reset_scene()
+    import ast
+    import inspect
+    import textwrap
+    import truescale
+    from truescale.unfold import panel as PN
+    truescale.register()
+
+    # メソッドの取り出しは字下げが残るので、そのままでは読めない。
+    source = textwrap.dedent(
+        inspect.getsource(PN.TSUNFOLD_PT_main._draw_layout)
+    )
+    tree = ast.parse(source)
+
+    # needs_tiling を条件にしている if の中で使われている名前を集める。
+    hidden = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        test_src = ast.dump(node.test)
+        if "needs_tiling" not in test_src:
+            continue
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Constant) and isinstance(inner.value, str):
+                if inner.value.startswith("tsunfold_"):
+                    hidden.add(inner.value)
+
+    # 1枚のときも効いている設定。隠してはいけない。
+    always = {"tsunfold_tile_margin_mm", "tsunfold_pattern_inset_mm"}
+
+    check(
+        not (always & hidden),
+        f"常に効くのに分割時しか出していない: {sorted(always & hidden)}",
+    )
+
+
 def main():
     print()
     print("=" * 72)
