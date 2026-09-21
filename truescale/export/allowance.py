@@ -413,7 +413,7 @@ def _build(context, source_obj, unfold_obj):
     gap_bu = _units.scene_mm_to_bu(scene, _shape.TAB_GAP_MM)
     min_bu = _units.scene_mm_to_bu(scene, _shape.TAB_MIN_MM)
 
-    islands = _geometry.face_islands(mesh)
+    islands = _geometry.face_island_polys(mesh)
     rings_by_island = {}
     for index, faces in enumerate(islands):
         rings = island_loops(mesh, faces)

@@ -2330,6 +2330,58 @@ def test_printed_allowance_stays_black():
 
 
 @test
+def test_seam_allowance_follows_each_island():
+    """縫い代は、島ごとに自分の輪郭だけをなぞる。
+
+    以前は島の頂点番号を面番号として読んでいた。島が1面ずつなら
+    偶然合うが、複数の面を持つ島が並ぶと、別の島の面を混ぜた
+    輪郭ができ、型紙の内側を横切る裁断線が刷られていた。
+    立方体の展開では再現しないので、2×2 の島を3つ並べて確かめる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    truescale.register()
+
+    verts = []
+    faces = []
+    for k in range(3):
+        base = len(verts)
+        for j in range(3):
+            for i in range(3):
+                verts.append((k * 3.0 + i * 0.5, j * 0.5, 0.0))
+        for j in range(2):
+            for i in range(2):
+                a = base + j * 3 + i
+                faces.append((a, a + 1, a + 4, a + 3))
+
+    mesh = bpy.data.meshes.new("islands")
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+    unfold = bpy.data.objects.new("islands", mesh)
+    bpy.context.scene.collection.objects.link(unfold)
+    source = bpy.data.objects.new("source", bpy.data.meshes.new("source"))
+    bpy.context.scene.collection.objects.link(source)
+
+    scene = bpy.context.scene
+    scene.tsunfold_seam_enable = True
+    scene.tsunfold_seam_width_mm = 10.0
+
+    made = A._build(bpy.context, source, unfold)
+
+    # 各島の外周は 8 辺。縫い代もそれぞれ 8 本になる。
+    check(len(made.cut) == 24, f"裁断線が {len(made.cut)} 本（24 本のはず）")
+
+    # 裁断線はすべて島の外側にある。内側を横切る線があれば刷ると切れる。
+    for x0, y0, x1, y1 in made.cut:
+        mx = (x0 + x1) * 0.5
+        my = (y0 + y1) * 0.5
+        for k in range(3):
+            inside = (k * 3.0 < mx < k * 3.0 + 1.0) and (0.0 < my < 1.0)
+            check(not inside, f"島 {k} の内側を裁断線が横切る: {mx:.2f}, {my:.2f}")
+
+
+@test
 def test_draft_and_unfold_agree_on_the_scale():
     """三面図側と型紙側が、同じ実寸の基準で測る。
 

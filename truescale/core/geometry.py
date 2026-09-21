@@ -15,8 +15,13 @@ from mathutils import Vector
 from . import state as _state
 
 
-def face_islands(mesh):
-    """Return disconnected face islands as lists of vertex indices."""
+def face_island_polys(mesh):
+    """つながった面のかたまりを、面番号の並びで返す。
+
+    face_islands（頂点番号）と取り違えないこと。縫い代・糊代が
+    頂点番号を面番号として読んでいて、島が複数あると、別の島の
+    面を混ぜた輪郭を裁断線として刷っていた。
+    """
     if not mesh.polygons:
         return []
 
@@ -44,13 +49,20 @@ def face_islands(mesh):
                         stack.append(neighbor)
                         poly_ids.append(neighbor)
 
+        islands.append(sorted(poly_ids))
+
+    return islands
+
+
+def face_islands(mesh):
+    """Return disconnected face islands as lists of vertex indices."""
+    islands = []
+    for poly_ids in face_island_polys(mesh):
         vert_ids = set()
         for pi in poly_ids:
             vert_ids.update(mesh.polygons[pi].vertices)
-
         if vert_ids:
             islands.append(sorted(vert_ids))
-
     return islands
 
 
