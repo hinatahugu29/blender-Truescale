@@ -2277,6 +2277,70 @@ def test_pattern_inset_pushes_the_guide_outward():
 
 
 @test
+def test_spacing_slider_does_not_leave_stale_allowance():
+    """間隔を変えて並べ直したら、縫い代の線も新しい場所へ移る。
+
+    縫い代の線はキャッシュしてあり、キーに頂点の位置が入っていない。
+    以前はスライダーで島を動かしてもキャッシュを捨てず、線だけが
+    元の場所に残った。書き出しも同じキャッシュを使う。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_seam_enable = True
+    A.build(bpy.context, obj, unfold)
+
+    scene.tsunfold_spacing_mm = 40.0
+    cached = A.build(bpy.context, obj, unfold).cut
+    fresh = A._build(bpy.context, obj, unfold).cut
+    check(cached == fresh, "並べ直したのに、縫い代の線が古い場所のまま")
+
+
+@test
+def test_turning_on_the_allowance_relays_out_unless_hand_placed():
+    """代を入れたら並べ直す。ただし手で並べた型紙は崩さない。"""
+    reset_scene()
+    import truescale
+    from truescale.core import units
+    from truescale.unfold import build as B
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    scene = bpy.context.scene
+    spacing = units.scene_mm_to_bu(scene, scene.tsunfold_spacing_mm)
+
+    check(not B.hand_placed(unfold), "作った直後なのに手で並べた扱い")
+
+    scene.tsunfold_seam_width_mm = 10.0
+    scene.tsunfold_seam_enable = True
+    boxes = _allowance_boxes(scene, unfold.data)
+    for i, a in enumerate(boxes):
+        for b in boxes[i + 1:]:
+            apart = max(b[0] - a[2], a[0] - b[2], b[1] - a[3], a[1] - b[3])
+            check(apart >= spacing - 1e-6, "代を入れても並べ直されていない")
+
+    # 手で並べたものは動かさない
+    scene.tsunfold_seam_enable = False
+    B.set_hand_placed(unfold, True)
+    before = [tuple(v.co) for v in unfold.data.vertices]
+    scene.tsunfold_seam_enable = True
+    after = [tuple(v.co) for v in unfold.data.vertices]
+    check(before == after, "手で並べた型紙を並べ直した")
+
+    # 自動レイアウトを押せば、また自動で並べてよい扱いに戻る
+    bpy.context.view_layer.objects.active = unfold
+    bpy.ops.truescale_unfold.auto_layout()
+    check(not B.hand_placed(unfold), "自動レイアウトのあとも手で並べた扱い")
+
+
+@test
 def test_guide_measures_the_allowance_that_is_printed():
     """用紙ガイドの外形は、刷る線の外形と一致する。
 

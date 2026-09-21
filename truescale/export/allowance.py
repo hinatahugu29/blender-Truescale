@@ -123,7 +123,19 @@ def toggle_flipped(source_obj, source_edge_index, flip=None):
 
 # ---------------------------------------------------------------- 島の輪
 
-def island_loops(mesh, face_indices):
+def edge_lookup(mesh):
+    """頂点の組 → 辺番号。island_loops に渡して使い回す。
+
+    島ごとに作ると、島の数 × 辺の数になる。32島・512面の球で、
+    並べ直し1回のうち 60ms がこれだった。
+    """
+    return {
+        tuple(sorted((int(e.vertices[0]), int(e.vertices[1])))): int(e.index)
+        for e in mesh.edges
+    }
+
+
+def island_loops(mesh, face_indices, edges=None):
     """1つの島の境界を、向きを揃えた輪にして返す。
 
     輪は (x, y, 辺番号) の並び。辺番号を持ったまま輪にするのは、
@@ -141,10 +153,7 @@ def island_loops(mesh, face_indices):
             key = tuple(sorted(int(v) for v in pair))
             counts[key] = counts.get(key, 0) + 1
 
-    edge_index = {
-        tuple(sorted((int(e.vertices[0]), int(e.vertices[1])))): int(e.index)
-        for e in mesh.edges
-    }
+    edge_index = edges if edges is not None else edge_lookup(mesh)
 
     # 境界＝島の中で1つの面にしか接していない辺。
     border = [key for key, n in counts.items() if n == 1]
@@ -299,7 +308,7 @@ def enabled(scene):
     return conf["tab"] or conf["seam"]
 
 
-def island_reach(scene, mesh, face_indices):
+def island_reach(scene, mesh, face_indices, edges=None):
     """縫い代・糊代が、島の輪郭から外へどこまで出るか。BU。
 
     並べるときに、この分だけ島を太らせて扱う。輪郭だけで詰めると、
@@ -322,7 +331,7 @@ def island_reach(scene, mesh, face_indices):
 
     seam_bu = _units.scene_mm_to_bu(scene, max(0.0, conf["seam_mm"]))
     if conf["seam"] and seam_bu > 0.0:
-        for ring in island_loops(mesh, face_indices):
+        for ring in island_loops(mesh, face_indices, edges):
             points = [(x, y) for x, y, _e in ring]
             grown = _shape.offset_loop(points, seam_bu)
             xs = [p[0] for p in points]
@@ -453,9 +462,10 @@ def _build(context, source_obj, unfold_obj):
     min_bu = _units.scene_mm_to_bu(scene, _shape.TAB_MIN_MM)
 
     islands = _geometry.face_island_polys(mesh)
+    edges = edge_lookup(mesh)
     rings_by_island = {}
     for index, faces in enumerate(islands):
-        rings = island_loops(mesh, faces)
+        rings = island_loops(mesh, faces, edges)
         if rings:
             rings_by_island[index] = rings
 

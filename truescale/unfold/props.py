@@ -110,12 +110,13 @@ def _preview_setting_updated(self, context):
     _view.tag_redraw()
 
 
-def _spacing_updated(self, context):
-    """Realtime repack when spacing changes."""
-    obj = _objects.active_unfold(context)
-    if obj is None:
-        return
+def _relayout(context, obj):
+    """型紙を用紙に沿って並べ直す。型紙を作った直後と同じ並べ方。
 
+    島が動くので、キャッシュも捨てる。縫い代・糊代の線は型紙の
+    ローカル座標で控えてあり、キーに頂点の位置は入っていない。
+    捨てないと、線だけが並べ直す前の場所に残り、そのまま書き出される。
+    """
     # Editing geometry while in edit mode needs an object-mode data refresh.
     was_edit = (obj.mode == 'EDIT')
     if was_edit:
@@ -124,15 +125,46 @@ def _spacing_updated(self, context):
         except RuntimeError:
             return
 
-    _build.pack_islands(context, obj, context.scene.tsunfold_spacing_mm)
+    _build.initial_layout(context, obj)
 
     if was_edit:
         try:
             bpy.ops.object.mode_set(mode='EDIT')
         except RuntimeError:
-            _debug.swallowed("unfold.props._spacing_updated")
+            _debug.swallowed("unfold.props._relayout")
 
-    _view.tag_redraw()
+    _interact.invalidate_layout_cache()
+
+
+def _spacing_updated(self, context):
+    """間隔を変えたら、その場で並べ直す。
+
+    以前は横一列（pack_islands）に並べ直していた。型紙を作った
+    直後は用紙に沿って並ぶので、スライダーに触れた途端に島の
+    多い形では数メートルの帯になった。
+
+    手で並べたあとでも並べ直す。間隔を動かすこと自体が、並べ直して
+    ほしいという指示なので。
+    """
+    obj = _objects.active_unfold(context)
+    if obj is None:
+        return
+    _relayout(context, obj)
+
+
+def _allowance_updated(self, context):
+    """縫い代・糊代を変えたら、手で並べていなければ並べ直す。
+
+    並べる側は代のぶん島の間を空ける。並べ直さないと、代を入れた
+    瞬間に隣の型紙の裁断線と重なる（既定値で 14mm）。
+
+    手で並べた型紙は並べ直さない。パネルの案内に任せる。
+    """
+    obj = _objects.active_unfold(context)
+    if obj is None or _build.hand_placed(obj):
+        _interact.invalidate_layout_cache()
+        return
+    _relayout(context, obj)
 
 
 def _unregister_scene_props():
@@ -425,7 +457,7 @@ def register():
             "シームの辺すべてに付き、相手のいない辺には付きません"
         ),
         default=False,
-        update=_pattern_setting_updated,
+        update=_allowance_updated,
     )
 
     bpy.types.Scene.tsunfold_tab_width_mm = FloatProperty(
@@ -438,7 +470,7 @@ def register():
         min=1.0,
         soft_max=20.0,
         precision=1,
-        update=_pattern_setting_updated,
+        update=_allowance_updated,
     )
 
     # 画面での色。刷るときは黒のままにする。紙の上では実線と破線で
@@ -478,7 +510,7 @@ def register():
             "元の輪郭は縫い線として破線になります"
         ),
         default=False,
-        update=_pattern_setting_updated,
+        update=_allowance_updated,
     )
 
     bpy.types.Scene.tsunfold_seam_width_mm = FloatProperty(
@@ -488,7 +520,7 @@ def register():
         min=0.5,
         soft_max=50.0,
         precision=1,
-        update=_pattern_setting_updated,
+        update=_allowance_updated,
     )
 
     bpy.types.Scene.tsunfold_auto_island_ids = BoolProperty(

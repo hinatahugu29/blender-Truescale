@@ -150,6 +150,11 @@ class TSUNFOLD_OT_layout_edit(bpy.types.Operator):
 
         # ここまで来て初めて、手動レイアウト中になる。
         context.scene[_session.MANUAL_LAYOUT_ACTIVE] = True
+
+        # 動かしたかどうかは見ない。入っただけで手で並べた扱いにし、
+        # 以後は設定を変えても自動で並べ直さない。崩すほうへ間違える
+        # より、並べ直さないほうへ間違えるほうがよい。
+        _build.set_hand_placed(_objects.resolve_unfold_for_layout(context), True)
         _view.tag_redraw()
 
         self._last_selected = frozenset()

@@ -218,6 +218,24 @@ def flat_mesh(context, src_obj, mesh, uv_layer, scale_bu_per_uv,
     return new_obj
 
 
+# 型紙を手で並べたか。型紙オブジェクトに持たせる（.blend に残る）。
+#
+# 設定を変えたときに自動で並べ直してよいかを、これで決める。
+# 手で並べた配置を黙って崩すと、利用者は二度と並べ直す気に
+# ならない。MANUAL_LAYOUT_ACTIVE は動かしている最中しか立って
+# いないので、この用途には使えない。
+HAND_PLACED_PROP = "tsunfold_hand_placed"
+
+
+def hand_placed(obj):
+    return obj is not None and bool(obj.get(HAND_PLACED_PROP, False))
+
+
+def set_hand_placed(obj, value):
+    if obj is not None:
+        obj[HAND_PLACED_PROP] = bool(value)
+
+
 def layout_islands(scene, mesh):
     """並べる単位の一覧。(頂点番号, 外へ出る幅) の組。
 
@@ -225,6 +243,9 @@ def layout_islands(scene, mesh):
     並べる側はどれも、島をこの幅だけ太らせた箱として扱う。
     輪郭だけで詰めると、隣の島の裁断線と重なる。
     """
+    edges = (
+        _allowance.edge_lookup(mesh) if _allowance.enabled(scene) else None
+    )
     out = []
     for faces in _geometry.face_island_polys(mesh):
         verts = set()
@@ -232,7 +253,7 @@ def layout_islands(scene, mesh):
             verts.update(mesh.polygons[fi].vertices)
         if verts:
             out.append((
-                sorted(verts), _allowance.island_reach(scene, mesh, faces)
+                sorted(verts), _allowance.island_reach(scene, mesh, faces, edges)
             ))
     return out
 
@@ -288,6 +309,7 @@ def pack_islands(context, obj, spacing_mm):
         cursor_x += width + spacing_bu
 
     mesh.update()
+    set_hand_placed(obj, False)
 
 
 def object_xy_size_mm(context, obj):
@@ -476,6 +498,7 @@ def try_shelf_layout(context, obj, allow_rotate=True):
             v.co.y += dy
 
     mesh.update()
+    set_hand_placed(obj, False)
     return True, (
         f"{_paper.scene_display_name(scene)} / 周囲10mm余白で中央配置しました"
     )
@@ -689,6 +712,7 @@ def pack_for_pages(context, obj, content_w_mm, content_h_mm, max_pages_wide=8,
     for index, co in original.items():
         mesh.vertices[index].co = co
     _shelf_fill(mesh, islands, _span(content_w, step_w, best["wide"]), gap)
+    set_hand_placed(obj, False)
 
     cols = best["cols"]
     rows = best["rows"]
