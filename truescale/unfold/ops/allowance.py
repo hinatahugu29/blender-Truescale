@@ -20,6 +20,12 @@
 モードにして辺を選び、ボタンを押す。Blender のシーム指定と
 同じ手順になる。
 
+■ 変えたら再描画を頼む
+
+設定を書き換えただけでは画面は変わらない。頼まないと、次に何かを
+クリックするまで古いまま出続ける。「押したのに反映されない」に
+見える。
+
 ■ 覚えるのは元メッシュの辺番号
 
 展開後の辺番号で覚えると、型紙を作り直した瞬間に全部戻る。
@@ -31,6 +37,7 @@ import bpy
 from bpy.props import BoolProperty
 
 from ...core import objects as _objects
+from ...core import view as _view
 from ...export import allowance as _allowance
 
 
@@ -153,6 +160,10 @@ class TSUNFOLD_OT_toggle_tab_edges(bpy.types.Operator):
         for index in edges:
             _allowance.toggle_disabled(obj, index, off=bool(self.off))
 
+        # 設定を書き換えただけでは画面は変わらない。頼まないと、
+        # 次に何かをクリックするまで古いまま出続ける。
+        _view.tag_redraw()
+
         word = "消しました" if self.off else "戻しました"
         self.report({'INFO'}, f"{len(edges)} 本の糊代を{word}")
         return {'FINISHED'}
@@ -193,6 +204,8 @@ class TSUNFOLD_OT_flip_tab_edges(bpy.types.Operator):
         # 置けなくて元の側のままだったときは、何も出ない。
         moved = _moved_text(before, after, edges)
 
+        _view.tag_redraw()
+
         self.report(
             {'INFO'}, f"{len(edges)} 本の糊代を入れ替えました{moved}"
         )
@@ -219,6 +232,8 @@ class TSUNFOLD_OT_reset_tab_edges(bpy.types.Operator):
             return {'CANCELLED'}
 
         count = _allowance.clear_edge_marks(obj)
+
+        _view.tag_redraw()
 
         self.report({'INFO'}, f"{count} 本の指示を戻しました")
         return {'FINISHED'}

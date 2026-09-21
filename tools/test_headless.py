@@ -3423,6 +3423,77 @@ def test_flip_reports_where_the_tab_moved():
     )
 
 
+@test
+def test_edge_tools_ask_for_a_redraw():
+    """糊代の指示を変える道具は、必ず再描画を頼む。
+
+    設定を書き換えただけでは画面は変わらない。頼まないと、次に
+    何かをクリックするまで古いまま出続ける。「押したのに反映
+    されない」に見える。
+    """
+    reset_scene()
+    import ast
+    import inspect
+    import textwrap
+    import truescale
+    from truescale.unfold.ops import allowance as OPS
+    truescale.register()
+
+    missing = []
+
+    for cls in OPS.classes:
+        source = textwrap.dedent(inspect.getsource(cls.execute))
+        tree = ast.parse(source)
+
+        asks = any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "tag_redraw"
+            for node in ast.walk(tree)
+        )
+        if not asks:
+            missing.append(cls.__name__)
+
+    check(not missing, f"再描画を頼んでいない: {missing}")
+
+
+@test
+def test_flipping_changes_what_is_drawn_right_away():
+    """入れ替えたら、次に描くものがその場で変わる。
+
+    控えを使い回していると、画面をクリックするまで古いままになる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    from truescale.marking import source as SRC
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    bpy.context.scene.tsunfold_tab_enable = True
+
+    seams = sorted(int(e.index) for e in obj.data.edges if e.use_seam)
+
+    before_tabs = A.build(bpy.context, obj, unfold).suppress
+    before_lines = len(SRC.seam_groups(
+        obj, A.disabled_edges(obj), A.flipped_edges(obj)
+    )["flip"])
+
+    A.toggle_flipped(obj, seams[0])
+
+    after_tabs = A.build(bpy.context, obj, unfold).suppress
+    after_lines = len(SRC.seam_groups(
+        obj, A.disabled_edges(obj), A.flipped_edges(obj)
+    )["flip"])
+
+    check(after_tabs != before_tabs, "タブの位置が変わっていない")
+    check(
+        after_lines == before_lines + 1,
+        f"シーム線の色が変わっていない: {before_lines} -> {after_lines}",
+    )
+
+
 def main():
     print()
     print("=" * 72)
