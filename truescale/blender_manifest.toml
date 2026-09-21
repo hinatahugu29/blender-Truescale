@@ -4,7 +4,7 @@ id = "truescale"
 version = "0.2.0"
 name = "Truescale"
 tagline = "Real-size patterns, dimensions and drawing sheets from Blender"
-maintainer = "hinata"
+maintainer = "hinata_hugu"
 type = "add-on"
 
 # draft 側が 5.2 を宣言していたため、統合後もそれに合わせている。
