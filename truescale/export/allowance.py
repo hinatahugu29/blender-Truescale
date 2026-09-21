@@ -19,6 +19,10 @@
 反対側を試す。それでも駄目なら諦める。無理に置いたタブは、
 切ると型紙自体を切ってしまう。
 
+ただしこの島番号は内部の走査順で、画面に出ている A / B / C とは
+無関係。つまり既定の側は、利用者には説明できない。そのため
+「辺ごとに反対側へ移す」を用意してある。
+
 ■ 消した印は「元メッシュの辺番号」で覚える
 
 展開後の辺番号で覚えると、型紙を作り直した瞬間に全部消える。
@@ -38,43 +42,88 @@ from ..core import mapping as _mapping
 from ..core import state as _state
 from ..core import units as _units
 
-# 消したタブを覚えるカスタムプロパティ（元オブジェクトに付く）。
+# 手で加えた指示を覚えるカスタムプロパティ（元オブジェクトに付く）。
+# どちらも中身は「元メッシュの辺番号の集合」。
 TAB_OFF_PROP = "tsunfold_tab_off_json"
+TAB_FLIP_PROP = "tsunfold_tab_flip_json"
+
+# 「全部戻す」で消すもの。ここへ足せば、戻す側にも自動で入る。
+TAB_EDGE_PROPS = (TAB_OFF_PROP, TAB_FLIP_PROP)
 
 
-# ------------------------------------------------------------ 消した印の記録
+# ------------------------------------------------------ 手で加えた指示の記録
 
-def disabled_edges(source_obj):
-    """タブを消してある元メッシュの辺番号の集合。"""
+def edge_set(source_obj, prop):
+    """元メッシュの辺番号の集合を読む。
+
+    読み書きを1つに寄せている。消す用と入れ替え用で2つ書くと、
+    片方だけ直したときに食い違う。
+    """
     if source_obj is None:
         return set()
     try:
-        raw = source_obj.get(TAB_OFF_PROP, "[]")
-        return {int(v) for v in json.loads(raw)}
+        return {int(v) for v in json.loads(source_obj.get(prop, "[]"))}
     except Exception:
-        _debug.swallowed("allowance.disabled_edges")
+        _debug.swallowed("allowance.edge_set")
         return set()
+
+
+def set_edge_set(source_obj, prop, indices):
+    """元メッシュの辺番号の集合を書き戻す。"""
+    if source_obj is None:
+        return
+    source_obj[prop] = json.dumps(sorted(int(v) for v in indices))
+
+
+def toggle_edge(source_obj, prop, source_edge_index, on=None):
+    """1本の辺を、その集合へ入れる／外す。戻り値は入っているか。"""
+    current = edge_set(source_obj, prop)
+    index = int(source_edge_index)
+
+    if on is None:
+        on = index not in current
+
+    if on:
+        current.add(index)
+    else:
+        current.discard(index)
+
+    set_edge_set(source_obj, prop, current)
+    return on
+
+
+def clear_edge_marks(source_obj):
+    """手で加えた指示を全部消す。戻した本数を返す。"""
+    count = 0
+    for prop in TAB_EDGE_PROPS:
+        count += len(edge_set(source_obj, prop))
+        set_edge_set(source_obj, prop, ())
+    return count
+
+
+def disabled_edges(source_obj):
+    """タブを消してある元メッシュの辺番号の集合。"""
+    return edge_set(source_obj, TAB_OFF_PROP)
+
+
+def flipped_edges(source_obj):
+    """付ける側を反対にしてある元メッシュの辺番号の集合。"""
+    return edge_set(source_obj, TAB_FLIP_PROP)
 
 
 def set_disabled_edges(source_obj, indices):
     """タブを消してある辺を書き戻す。"""
-    if source_obj is None:
-        return
-    source_obj[TAB_OFF_PROP] = json.dumps(sorted(int(v) for v in indices))
+    set_edge_set(source_obj, TAB_OFF_PROP, indices)
 
 
 def toggle_disabled(source_obj, source_edge_index, off=None):
     """1本の辺のタブを消す／戻す。戻り値は消した状態かどうか。"""
-    current = disabled_edges(source_obj)
-    index = int(source_edge_index)
-    if off is None:
-        off = index not in current
-    if off:
-        current.add(index)
-    else:
-        current.discard(index)
-    set_disabled_edges(source_obj, current)
-    return off
+    return toggle_edge(source_obj, TAB_OFF_PROP, source_edge_index, off)
+
+
+def toggle_flipped(source_obj, source_edge_index, flip=None):
+    """1本の辺のタブを反対側へ／元へ。戻り値は反対側にしたか。"""
+    return toggle_edge(source_obj, TAB_FLIP_PROP, source_edge_index, flip)
 
 
 # ---------------------------------------------------------------- 島の輪
@@ -320,6 +369,7 @@ def build(context, source_obj, unfold_obj):
         conf["tab"], round(conf["tab_mm"], 4),
         conf["seam"], round(conf["seam_mm"], 4),
         tuple(sorted(disabled_edges(source_obj))),
+        tuple(sorted(flipped_edges(source_obj))),
         int(_state.epoch),
     )
 
@@ -399,6 +449,7 @@ def _build(context, source_obj, unfold_obj):
     # --- 糊代 ----------------------------------------------------------
     if conf["tab"] and tab_bu > 0.0:
         off = disabled_edges(source_obj)
+        flipped = flipped_edges(source_obj)
         seam_edges = _seam_source_edges(source_obj) - off
         flat_edge_source = _mapping.flat_edge_to_source(unfold_obj)
 
@@ -412,11 +463,19 @@ def _build(context, source_obj, unfold_obj):
                 # 貼り合わせる相手がいない。元の立体の縁。
                 continue
 
-            spots = sorted(spots, key=lambda item: item[0])
+            # 既定は島番号の小さいほう。手で入れ替えてあれば逆から試す。
+            #
+            # 島番号は内部の走査順で、画面に出ている A / B / C とは
+            # 無関係。だから既定の側は利用者には説明できない。
+            # 「思っていたのと逆の型紙に付いた」を直す手立てとして
+            # 入れ替えを用意している。
+            spots = sorted(spots, key=lambda item: item[0])[:2]
+            if source_edge in flipped:
+                spots = spots[::-1]
 
             quad = None
             chosen = None
-            for island_index, (ax, ay, bx, by), edge_index in spots[:2]:
+            for island_index, (ax, ay, bx, by), edge_index in spots:
                 quad = _shape.fit_tab(
                     ax, ay, bx, by, tab_bu, obstacles,
                     minimum=min_bu, gap=gap_bu,

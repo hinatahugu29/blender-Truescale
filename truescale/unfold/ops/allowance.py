@@ -1,8 +1,17 @@
-"""糊代を辺ごとに消す／戻すオペレータ。
+"""糊代を辺ごとに消す／戻す／入れ替えるオペレータ。
 
-糊代はシームの辺すべてに付く。それでよい場面がほとんどだが、
-「ここは差し込むので糊代は要らない」「ここは手が入らない」と
-いった判断は人にしかできない。
+糊代はシームの辺すべてに、片側だけ付く。それでよい場面が
+ほとんどだが、人にしか決められないことが2つある。
+
+  要る／要らない  「ここは差し込むので糊代は要らない」
+  どちら側に付くか「この面には出したくない」
+
+とくに2つめは、既定の側が内部の走査順で決まっていて、画面に
+出ている A / B / C とは無関係。つまり利用者には説明できない。
+だから移す手立てが要る。
+
+入れ替えても、そちら側に置けなければ元の側のままになる。
+置けない場所へ無理に置くと、切ったとき型紙自体を切ってしまう。
 
 ■ 選んでからボタン、にした理由
 
@@ -92,10 +101,12 @@ class TSUNFOLD_OT_toggle_tab_edges(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class TSUNFOLD_OT_reset_tab_edges(bpy.types.Operator):
-    bl_idname = "truescale_unfold.reset_tab_edges"
-    bl_label = "糊代を全部戻す"
-    bl_description = "手で消した糊代の記録を全て消し、シームの辺すべてに付く状態へ戻します"
+class TSUNFOLD_OT_flip_tab_edges(bpy.types.Operator):
+    bl_idname = "truescale_unfold.flip_tab_edges"
+    bl_label = "選んだ辺の糊代を入れ替え"
+    bl_description = (
+        "選択したシームの辺について、糊代を反対側の型紙へ移します"
+    )
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -109,14 +120,45 @@ class TSUNFOLD_OT_reset_tab_edges(bpy.types.Operator):
             self.report({'ERROR'}, "元のメッシュが見つかりません")
             return {'CANCELLED'}
 
-        count = len(_allowance.disabled_edges(obj))
-        _allowance.set_disabled_edges(obj, ())
+        edges = _selected_seam_edges(obj)
+        if not edges:
+            self.report({'INFO'}, "シームの辺が選択されていません")
+            return {'CANCELLED'}
 
-        self.report({'INFO'}, f"{count} 本の糊代を戻しました")
+        for index in edges:
+            _allowance.toggle_flipped(obj, index)
+
+        self.report({'INFO'}, f"{len(edges)} 本の糊代を入れ替えました")
+        return {'FINISHED'}
+
+
+class TSUNFOLD_OT_reset_tab_edges(bpy.types.Operator):
+    bl_idname = "truescale_unfold.reset_tab_edges"
+    bl_label = "糊代を全部戻す"
+    bl_description = (
+        "手で消した辺と入れ替えた辺の記録を全て消し、既定の状態へ戻します"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.type == 'MESH'
+
+    def execute(self, context):
+        obj = _source(context)
+        if obj is None:
+            self.report({'ERROR'}, "元のメッシュが見つかりません")
+            return {'CANCELLED'}
+
+        count = _allowance.clear_edge_marks(obj)
+
+        self.report({'INFO'}, f"{count} 本の指示を戻しました")
         return {'FINISHED'}
 
 
 classes = (
     TSUNFOLD_OT_toggle_tab_edges,
+    TSUNFOLD_OT_flip_tab_edges,
     TSUNFOLD_OT_reset_tab_edges,
 )

@@ -483,10 +483,11 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
             note.label(text="シームの辺すべてに片側だけ付きます")
             note.label(text="根元の破線は折り線。切らないでください")
 
-            # 要らない辺は消せる。元メッシュを編集モードにして
-            # 辺を選び、ボタンを押す。シーム指定と同じ手順。
+            # 辺ごとの調整。元メッシュを編集モードにして辺を選び、
+            # ボタンを押す。シーム指定と同じ手順。
             picked = glue.column(align=True)
-            picked.label(text="要らない辺（元メッシュで辺を選択）")
+            picked.label(text="辺ごとの調整（元メッシュで辺を選択）")
+
             row = picked.row(align=True)
             row.operator(
                 "truescale_unfold.toggle_tab_edges",
@@ -496,10 +497,19 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 "truescale_unfold.toggle_tab_edges",
                 text="戻す", icon='CHECKMARK',
             ).off = False
+
+            picked.operator(
+                "truescale_unfold.flip_tab_edges",
+                text="反対側へ移す", icon='ARROW_LEFTRIGHT',
+            )
             picked.operator(
                 "truescale_unfold.reset_tab_edges",
                 text="全部戻す", icon='LOOP_BACK',
             )
+
+            hint = glue.column(align=True)
+            hint.scale_y = 0.8
+            hint.label(text="移した先に置けないときは、元の側のままです")
 
         sew = box.box()
         sew.prop(scene, "tsunfold_seam_enable")

@@ -3172,6 +3172,139 @@ def test_failed_entry_does_not_leave_the_flag_set():
     )
 
 
+@test
+def test_flipping_moves_the_tab_to_the_other_island():
+    """入れ替えると、糊代が反対側の型紙へ移る。
+
+    既定の側は内部の走査順で決まり、画面の A / B / C とは無関係。
+    「この面には出したくない」に答える手立てがこれしかない。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_tab_enable = True
+
+    before = A.build(bpy.context, obj, unfold)
+    check(before.suppress, "糊代が1枚も付いていない")
+
+    # シーム1本を選んで入れ替える。
+    seams = sorted(int(e.index) for e in obj.data.edges if e.use_seam)
+    target = seams[0]
+
+    A.toggle_flipped(obj, target)
+    check(target in A.flipped_edges(obj), "入れ替えの記録が残っていない")
+
+    after = A.build(bpy.context, obj, unfold)
+
+    check(
+        len(after.suppress) == len(before.suppress),
+        f"枚数が変わった: {len(before.suppress)} -> {len(after.suppress)}",
+    )
+    check(
+        after.suppress != before.suppress,
+        "入れ替えたのに、付く辺が変わっていない",
+    )
+
+    # ちょうど1本だけ移っていること（片方が消えて、片方が増える）。
+    moved = before.suppress ^ after.suppress
+    check(
+        len(moved) == 2,
+        f"1本だけ移るはずが {len(moved) // 2} 本動いた",
+    )
+
+
+@test
+def test_flip_survives_a_rebuild():
+    """入れ替えた記録は、型紙を作り直しても残る。
+
+    消した記録と同じく、元メッシュの辺番号で持っている。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    bpy.context.scene.tsunfold_tab_enable = True
+
+    seams = sorted(int(e.index) for e in obj.data.edges if e.use_seam)
+    A.toggle_flipped(obj, seams[0])
+
+    flipped = A.build(bpy.context, obj, unfold).suppress
+
+    rebuilt = build_pattern_for(obj)
+    check(
+        seams[0] in A.flipped_edges(obj),
+        "作り直したら、入れ替えの記録が失われた",
+    )
+
+    again = A.build(bpy.context, obj, rebuilt).suppress
+    check(len(again) == len(flipped), "作り直しで枚数が変わった")
+
+
+@test
+def test_reset_clears_both_kinds_of_edge_marks():
+    """「全部戻す」で、消した辺と入れ替えた辺の両方が戻る。
+
+    片方だけ戻すと、見えない指示が残る。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    build_pattern_for(obj)
+
+    seams = sorted(int(e.index) for e in obj.data.edges if e.use_seam)
+    A.toggle_disabled(obj, seams[0], off=True)
+    A.toggle_flipped(obj, seams[1])
+
+    check(A.disabled_edges(obj), "消した記録が無い")
+    check(A.flipped_edges(obj), "入れ替えた記録が無い")
+
+    count = A.clear_edge_marks(obj)
+
+    check(count == 2, f"戻した本数が違う: {count}")
+    check(not A.disabled_edges(obj), "消した記録が残っている")
+    check(not A.flipped_edges(obj), "入れ替えた記録が残っている")
+
+
+@test
+def test_flip_is_in_the_cache_key():
+    """入れ替えを変えたら、控えた結果を使い回さない。
+
+    キーに入れ忘れると「入れ替えたのに変わらない」になる。
+    このプロジェクトで何度も踏んでいる型。
+    """
+    reset_scene()
+    import truescale
+    from truescale.export import allowance as A
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+    bpy.context.scene.tsunfold_tab_enable = True
+
+    first = A.build(bpy.context, obj, unfold)
+    again = A.build(bpy.context, obj, unfold)
+    check(first is again, "同じ条件なのに作り直している")
+
+    seams = sorted(int(e.index) for e in obj.data.edges if e.use_seam)
+    A.toggle_flipped(obj, seams[0])
+
+    third = A.build(bpy.context, obj, unfold)
+    check(third is not first, "入れ替えたのに控えを使い回している")
+
+
 def main():
     print()
     print("=" * 72)
