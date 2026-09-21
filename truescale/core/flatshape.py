@@ -225,6 +225,28 @@ def tab_cut_edges(quad):
     ]
 
 
+def edge_stubs(edge, quad, minimum=1e-6):
+    """元の辺のうち、タブの根元が覆っていない両端を返す。
+
+    根元は隣のタブと触れないよう両端を詰めてある。詰めた部分は
+    タブが付いていないので、そこは切る線のまま残る。ここを描き
+    忘れると、タブ1枚につき外周が 1.6mm 欠ける。
+    """
+    ax, ay, bx, by = edge
+    root_a = quad[0]
+    root_b = quad[3]
+
+    out = []
+    for (sx, sy), (ex, ey) in (
+        ((ax, ay), root_a),
+        (root_b, (bx, by)),
+    ):
+        if math.hypot(ex - sx, ey - sy) > minimum:
+            out.append((sx, sy, ex, ey))
+
+    return out
+
+
 def tab_fold_edge(quad):
     """タブの根元。ここは折る線であって、切る線ではない。"""
     return (quad[0][0], quad[0][1], quad[3][0], quad[3][1])

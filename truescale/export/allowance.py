@@ -477,6 +477,7 @@ def _build(context, source_obj, unfold_obj):
 
             quad = None
             chosen = None
+            spots_used = None
             for island_index, (ax, ay, bx, by), edge_index in spots:
                 quad = _shape.fit_tab(
                     ax, ay, bx, by, tab_bu, obstacles,
@@ -485,6 +486,7 @@ def _build(context, source_obj, unfold_obj):
                 )
                 if quad is not None:
                     chosen = (island_index, edge_index)
+                    spots_used = (ax, ay, bx, by)
                     break
 
             if quad is None:
@@ -493,6 +495,12 @@ def _build(context, source_obj, unfold_obj):
             tab_edges = _shape.tab_cut_edges(quad)
             cut.extend(tab_edges)
             fold.append(_shape.tab_fold_edge(quad))
+
+            # 根元は両端を詰めてあるので、元の辺のほうが長い。
+            # 詰めた両端はタブが付いていない＝そこは切る線のまま。
+            # 辺をまるごと外すと、タブ1枚につき 1.6mm 外周が欠ける。
+            ax, ay, bx, by = spots_used
+            cut.extend(_shape.edge_stubs((ax, ay, bx, by), quad))
 
             # 置いたタブも、次のタブにとっては障害になる。
             obstacles.extend(tab_edges)

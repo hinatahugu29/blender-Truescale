@@ -3494,6 +3494,62 @@ def test_flipping_changes_what_is_drawn_right_away():
     )
 
 
+@test
+def test_the_outline_stays_whole_where_tabs_sit():
+    """タブが乗った辺でも、外周の長さが失われない。
+
+    根元は折り線として外周から外すが、両端の詰めたぶんは切る線の
+    まま残す。外さずに残すか、外して描き直すかのどちらかでないと、
+    タブ1枚につき外周が 1.6mm 欠ける。
+    """
+    reset_scene()
+    import math
+    import truescale
+    from truescale.export import allowance as A
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_tab_enable = True
+    scene.tsunfold_seam_enable = False
+
+    made = A.build(bpy.context, obj, unfold)
+    check(made.fold, "糊代が1枚も無い")
+
+    # 外した辺の長さの合計
+    mesh = unfold.data
+    removed = 0.0
+    for va, vb in made.suppress:
+        a = mesh.vertices[va].co
+        b = mesh.vertices[vb].co
+        removed += (a - b).length
+
+    # 折り線の長さの合計
+    folded = sum(
+        math.dist((x0, y0), (x1, y1))
+        for x0, y0, x1, y1 in made.fold
+    )
+
+    check(
+        folded < removed - 1e-9,
+        "折り線が元の辺と同じ長さになっている（両端を詰めていない）",
+    )
+
+    # 足りないぶんが、切る線として戻っていること。
+    # タブ1枚の裁断線は3本。それを超えた分が両端。
+    stubs = len(made.cut) - len(made.fold) * 3
+    check(
+        stubs > 0,
+        "両端が切る線として戻っていない（外周が欠ける）",
+    )
+    check(
+        stubs <= len(made.fold) * 2,
+        f"両端が多すぎる: {stubs} / 上限 {len(made.fold) * 2}",
+    )
+
+
 def main():
     print()
     print("=" * 72)

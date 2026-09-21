@@ -1319,10 +1319,26 @@ def test_dashes_start_and_end_with_a_line():
 
 
 @test
-def test_short_lines_are_not_dashed():
-    """短い線は刻まない。点になって、実線と見分けが付かなくなる。"""
-    parts = linestyle.dashed(0.0, 0.0, 2.0, 0.0)
-    check(len(parts) == 1, f"2mm が {len(parts)} 本に刻まれた")
+def test_fold_lines_never_come_out_solid():
+    """折り線が実線で出ない。出ると、そこで切られる。
+
+    刻みは 4mm + 2mm なので、素直に数えると 7mm くらいまでの線が
+    1本＝実線になっていた。糊代の根元は両端を詰めるぶん短いので、
+    曲面のシームではたいていの糊代がそこに当たっていた。
+    """
+    for length in (2.0, 3.0, 4.0, 6.4, 8.0, 20.0):
+        parts = linestyle.dashed(0.0, 0.0, length, 0.0)
+        check(
+            len(parts) >= 2,
+            f"{length}mm が {len(parts)} 本＝実線で出る",
+        )
+
+
+@test
+def test_specks_are_left_alone():
+    """点にしかならない長さは刻まない。刻んでも読めない。"""
+    parts = linestyle.dashed(0.0, 0.0, 1.0, 0.0)
+    check(len(parts) == 1, f"1mm が {len(parts)} 本に刻まれた")
 
 
 @test
@@ -1483,6 +1499,39 @@ def test_patch_refuses_things_that_are_not_png():
     """PNG でないものは書き換えない。黙って壊さない。"""
     check(png.patch_dpi(b"not a png at all", 300) is None, "PNG でないものを受けた")
     check(png.patch_dpi(b"", 300) is None, "空を受けた")
+
+
+@test
+def test_tab_leaves_the_rest_of_the_edge_as_a_cut_line():
+    """タブの根元が覆っていない両端は、切る線として残る。
+
+    根元は隣のタブと触れないよう両端を詰めてある。詰めた部分は
+    タブが付いていないので、そこは外周のまま。外周から辺を
+    まるごと外すと、タブ1枚につき 1.6mm 欠ける。連続して並ぶと
+    辺全体が消えたように見え、どこで切るのか分からなくなる。
+    """
+    quad = flatshape.tab_quad(0.0, 0.0, 10.0, 0.0, 5.0)
+    stubs = flatshape.edge_stubs((0.0, 0.0, 10.0, 0.0), quad)
+
+    check(len(stubs) == 2, f"両端が {len(stubs)} 本")
+
+    fold = flatshape.tab_fold_edge(quad)
+    covered = abs(fold[2] - fold[0])
+    for sx, _sy, ex, _ey in stubs:
+        covered += abs(ex - sx)
+
+    close(covered, 10.0, 1e-6, "両端と根元を足しても元の辺にならない")
+
+
+@test
+def test_no_stubs_when_the_base_reaches_the_ends():
+    """根元が端まで届いていれば、余りは出さない。
+
+    長さ0の線を足すと、書き出しに意味のない線が増える。
+    """
+    quad = flatshape.tab_quad(0.0, 0.0, 10.0, 0.0, 5.0, gap=0.0)
+    stubs = flatshape.edge_stubs((0.0, 0.0, 10.0, 0.0), quad)
+    check(not stubs, f"余りが {len(stubs)} 本出た")
 
 
 def main():
