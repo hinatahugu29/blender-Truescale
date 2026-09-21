@@ -174,7 +174,7 @@ hr { border: none; border-top: 1px solid var(--line); margin: 40px 0; }
 <div class="wrap">
 <nav>
 <div class="brand">Truescale</div>
-<div class="sub">v0.2.0 マニュアル</div>
+<div class="sub">v0.3.0 マニュアル</div>
 <a class="lvl2" href="#つかいかた">つかいかた</a>
 <a class="lvl3" href="#つかいかた-型紙をつくる">型紙をつくる</a>
 <a class="lvl3" href="#つかいかた-三面図をつくる">三面図をつくる</a>
@@ -274,7 +274,7 @@ A2 なら1枚で収まります</code></pre>
 <p><strong>元モデルを作り直す（リトポロジーする）と、シームも糊代の設定も失われます。</strong> 辺の番号が変わるためです。</p>
 </section>
 <section><h2 id="こまったとき">こまったとき</h2>
-<p>v0.2.0 時点。</p>
+<p>v0.3.0 時点。</p>
 <ul><li><a href="#刷ったものが合わない">刷ったものが合わない</a></li><li><a href="#型紙がうまく出ない">型紙がうまく出ない</a></li><li><a href="#糊代縫い代">糊代・縫い代</a></li><li><a href="#三面図">三面図</a></li><li><a href="#いまできないこと">いまできないこと</a></li></ul>
 <hr>
 <h3 id="こまったとき-刷ったものが合わない">刷ったものが合わない</h3>
@@ -340,7 +340,7 @@ A2 なら1枚で収まります</code></pre>
 <hr>
 <h3 id="こまったとき-いまできないこと">いまできないこと</h3>
 <h4 id="こまったとき-型紙">型紙</h4>
-<ul><li><strong>素材の厚みの補正</strong> — 厚みのぶんの寸法調整は入りません</li><li><strong>SVG 出力</strong> — PDF と PNG のみです</li><li><strong>短い辺に糊代を付けない下限の指定</strong> — 曲面のシームでは辺ごとに 1枚ずつ付くので、分割数の多いモデルでは小さなタブが並びます</li><li><strong>島の間隔の自動調整</strong> — 糊代を入れても間隔は変わりません。 ぶつかるタブは細くなるか、付きません</li></ul>
+<ul><li><strong>素材の厚みの補正</strong> — 厚みのぶんの寸法調整は入りません</li><li><strong>SVG 出力</strong> — PDF と PNG のみです</li><li><strong>短い辺に糊代を付けない下限の指定</strong> — 曲面のシームでは辺ごとに 1枚ずつ付くので、分割数の多いモデルでは小さなタブが並びます</li></ul>
 <h4 id="こまったとき-三面図">三面図</h4>
 <ul><li><strong>部分の寸法</strong> — 出せるのは外接直方体の縦横高さだけです。 「穴は左端から 40mm」のような寸法は表現できません</li><li><strong>線画</strong> — ビューポートを撮っているので、陰影のついた絵になります。 隠線処理・断面・公差はありません</li><li><strong>複数用紙への分割</strong> — 1枚に収める前提です（縮尺を落としてください）</li></ul>
 <h4 id="こまったとき-共通">共通</h4>

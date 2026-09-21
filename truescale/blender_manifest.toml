@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "truescale"
-version = "0.2.0"
+version = "0.3.0"
 name = "Truescale"
 tagline = "Real-size patterns, dimensions and drawing sheets from Blender"
 maintainer = "hinata_hugu"
