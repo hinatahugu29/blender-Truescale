@@ -529,6 +529,17 @@ def register():
         update=_pattern_redraw_only_updated,
     )
 
+    bpy.types.Scene.tsunfold_show_source_island_ids = BoolProperty(
+        name="元モデルにも表示",
+        description=(
+            "型紙と同じ記号を、元モデルの面に出します。"
+            "切ったピースがモデルのどこかを探すためのものです。"
+            "裏を向いた面の記号は出しません"
+        ),
+        default=False,
+        update=_pattern_redraw_only_updated,
+    )
+
     bpy.types.Scene.tsunfold_island_id_style = EnumProperty(
         name="型紙ID形式",
         items=[

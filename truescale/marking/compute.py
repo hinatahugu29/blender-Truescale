@@ -314,6 +314,89 @@ def island_metadata(context, source_obj, unfold_obj):
     return records, face_to_island, adjacency
 
 
+def source_island_anchors(context, source_obj, unfold_obj):
+    """元モデルの上で、島の記号を置く場所。(記号, 位置, 法線) の並び。
+
+    位置と法線は元モデルのローカル。記号は island_metadata と同じもの
+    なので、型紙に刷られた記号と必ず一致する。
+
+    置くのは、島の重心にいちばん近い「実在の面」の中心。以前は面の
+    中心の平均に置いていたので、筒のように曲がった島では記号が
+    モデルの内側に浮き、どの面のものか分からなかった。
+
+    面を1つに決めるのは、法線も要るから。裏を向いた記号を隠すには、
+    記号がどちらを向いた面に付いているかを知っている必要がある。
+    """
+    records, _face_to_island, _adjacency = island_metadata(
+        context, source_obj, unfold_obj
+    )
+    if not records:
+        return []
+
+    scene = context.scene
+    polygons = source_obj.data.polygons
+    key = (
+        "source_island_anchors",
+        int(_state.epoch),
+        source_obj.name,
+        unfold_obj.name,
+        len(polygons),
+        len(unfold_obj.data.polygons),
+        str(getattr(scene, "tsunfold_island_id_style", "ALPHA")),
+    )
+    cached = _state.get(key)
+    if cached is not None:
+        return cached
+
+    # 面から少し浮かせる。面の上ちょうどだと、奥行きの比較で
+    # ちらついたり沈んだりする。
+    lift = _units.scene_mm_to_bu(scene, 0.6)
+
+    anchors = []
+    for record in records:
+        faces = [
+            polygons[fi] for fi in record["source_faces"]
+            if 0 <= fi < len(polygons)
+        ]
+        if not faces:
+            continue
+
+        total = sum(face.area for face in faces)
+        if total > 1e-12:
+            middle = sum(
+                (face.center * face.area for face in faces),
+                Vector((0.0, 0.0, 0.0)),
+            ) / total
+        else:
+            middle = sum(
+                (face.center for face in faces), Vector((0.0, 0.0, 0.0))
+            ) / len(faces)
+
+        face = min(faces, key=lambda f: (f.center - middle).length)
+        normal = face.normal.copy()
+        anchors.append((
+            record["label"],
+            face.center + normal * lift,
+            normal,
+        ))
+
+    return _state.store(key, anchors)
+
+
+def faces_viewer(point, normal, eye=None, view_dir=None):
+    """その点の面が、見ている側を向いているか。ワールドで渡す。
+
+    透視なら目の位置から、平行投影なら視線の向きで判定する。
+    裏を向いた面の記号は、モデル越しに透けて見え、どの面の記号か
+    分からなくなる。
+    """
+    if eye is not None:
+        return normal.dot(eye - point) > 0.0
+    if view_dir is not None:
+        return normal.dot(view_dir) < 0.0
+    return True
+
+
 def island_label(scene, index):
     style = str(
         getattr(scene, "tsunfold_island_id_style", "ALPHA")

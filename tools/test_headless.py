@@ -2341,6 +2341,74 @@ def test_turning_on_the_allowance_relays_out_unless_hand_placed():
 
 
 @test
+def test_source_island_ids_sit_on_the_surface():
+    """元モデルの島の記号は、その島の面の上にあり、型紙と同じ記号。
+
+    以前は面の中心を平均して置いていた。立方体の底と4つの側面が
+    1つの島になると、平均は立方体の内側（0, 0, -0.2）に来る。
+    どの面の記号か分からない。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import units
+    from truescale.marking import compute as C
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+
+    # 置き場所は面の法線の側へ浮かせる。この立方体は一部の面が
+    # 内向きなので、実際のモデルと同じく外向きに揃えておく。
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(obj.data)
+    bm.free()
+
+    unfold = build_pattern_for(obj)
+    scene = bpy.context.scene
+
+    records, _faces, _adjacency = C.island_metadata(bpy.context, obj, unfold)
+    anchors = C.source_island_anchors(bpy.context, obj, unfold)
+
+    check(len(records) >= 2, "島が分かれていない")
+    check(
+        [a[0] for a in anchors] == [r["label"] for r in records],
+        "元モデルの記号が型紙の記号と違う",
+    )
+
+    lift = units.scene_mm_to_bu(scene, 0.6)
+    for (label, point, normal), record in zip(anchors, records):
+        # 立方体の面の上（から少し浮いた所）にある
+        close(
+            max(abs(point.x), abs(point.y), abs(point.z)),
+            1.0 + lift, 1e-4, f"{label} が面の上にない",
+        )
+        # しかも、その島の面の上
+        on_face = [
+            fi for fi in record["source_faces"]
+            if (obj.data.polygons[fi].center + normal * lift - point).length
+            < 1e-6
+        ]
+        check(on_face, f"{label} が自分の島の面に乗っていない")
+
+
+@test
+def test_source_island_ids_hide_on_the_far_side():
+    """裏を向いた面の記号は出さない。透けて見えると、どの面か分からない。"""
+    from mathutils import Vector
+    from truescale.marking import compute as C
+
+    point = Vector((0.0, 0.0, 1.0))
+    up = Vector((0.0, 0.0, 1.0))
+
+    check(C.faces_viewer(point, up, eye=Vector((0.0, 0.0, 10.0))), "上から見て隠れた")
+    check(not C.faces_viewer(point, up, eye=Vector((0.0, 0.0, -10.0))), "下から見て出た")
+    check(C.faces_viewer(point, up, view_dir=Vector((0.0, 0.0, -1.0))), "平行投影で上から隠れた")
+    check(not C.faces_viewer(point, up, view_dir=Vector((0.0, 0.0, 1.0))), "平行投影で下から出た")
+
+
+@test
 def test_guide_measures_the_allowance_that_is_printed():
     """用紙ガイドの外形は、刷る線の外形と一致する。
 

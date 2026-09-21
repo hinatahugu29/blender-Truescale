@@ -719,6 +719,17 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
         box.prop(scene, "tsunfold_island_id_size_mm", text="ID文字サイズ")
         box.label(text="各辺には接続先IDを自動表示")
 
+        box.prop(
+            scene, "tsunfold_show_source_island_ids", text="元モデルにも表示",
+        )
+        # 記号は元モデルの面の順で決まる。シームを変えると、刷った紙と
+        # 画面の記号が食い違う。見比べる使い方をするときに一番効く注意。
+        if scene.tsunfold_show_source_island_ids:
+            note = box.column(align=True)
+            note.scale_y = 0.8
+            note.label(text="シームを変えると記号が付け直されます", icon='INFO')
+            note.label(text="刷った型紙と見比べるときは刷り直してください")
+
     def _draw_arrow(self, layout, context, scene, hint):
         box = layout.box()
         box.use_property_split = True

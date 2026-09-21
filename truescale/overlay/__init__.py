@@ -449,90 +449,49 @@ def source_text_items(source_obj, scene=None):
             _storage.scene_item_color(item, scene),
         ))
 
-    context = bpy.context
-    unfold_obj = _objects.unfold_for_source(source_obj)
-    if (
-        context is not None
-        and unfold_obj is not None
-        and bool(
-            getattr(
-                context.scene,
-                "tsunfold_auto_island_ids",
-                True,
-            )
-        )
-    ):
-        result.extend(
-            auto_source_id_text_items(
-                context,
-                source_obj,
-                unfold_obj,
-            )
-        )
-
     return result
 
 
-def auto_source_id_text_items(context, source_obj, unfold_obj):
-    records, _face_to_island, _adjacency = _compute.island_metadata(
-        context,
-        source_obj,
-        unfold_obj,
-    )
+def source_island_id_items(context, source_obj, unfold_obj, rv3d):
+    """元モデルに出す島の記号。(記号, ワールド位置, 大きさmm, 色)。
 
-    if not records:
+    見ている側を向いた面のものだけ返す。置き場所は控えてあるので、
+    ここで毎フレームやるのは島の数だけの座標変換と向きの判定。
+    """
+    scene = context.scene
+    if not (
+        bool(getattr(scene, "tsunfold_show_source_island_ids", False))
+        and bool(getattr(scene, "tsunfold_auto_island_ids", True))
+    ):
         return []
 
-    scene = context.scene
-    size_mm = float(
-        getattr(scene, "tsunfold_island_id_size_mm", 8.0)
-    )
+    anchors = _compute.source_island_anchors(context, source_obj, unfold_obj)
+    if not anchors:
+        return []
+
+    mw = source_obj.matrix_world
+    # 法線は、拡大縮小が縦横で違っても正しく向くよう逆転置で移す。
+    normal_matrix = mw.to_3x3().inverted_safe().transposed()
+
+    eye = None
+    view_dir = None
+    if rv3d.is_perspective:
+        eye = rv3d.view_matrix.inverted().translation
+    else:
+        view_dir = rv3d.view_rotation @ Vector((0.0, 0.0, -1.0))
+
+    size_mm = float(getattr(scene, "tsunfold_island_id_size_mm", 8.0))
     color = tuple(
         float(v)
-        for v in getattr(
-            scene,
-            "tsunfold_island_id_color",
-            (0.0, 0.0, 0.0),
-        )
+        for v in getattr(scene, "tsunfold_island_id_color", (0.0, 0.0, 0.0))
     )
-    mw = source_obj.matrix_world
+
     result = []
-
-    for record in records:
-        centers = []
-        for face_index in record["source_faces"]:
-            if 0 <= face_index < len(source_obj.data.polygons):
-                centers.append(
-                    source_obj.data.polygons[face_index].center.copy()
-                )
-
-        if not centers:
-            continue
-
-        center = sum(
-            centers,
-            Vector((0.0, 0.0, 0.0)),
-        ) / len(centers)
-
-        normal = Vector((0.0, 0.0, 0.0))
-        normal_count = 0
-
-        for face_index in record["source_faces"]:
-            if 0 <= face_index < len(source_obj.data.polygons):
-                normal += source_obj.data.polygons[face_index].normal
-                normal_count += 1
-
-        if normal_count and normal.length > 1e-12:
-            normal.normalize()
-            center = center + normal * _units.scene_mm_to_bu(scene, 0.6)
-
-        result.append((
-            record["label"],
-            mw @ center,
-            size_mm,
-            color,
-        ))
-
+    for label, point, normal in anchors:
+        world_point = mw @ point
+        world_normal = normal_matrix @ normal
+        if _compute.faces_viewer(world_point, world_normal, eye, view_dir):
+            result.append((label, world_point, size_mm, color))
     return result
 
 
@@ -1558,10 +1517,37 @@ def _draw_text_2d_inner():
             )
             blf.draw(font_id, text)
 
+        unfold = _objects.unfold_for_source(source)
+
+        # ------------------------------------------------------
+        # 元モデルの島の記号。軽量ビューとは別に切り替える。
+        # 置き場所を控えてあるので、軽量ビューで止める必要がない。
+        # ------------------------------------------------------
+        if source_visible and unfold is not None:
+            for text, world_pos, size_mm, color in source_island_id_items(
+                context, source, unfold, rv3d
+            ):
+                screen = view3d_utils.location_3d_to_region_2d(
+                    context.region, rv3d, world_pos
+                )
+                if screen is None:
+                    continue
+                blf.size(font_id, max(8, int(round(float(size_mm) * 3.2))))
+                width, height = blf.dimensions(font_id, text)
+                # 記号の真ん中を面の上に置く。左下を置くと、隣の島の
+                # 記号に見える。
+                blf.position(
+                    font_id,
+                    screen.x - width * 0.5,
+                    screen.y - height * 0.5,
+                    0.0,
+                )
+                blf.color(font_id, color[0], color[1], color[2], 1.0)
+                blf.draw(font_id, text)
+
         # ------------------------------------------------------
         # Transferred labels on generated flat pattern.
         # ------------------------------------------------------
-        unfold = _objects.unfold_for_source(source)
 
         if (
             unfold is not None
