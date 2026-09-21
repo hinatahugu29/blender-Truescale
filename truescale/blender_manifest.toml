@@ -7,9 +7,9 @@ tagline = "Real-size patterns, dimensions and drawing sheets from Blender"
 maintainer = "hinata_hugu"
 type = "add-on"
 
-# draft 側が 5.2 を宣言していたため、統合後もそれに合わせている。
-# 5.2 固有のAPIは見つかっていないので 4.2 まで下げられる見込みだが、未検証。
-blender_version_min = "5.2.0"
+# 4.2 LTS で実機とヘッドレステスト（全件）を確かめた（2026-09-22）。
+# 拡張機能の仕組みが 4.2 からなので、これより下へは下げられない。
+blender_version_min = "4.2.0"
 
 license = [
   "SPDX:GPL-3.0-or-later",

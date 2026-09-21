@@ -1,9 +1,19 @@
 @echo off
 REM Truescale のテストを実行する。
-REM Blender の場所が違う場合は BLENDER 変数を書き換えてください。
+REM Blender の場所が違う場合は BLENDER_DIR 変数を書き換えてください。
 
-set BLENDER=D:\SteamLibrary\steamapps\common\Blender\blender.exe
-set BLENDER_PY=D:\SteamLibrary\steamapps\common\Blender\5.2\python\bin\python.exe
+set BLENDER_DIR=D:\SteamLibrary\steamapps\common\Blender
+set BLENDER=%BLENDER_DIR%\blender.exe
+
+REM 同梱の Python は版のフォルダ（4.2、5.2 …）の中にある。版を決め打ちすると、
+REM Steam で版を切り替えたときにそのフォルダが消えて、何も走らなくなる。
+REM python を持っている版のフォルダを探す（いま入っている版だけが持っている）。
+set BLENDER_PY=
+for /d %%D in ("%BLENDER_DIR%\*") do if exist "%%D\python\bin\python.exe" set "BLENDER_PY=%%D\python\bin\python.exe"
+if not defined BLENDER_PY (
+    echo Blender 同梱の Python が見つかりません: %BLENDER_DIR%
+    exit /b 1
+)
 
 echo === 1. 静的チェック ===
 REM オペレータは ops/ が機能別に持っている。__init__.py だけ見ても
