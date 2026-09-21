@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from truescale.core import flatshape, paper, session, state, units
+from truescale.core import distortion, flatshape, paper, session, state, units
 from truescale.export import linestyle
 from truescale.export import png
 from truescale.export import pdf
@@ -1532,6 +1532,76 @@ def test_no_stubs_when_the_base_reaches_the_ends():
     quad = flatshape.tab_quad(0.0, 0.0, 10.0, 0.0, 5.0, gap=0.0)
     stubs = flatshape.edge_stubs((0.0, 0.0, 10.0, 0.0), quad)
     check(not stubs, f"余りが {len(stubs)} 本出た")
+
+
+@test
+def test_no_distortion_when_nothing_is_stretched():
+    """全部の辺が同じ倍率なら、縮みは 0%。
+
+    立方体を展開したときがこれ。0% でないなら、どこかで数え方が
+    間違っている。
+    """
+    made = distortion.stats([2.0] * 50, 2.0)
+    check(made is not None, "測れていない")
+    middle, high = made
+    check(abs(middle) < 1e-9, f"中央が 0 でない: {middle}")
+    check(abs(high) < 1e-9, f"上位5%が 0 でない: {high}")
+
+
+@test
+def test_one_bad_edge_does_not_move_the_number():
+    """1本だけ極端でも、出る数字は動かない。
+
+    最大値を出さないのはこのため。実害の小さい1本で「シームが
+    足りない」と言い出すと、警告が信用されなくなる。
+    """
+    ratios = [1.0] * 999 + [10.0]
+    made = distortion.stats(ratios, 1.0)
+    middle, high = made
+    check(abs(middle) < 1e-9, f"中央が動いた: {middle}")
+    check(high < 1.0, f"上位5%が1本に引きずられた: {high}")
+    check(distortion.verdict(high) == "", "1本で警告が出ている")
+
+
+@test
+def test_a_stretched_fifth_is_reported():
+    """2割の辺が 20% 縮んでいれば、上位5%はそれを拾う。
+
+    「一部だけ大きく縮んでいる」が、いちばん見落としたくない形。
+    中央値だけ見ていると 0% のままになる。
+    """
+    ratios = [1.0] * 80 + [1.2] * 20
+    middle, high = distortion.stats(ratios, 1.0)
+    check(abs(middle) < 1e-9, f"中央が動いた: {middle}")
+    check(19.0 < high < 21.0, f"上位5%が拾えていない: {high}")
+    check(distortion.verdict(high), "20% 縮んでいるのに何も言わない")
+
+
+@test
+def test_the_advice_gets_stronger_with_the_number():
+    """縮みが大きくなるほど、言うことが強くなる。
+
+    しきい値の順序が逆だと、ひどい型紙ほど静かになる。
+    """
+    check(distortion.verdict(0.0) == "", "0% で何か言っている")
+    check(distortion.verdict(distortion.FINE_PCT - 0.1) == "",
+          "目安の下で言っている")
+
+    mild = distortion.verdict(distortion.FINE_PCT + 0.1)
+    hard = distortion.verdict(distortion.ROUGH_PCT + 0.1)
+    check(mild and hard, "上のほうで黙っている")
+    check(mild != hard, "強さが変わっていない")
+    check("シームが足りません" in hard, "ひどいときの言い方が弱い")
+    check(distortion.FINE_PCT < distortion.ROUGH_PCT, "しきい値が逆")
+
+
+@test
+def test_nothing_is_said_when_nothing_was_measured():
+    """測れないときは黙る。0% と出すと「歪んでいない」と読める。"""
+    check(distortion.stats([], 1.0) is None, "空で答えている")
+    check(distortion.stats([1.0], 0.0) is None, "倍率 0 で答えている")
+    check(distortion.stats([1.0], None) is None, "倍率無しで答えている")
+    check(distortion.text(None) == "", "測っていないのに文が出ている")
 
 
 def main():

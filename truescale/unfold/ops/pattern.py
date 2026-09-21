@@ -7,9 +7,12 @@ UV から実寸メッシュを作り、要らなくなったものを片付け�
 どれを対象にするか、作り直すときに何を消すか、といった段取り。
 """
 
+from statistics import median as _median
+
 import bpy
 
 from ... import debug as _debug
+from ...core import distortion as _distortion
 from ...core import geometry as _geometry
 from ...core import objects as _objects
 from ...core import paper as _paper
@@ -106,7 +109,9 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
             self.report({'ERROR'}, "UV展開に失敗しました。Meshとシームを確認してください。")
             return {'CANCELLED'}
 
-        scale = _build.real_scale(src_obj, mesh, uv_layer)
+        # 倍率と歪み率は同じ比のリストから出る。二度数えない。
+        ratios = _build.edge_ratios(src_obj, mesh, uv_layer)
+        scale = _median(ratios) if ratios else None
         if scale is None:
             self.report({'ERROR'}, "実寸スケールを計算できませんでした。")
             return {'CANCELLED'}
@@ -115,7 +120,10 @@ class TSUNFOLD_OT_unfold_real_mesh(bpy.types.Operator):
         # Delete stale pattern/layout/smooth output before rebuilding.
         _objects.delete_generated_for_source(context, src_obj)
 
-        result = _build.flat_mesh(context, src_obj, mesh, uv_layer, scale)
+        result = _build.flat_mesh(
+            context, src_obj, mesh, uv_layer, scale,
+            distortion=_distortion.stats(ratios, scale),
+        )
 
         # Temporary helper UV is no longer needed after the flat Mesh/mappings
         # have been built. Restore the user's original active UV if possible.

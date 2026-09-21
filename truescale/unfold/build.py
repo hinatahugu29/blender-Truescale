@@ -49,7 +49,12 @@ def world_edge_length(obj, v1, v2):
     return (p2 - p1).length
 
 
-def real_scale(obj, mesh, uv_layer):
+def edge_ratios(obj, mesh, uv_layer):
+    """辺ごとの「実長 ÷ UV長」。倍率も歪み率も、ここから出す。
+
+    倍率は中央値、歪み率はばらつき。同じリストの別の見方でしかない
+    ので、二度数えない。
+    """
     ratios = []
     eps = 1e-10
 
@@ -76,10 +81,17 @@ def real_scale(obj, mesh, uv_layer):
             if world_len > eps:
                 ratios.append(world_len / uv_len)
 
+    return ratios
+
+
+def real_scale(obj, mesh, uv_layer):
+    """採用する倍率。1 UV が何 BU にあたるか。"""
+    ratios = edge_ratios(obj, mesh, uv_layer)
     return median(ratios) if ratios else None
 
 
-def flat_mesh(context, src_obj, mesh, uv_layer, scale_bu_per_uv):
+def flat_mesh(context, src_obj, mesh, uv_layer, scale_bu_per_uv,
+              distortion=None):
     verts = []
     faces = []
     vert_map = {}
@@ -170,6 +182,14 @@ def flat_mesh(context, src_obj, mesh, uv_layer, scale_bu_per_uv):
         float(src_obj.scale.y),
         float(src_obj.scale.z),
     ]
+
+    # 展開でどれだけ縮んだか。作ったときの UV でしか測れないので、
+    # ここで持たせる。あとから型紙メッシュだけ見ても出せない。
+    if distortion:
+        new_obj["tsunfold_distortion"] = [
+            float(distortion[0]),
+            float(distortion[1]),
+        ]
 
     new_obj["tsunfold_flat_vertex_source_json"] = json.dumps(
         flat_vertex_source_vertex

@@ -46,6 +46,7 @@
 
 import bpy
 
+from ..core import distortion as _distortion
 from ..core import objects as _objects
 from ..core import paper as _paper
 from ..core import session as _session
@@ -87,6 +88,28 @@ def _step(layout, number, text, icon='NONE'):
     head.scale_y = 1.1
     head.label(text=f"{number}. {text}", icon=icon)
     return box
+
+
+def _draw_distortion(layout, unfold_obj):
+    """展開でどれだけ縮んだかを出す。
+
+    測っていないときは何も出さない。0% と出すと「歪んでいない」と
+    読めてしまう。
+    """
+    made = _distortion.of(unfold_obj)
+    if not made:
+        return
+
+    _middle, high = made
+    note = _distortion.verdict(high)
+
+    box = layout.box()
+    box.label(
+        text=_distortion.text(made),
+        icon='ERROR' if note else 'CHECKMARK',
+    )
+    if note:
+        box.label(text=note)
 
 
 class TSUNFOLD_PT_main(bpy.types.Panel):
@@ -411,6 +434,10 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
         box = _step(layout, 4, "出す / 残す", 'EXPORT')
 
         has_pattern = unfold_obj is not None
+
+        # 刷る前にここで気づけるようにする。組んでから「足りない」と
+        # 分かっても、紙も布も戻らない。
+        _draw_distortion(box, unfold_obj)
 
         export = box.column()
         export.enabled = has_pattern

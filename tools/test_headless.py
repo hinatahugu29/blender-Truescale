@@ -3550,6 +3550,102 @@ def test_the_outline_stays_whole_where_tabs_sit():
     )
 
 
+@test
+def test_a_cube_reports_no_shrink():
+    """展開しても歪まない形なら、縮みは 0% と記録される。
+
+    立方体は平面の集まりなので、UV へ落としても長さが変わらない。
+    ここに数字が出るなら、倍率の取り方が壊れている。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import distortion as D
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    made = D.of(unfold)
+    check(made is not None, "縮みが記録されていない")
+    check(made[1] < 0.5, f"平面なのに縮んでいる: {made}")
+    check(D.verdict(made[1]) == "", "平面なのに警告が出ている")
+
+
+@test
+def test_a_curved_shape_reports_shrink():
+    """曲面を展開したら、縮みが出る。
+
+    出ないなら、測っていないのに 0% と言っていることになる。
+    こちらのほうが危ない。安心させてから合わない型紙を刷らせる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import distortion as D
+    truescale.register()
+
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.5)
+    obj = bpy.context.object
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.uv.smart_project(angle_limit=1.15)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    for edge in obj.data.edges:
+        edge.use_seam = True
+
+    unfold = build_pattern_for(obj)
+    made = D.of(unfold)
+    check(made is not None, "縮みが記録されていない")
+    check(made[1] > 0.0, f"曲面なのに縮みが 0: {made}")
+
+
+@test
+def test_the_scale_still_comes_from_the_same_ratios():
+    """倍率と縮み率が、同じ比のリストから出ている。
+
+    二度数えると、片方だけ直したときに食い違う。中央値からの
+    ズレを測る以上、倍率が中央値でなければ数字の意味が変わる。
+    """
+    reset_scene()
+    import truescale
+    from statistics import median
+    from truescale.unfold import build as B
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.001)
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    uv = obj.data.uv_layers.active
+    ratios = B.edge_ratios(obj, obj.data, uv)
+    check(ratios, "比が取れていない")
+    check(
+        abs(median(ratios) - B.real_scale(obj, obj.data, uv)) < 1e-9,
+        "倍率が中央値になっていない",
+    )
+
+
+@test
+def test_an_old_pattern_says_nothing():
+    """記録の無い型紙では黙る。
+
+    昔作った型紙を開いたときに 0% と出ると、歪んでいないと読める。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import distortion as D
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    del unfold["tsunfold_distortion"]
+    check(D.of(unfold) is None, "記録が無いのに答えている")
+    check(D.of(None) is None, "型紙が無いのに答えている")
+
+
 def main():
     print()
     print("=" * 72)
