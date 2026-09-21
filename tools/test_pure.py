@@ -19,6 +19,10 @@ import sys
 import traceback
 from pathlib import Path
 
+# 出力先が cp932 のとき（パイプやリダイレクト）、「—」などで落ちないようにする。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="replace")
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
