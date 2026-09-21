@@ -299,6 +299,45 @@ def enabled(scene):
     return conf["tab"] or conf["seam"]
 
 
+def island_reach(scene, mesh, face_indices):
+    """縫い代・糊代が、島の輪郭から外へどこまで出るか。BU。
+
+    並べるときに、この分だけ島を太らせて扱う。輪郭だけで詰めると、
+    隣の島の裁断線と重なる（既定の縫い代 10mm・間隔 10mm で
+    14mm 重なっていた）。
+
+    縫い代は実際にずらして測る。鋭い角ではマイターが幅の 2.5 倍
+    まで伸びるので、幅で見積もると足りない。糊代は辺から垂直に
+    幅だけ出るので、幅で足りる。どちらも輪郭から出るので、
+    両方入れても足し算にはならない。
+
+    上下左右のいちばん大きい出を返す。90度回して並べても
+    そのまま使えるように、1つの値にしてある。
+    """
+    conf = settings(scene)
+    reach = 0.0
+
+    if conf["tab"]:
+        reach = _units.scene_mm_to_bu(scene, max(0.0, conf["tab_mm"]))
+
+    seam_bu = _units.scene_mm_to_bu(scene, max(0.0, conf["seam_mm"]))
+    if conf["seam"] and seam_bu > 0.0:
+        for ring in island_loops(mesh, face_indices):
+            points = [(x, y) for x, y, _e in ring]
+            grown = _shape.offset_loop(points, seam_bu)
+            xs = [p[0] for p in points]
+            ys = [p[1] for p in points]
+            gx = [p[0] for p in grown]
+            gy = [p[1] for p in grown]
+            reach = max(
+                reach,
+                min(xs) - min(gx), max(gx) - max(xs),
+                min(ys) - min(gy), max(gy) - max(ys),
+            )
+
+    return reach
+
+
 def _seam_source_edges(source_obj):
     """元メッシュで、シームが立っている辺番号の集合。"""
     return {

@@ -2381,6 +2381,77 @@ def test_seam_allowance_follows_each_island():
             check(not inside, f"島 {k} の内側を裁断線が横切る: {mx:.2f}, {my:.2f}")
 
 
+def _allowance_boxes(scene, mesh):
+    """島ごとに、縫い代まで含めた外形（BU）。並べ方と独立に測る。"""
+    from truescale.core import flatshape, geometry, units
+    from truescale.export import allowance as A
+
+    seam = units.scene_mm_to_bu(scene, scene.tsunfold_seam_width_mm)
+    boxes = []
+    for faces in geometry.face_island_polys(mesh):
+        xs = []
+        ys = []
+        for ring in A.island_loops(mesh, faces):
+            points = [(x, y) for x, y, _e in ring]
+            for x, y in points + flatshape.offset_loop(points, seam):
+                xs.append(x)
+                ys.append(y)
+        boxes.append((min(xs), min(ys), max(xs), max(ys)))
+    return boxes
+
+
+@test
+def test_layout_leaves_room_for_the_seam_allowance():
+    """並べるときは、縫い代の外側どうしで間隔を空ける。
+
+    以前は型紙の輪郭だけで詰めていた。縫い代 10mm・間隔 10mm
+    （どちらも既定値）だと、隣の島の裁断線が 10mm 重なる。
+    画面でも重なって見えるが、刷ると切れない型紙になる。
+    """
+    reset_scene()
+    import truescale
+    from truescale.core import units
+    from truescale.unfold import build as B
+    truescale.register()
+
+    obj = make_seamed_cube(size=2.0)
+    unfold = build_pattern_for(obj)
+
+    scene = bpy.context.scene
+    scene.tsunfold_seam_enable = True
+    scene.tsunfold_seam_width_mm = 10.0
+    scene.tsunfold_spacing_mm = 10.0
+
+    spacing = units.scene_mm_to_bu(scene, scene.tsunfold_spacing_mm)
+
+    def assert_apart(how):
+        boxes = _allowance_boxes(scene, unfold.data)
+        check(len(boxes) >= 2, "島が1つしかない")
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                apart = max(
+                    b[0] - a[2], a[0] - b[2], b[1] - a[3], a[1] - b[3]
+                )
+                check(
+                    apart >= spacing - 1e-6,
+                    f"{how}: 縫い代の外側どうしが "
+                    f"{units.scene_bu_to_mm(scene, apart):.1f}mm しか"
+                    f"離れていない（{scene.tsunfold_spacing_mm:.0f}mm のはず）",
+                )
+
+    # 用紙に沿って詰める（型紙を作った直後・自動レイアウト）
+    content_w, content_h = B.content_size(scene)
+    ok, message, _cols, _rows = B.pack_for_pages(
+        bpy.context, unfold, content_w, content_h
+    )
+    check(ok, message)
+    assert_apart("用紙に沿って詰めたとき")
+
+    # 横一列（間隔のスライダーを動かしたとき）
+    B.pack_islands(bpy.context, unfold, scene.tsunfold_spacing_mm)
+    assert_apart("横一列に並べたとき")
+
+
 @test
 def test_draft_and_unfold_agree_on_the_scale():
     """三面図側と型紙側が、同じ実寸の基準で測る。

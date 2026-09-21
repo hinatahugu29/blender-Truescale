@@ -32,6 +32,7 @@ from .. import debug as _debug
 from ..core import geometry as _geometry
 from ..core import paper as _paper
 from ..core import units as _units
+from ..export import allowance as _allowance
 
 # 生成した型紙オブジェクトの名前に付く接尾辞。
 UNFOLD_SUFFIX = "_展開図"
@@ -217,28 +218,56 @@ def flat_mesh(context, src_obj, mesh, uv_layer, scale_bu_per_uv,
     return new_obj
 
 
+def layout_islands(scene, mesh):
+    """並べる単位の一覧。(頂点番号, 外へ出る幅) の組。
+
+    外へ出る幅は縫い代・糊代のぶん（export.allowance.island_reach）。
+    並べる側はどれも、島をこの幅だけ太らせた箱として扱う。
+    輪郭だけで詰めると、隣の島の裁断線と重なる。
+    """
+    out = []
+    for faces in _geometry.face_island_polys(mesh):
+        verts = set()
+        for fi in faces:
+            verts.update(mesh.polygons[fi].vertices)
+        if verts:
+            out.append((
+                sorted(verts), _allowance.island_reach(scene, mesh, faces)
+            ))
+    return out
+
+
+def _padded_bbox(mesh, ids, pad):
+    min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+    return min_x - pad, min_y - pad, max_x + pad, max_y + pad
+
+
+def _move_padded(mesh, ids, x, y, pad):
+    """太らせた箱の左下を (x, y) へ置く。"""
+    _geometry.move_island_to(mesh, ids, x + pad, y + pad)
+
+
 def pack_islands(context, obj, spacing_mm):
     """Pack islands left-to-right. Translation only, never scaling."""
     if not obj or obj.type != 'MESH':
         return
 
     mesh = obj.data
-    islands = _geometry.face_islands(mesh)
+    islands = layout_islands(context.scene, mesh)
     if not islands:
         return
 
     spacing_bu = _units.scene_mm_to_bu(context.scene, max(0.0, spacing_mm))
 
     data = []
-    for ids in islands:
-        xs = [mesh.vertices[i].co.x for i in ids]
-        ys = [mesh.vertices[i].co.y for i in ids]
+    for ids, pad in islands:
+        min_x, min_y, max_x, max_y = _padded_bbox(mesh, ids, pad)
         data.append({
             "verts": ids,
-            "min_x": min(xs),
-            "max_x": max(xs),
-            "min_y": min(ys),
-            "max_y": max(ys),
+            "min_x": min_x,
+            "max_x": max_x,
+            "min_y": min_y,
+            "max_y": max_y,
         })
 
     # Stable order based on current left-to-right position.
@@ -297,11 +326,11 @@ def try_shelf_layout(context, obj, allow_rotate=True):
     current spacing. No scaling is ever applied.
     """
     mesh = obj.data
-    islands = _geometry.face_islands(mesh)
+    scene = context.scene
+    islands = layout_islands(scene, mesh)
     if not islands:
         return False, "アイランドがありません"
 
-    scene = context.scene
     paper_w_mm, paper_h_mm = _paper.scene_dimensions_mm(scene)
     paper_w = _units.scene_mm_to_bu(scene, paper_w_mm)
     paper_h = _units.scene_mm_to_bu(scene, paper_h_mm)
@@ -318,12 +347,13 @@ def try_shelf_layout(context, obj, allow_rotate=True):
 
     # Work largest-first, tends to pack more reliably.
     items = []
-    for ids in islands:
-        min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+    for ids, pad in islands:
+        min_x, min_y, max_x, max_y = _padded_bbox(mesh, ids, pad)
         w = max_x - min_x
         h = max_y - min_y
         items.append({
             "verts": ids,
+            "pad": pad,
             "w": w,
             "h": h,
             "area": w * h,
@@ -337,7 +367,8 @@ def try_shelf_layout(context, obj, allow_rotate=True):
 
     for item in items:
         ids = item["verts"]
-        min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+        pad = item["pad"]
+        min_x, min_y, max_x, max_y = _padded_bbox(mesh, ids, pad)
         w = max_x - min_x
         h = max_y - min_y
 
@@ -364,7 +395,7 @@ def try_shelf_layout(context, obj, allow_rotate=True):
             ):
                 _geometry.rotate_vertices_90(mesh, ids)
                 rotated = True
-                min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+                min_x, min_y, max_x, max_y = _padded_bbox(mesh, ids, pad)
                 w = max_x - min_x
                 h = max_y - min_y
 
@@ -376,7 +407,7 @@ def try_shelf_layout(context, obj, allow_rotate=True):
 
             # Re-evaluate rotation for the fresh row.
             if allow_rotate:
-                min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+                min_x, min_y, max_x, max_y = _padded_bbox(mesh, ids, pad)
                 w = max_x - min_x
                 h = max_y - min_y
                 rw, rh = h, w
@@ -396,7 +427,7 @@ def try_shelf_layout(context, obj, allow_rotate=True):
                 ):
                     _geometry.rotate_vertices_90(mesh, ids)
                     rotated = not rotated
-                    min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+                    min_x, min_y, max_x, max_y = _padded_bbox(mesh, ids, pad)
                     w = max_x - min_x
                     h = max_y - min_y
 
@@ -413,20 +444,23 @@ def try_shelf_layout(context, obj, allow_rotate=True):
                 "すべてのアイランドを収められませんでした"
             )
 
-        _geometry.move_island_to(mesh, ids, cursor_x, cursor_y)
+        _move_padded(mesh, ids, cursor_x, cursor_y, pad)
 
         cursor_x += w + gap
         row_h = max(row_h, h)
 
     # Center the final packed layout inside the safe printable area.
-    all_x = [v.co.x for v in mesh.vertices]
-    all_y = [v.co.y for v in mesh.vertices]
+    # 縫い代・糊代まで含めた外形で測る。頂点だけで測ると、
+    # そのぶん紙の端へ寄る。
+    boxes = [
+        _padded_bbox(mesh, item["verts"], item["pad"]) for item in items
+    ]
 
-    if all_x and all_y:
-        min_x = min(all_x)
-        max_x = max(all_x)
-        min_y = min(all_y)
-        max_y = max(all_y)
+    if boxes:
+        min_x = min(b[0] for b in boxes)
+        min_y = min(b[1] for b in boxes)
+        max_x = max(b[2] for b in boxes)
+        max_y = max(b[3] for b in boxes)
 
         packed_w = max_x - min_x
         packed_h = max_y - min_y
@@ -450,16 +484,19 @@ def try_shelf_layout(context, obj, allow_rotate=True):
 def _shelf_fill(mesh, islands, usable_w, gap, allow_rotate=True):
     """決めた幅の中へ、島を左から右・上から下へ詰める。
 
+    islands は layout_islands の戻り値。縫い代・糊代のぶん太らせて詰める。
+
     紙に収まるかは見ない。とにかくその幅で詰めたら縦がどれだけに
     なるかを返す。用紙をまたぐ配置を決めるのに使う。
 
     戻り値は (実際に使った幅, 高さ)。拡大縮小はしない。
     """
     items = []
-    for ids in islands:
-        min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+    for ids, pad in islands:
+        min_x, min_y, max_x, max_y = _padded_bbox(mesh, ids, pad)
         items.append({
             "verts": ids,
+            "pad": pad,
             "w": max_x - min_x,
             "h": max_y - min_y,
         })
@@ -474,14 +511,15 @@ def _shelf_fill(mesh, islands, usable_w, gap, allow_rotate=True):
 
     for item in items:
         ids = item["verts"]
-        min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+        pad = item["pad"]
+        min_x, min_y, max_x, max_y = _padded_bbox(mesh, ids, pad)
         width = max_x - min_x
         height = max_y - min_y
 
         # 幅に入らないなら、回して入るか試す
         if allow_rotate and width > usable_w and height <= usable_w:
             _geometry.rotate_vertices_90(mesh, ids)
-            min_x, min_y, max_x, max_y = _geometry.island_bbox(mesh, ids)
+            min_x, min_y, max_x, max_y = _padded_bbox(mesh, ids, pad)
             width = max_x - min_x
             height = max_y - min_y
 
@@ -491,7 +529,7 @@ def _shelf_fill(mesh, islands, usable_w, gap, allow_rotate=True):
             cursor_y += row_h + gap
             row_h = 0.0
 
-        _geometry.move_island_to(mesh, ids, cursor_x, cursor_y)
+        _move_padded(mesh, ids, cursor_x, cursor_y, pad)
 
         cursor_x += width + gap
         used_w = max(used_w, cursor_x - gap)
@@ -586,11 +624,11 @@ def pack_for_pages(context, obj, content_w_mm, content_h_mm, max_pages_wide=8,
     戻り値は (成功したか, 説明, 列数, 行数)。
     """
     mesh = obj.data
-    islands = _geometry.face_islands(mesh)
+    scene = context.scene
+    islands = layout_islands(scene, mesh)
     if not islands:
         return False, "アイランドがありません", 0, 0
 
-    scene = context.scene
     if overlap_mm is None:
         overlap_mm = float(getattr(scene, "tsunfold_tile_overlap_mm", 15.0))
 

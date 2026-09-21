@@ -560,6 +560,13 @@ class TSUNFOLD_PT_main(bpy.types.Panel):
                 scene, "tsunfold_allowance_fold_color", text="折り線",
             )
 
+            # 並べ直しは自動ではしない。手で並べた配置を黙って崩すため。
+            # 並べる側は代のぶん空けるので、押し直せば重ならない。
+            note = shown.column(align=True)
+            note.scale_y = 0.8
+            note.label(text="代を入れたら「用紙に自動レイアウト」を押し直すと")
+            note.label(text="隣の型紙と重ならないように並びます")
+
     def _draw_marking(self, layout, context, scene):
         """印をつける。必要に応じてやるものなので畳んでおく。"""
         box, open_now = _folded(
